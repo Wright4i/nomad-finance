@@ -1,6 +1,6 @@
 # Module 2 — Bills
 
-A bill is a reminder drawn from one account.
+A bill is a reminder drawn from one account. The list groups each status, then each date. The date is a label, a horizontal line sits under that label, and that date's bills sit two across.
 
 | Field | Rule |
 | --- | --- |

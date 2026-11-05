@@ -122,6 +122,29 @@ final class BillsTest extends TestCase
         self::assertTrue($actions['pausedArchive']);
         self::assertFalse($actions['cardPause']);
         self::assertTrue($actions['archivedRestore']);
+        $day = self::driver()->executeScript(<<<'JS'
+            const group = [...document.querySelectorAll('.bill-day')].find((node) => {
+                const label = node.querySelector('.bill-date');
+                return label && label.textContent.includes('Nov 20, 2026');
+            });
+            if (!group) return null;
+            const date = group.querySelector('.bill-date').getBoundingClientRect();
+            const rule = group.querySelector('.bill-date-rule').getBoundingClientRect();
+            const cards = [...group.querySelectorAll('article')].slice(0, 2).map((card) => card.getBoundingClientRect());
+            return {
+                dateBottom: date.bottom,
+                ruleTop: rule.top,
+                ruleWidth: rule.width,
+                cards: cards.map((card) => ({ top: card.top, left: card.left })),
+            };
+        JS);
+        self::assertIsArray($day);
+        self::assertGreaterThan($day['dateBottom'] - 1, $day['ruleTop']);
+        self::assertGreaterThan(80, $day['ruleWidth']);
+        self::assertCount(2, $day['cards']);
+        self::assertGreaterThan($day['ruleTop'], $day['cards'][0]['top']);
+        self::assertEqualsWithDelta($day['cards'][0]['top'], $day['cards'][1]['top'], 2);
+        self::assertGreaterThan($day['cards'][0]['left'], $day['cards'][1]['left']);
         self::clickLinkContaining('Other Bill');
         $kept = self::wait()->until(function (): string|false {
             $value = self::driver()->executeScript(<<<'JS'

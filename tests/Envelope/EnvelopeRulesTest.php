@@ -87,6 +87,10 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame(50000, $sheet['assignedMinor']);
         self::assertSame(1329500, $sheet['availableMinor']);
         self::assertSame([], $sheet['leftOut']);
+        self::assertSame(0, $this->amount($sheet, 'Rent'));
+        self::assertSame(60000, $this->billMinor($sheet, 'Rent'));
+        self::assertSame(21600, $this->billMinor($sheet, 'Groceries'));
+        self::assertSame(0, $this->billMinor($sheet, 'Entertainment'));
         self::assertSame(['2026-12-01', '2026-12-31'], [$sheet['nextPeriod']['start'], $sheet['nextPeriod']['end']]);
         self::assertFalse($sheet['celebrate']);
 
@@ -121,6 +125,28 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame([], $owner['payors']);
         self::assertSame([], $owner['leftOut']);
         self::assertSame(0, $owner['assignedMinor']);
+    }
+
+    public function testALockedBucketUsesTheBillsAsItsMaximumAndKeepsAssignedCash(): void
+    {
+        $sheet = $this->envelopes->show('2026-11-03');
+        $rent = $this->categoryId($sheet, 'Rent');
+        $needs = $this->categoryId($sheet, 'Needs 1');
+        $saved = $this->envelopes->save([
+            'today' => '2026-11-03',
+            'payCycleId' => $sheet['payCycleId'],
+            'amounts' => [
+                ['categoryId' => $needs, 'amountMinor' => 50000],
+                ['categoryId' => $rent, 'amountMinor' => 12500],
+            ],
+            'maximums' => [
+                ['categoryId' => $needs, 'amountMinor' => 80000],
+            ],
+        ]);
+        self::assertSame(12500, $this->amount($saved, 'Rent'));
+        self::assertSame(60000, $this->billMinor($saved, 'Rent'));
+        self::assertSame(80000, $this->targetAmount($saved, 'Needs 1'));
+        self::assertSame($sheet['poolMinor'] - 50000 - 12500, $saved['availableMinor']);
     }
 
     public function testAnAssignmentStaysOnTheOpenPeriod(): void
@@ -490,9 +516,30 @@ final class EnvelopeRulesTest extends TestCase
 
     private function amount(array $sheet, string $name): int
     {
+        return (int) $this->category($sheet, $name)['amountMinor'];
+    }
+
+    private function billMinor(array $sheet, string $name): int
+    {
+        return (int) $this->category($sheet, $name)['billMinor'];
+    }
+
+    private function targetAmount(array $sheet, string $name): int
+    {
+        $target = $this->category($sheet, $name)['target'];
+        self::assertIsArray($target);
+
+        return (int) $target['amountMinor'];
+    }
+
+    /** @param array<string, mixed> $sheet
+     *  @return array<string, mixed>
+     */
+    private function category(array $sheet, string $name): array
+    {
         foreach ($sheet['categories'] as $category) {
             if ($category['name'] === $name) {
-                return (int) $category['amountMinor'];
+                return $category;
             }
         }
         self::fail($name . ' is missing.');

@@ -39,27 +39,27 @@
   {#if ready && accounts.length === 0}
     <p class="muted">No accounts yet. A balance is a number you type.</p>
   {/if}
-  <div class="grid gap-3">
+  {#if accounts.length > 0}
+  <div class="bucket-board">
     {#each accounts as account (account.id)}
       <a
-        class="row stripe"
+        class="bucket-tile"
         style={`--tone: var(--tone-${account.type})`}
         href={`/accounts/${account.id}`}
         onclick={(event) => { event.preventDefault(); go(`/accounts/${account.id}`); }}
       >
-        <span class="flex items-center gap-3">
-          <Glyph name={account.type} />
-          <span>
-            <strong>{account.name}</strong>
-            <span class="block muted text-sm">
-              <span class="type-label">{account.type}</span>
-            {#if account.interestBps !== null} · {formatBps(account.interestBps)}%{/if}
-            {#if account.archivedAt} · archived{/if}
-            </span>
-          </span>
+        <span class="flex items-center gap-1">
+          <Glyph name={account.type} mini />
+          <strong>{account.name}</strong>
         </span>
-        <strong class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
+        <span class="muted text-sm">
+          <span class="type-label">{account.type}</span>
+          {#if account.interestBps !== null} · {formatBps(account.interestBps)}%{/if}
+          {#if account.archivedAt} · archived{/if}
+        </span>
+        <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
       </a>
     {/each}
   </div>
+  {/if}
 </div>

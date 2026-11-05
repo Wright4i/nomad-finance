@@ -41,6 +41,20 @@
       .filter((bill) => bill.status !== 'paid' && bill.recurrence !== 'once' && bill.lastPaidOn)
       .map((bill) => ({ ...bill, shownOn: bill.lastPaidOn ?? bill.nextDueDate })),
   ]);
+
+  function byDate(rows: Row[]): { date: string; bills: Row[] }[] {
+    const sorted = [...rows].sort((left, right) => left.shownOn.localeCompare(right.shownOn) || left.name.localeCompare(right.name) || left.id - right.id);
+    const days: { date: string; bills: Row[] }[] = [];
+    for (const bill of sorted) {
+      const last = days[days.length - 1];
+      if (!last || last.date !== bill.shownOn) {
+        days.push({ date: bill.shownOn, bills: [bill] });
+      } else {
+        last.bills.push(bill);
+      }
+    }
+    return days;
+  }
 </script>
 
 <div class="grid gap-5">
@@ -58,40 +72,48 @@
         {title}
       </h2>
       {#if rows.length === 0}<p class="muted m-0">None.</p>{/if}
-      {#each rows as bill (bill.id)}
-        <article class="card stripe grid gap-3" style={`--tone: var(--tone-${bill.type})`}>
-          <a class="flex justify-between gap-3 no-underline items-center" href={`/bills/${bill.id}`} onclick={(event) => { event.preventDefault(); go(`/bills/${bill.id}`); }}>
-            <span class="flex items-center gap-3">
-              <Glyph name={bill.type} />
-              <span>
-                <strong>{bill.name}</strong>
-                {#if bill.locked}<Glyph name="lock" mini />{/if}
-                <span class="block muted text-sm">
-                  <span class="type-label">{(bill.type === 'other' || bill.type === 'misc') && bill.otherLabel ? bill.otherLabel : bill.type}</span> · {formatDate(bill.shownOn)} · {bill.accountName} · {bill.recurrence}{bill.categoryName ? ` · ${bill.categoryName}` : ''}{bill.autopay ? ' · autopay' : ''}
-                </span>
-              </span>
-            </span>
-            <strong>{formatMinor(bill.amountMinor, bill.currency, bill.exponent)}</strong>
-          </a>
-          <div class="flex flex-wrap gap-2">
-            {#if !unpay && bill.status === 'active'}
-              <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
-              {#if !bill.locked}
-                <button class="btn" type="button" onclick={() => act(bill.id, 'pause')}>Pause</button>
-              {/if}
-            {/if}
-            {#if !unpay && bill.status === 'paused' && !bill.locked}
-              <button class="btn" type="button" onclick={() => act(bill.id, 'resume')}>Resume</button>
-              <button class="btn" type="button" onclick={() => act(bill.id, 'archive')}>Archive</button>
-            {/if}
-            {#if bill.status === 'archived'}
-              <button class="btn" type="button" onclick={() => act(bill.id, 'unarchive')}>Unarchive</button>
-            {/if}
-            {#if unpay}
-              <button class="btn" type="button" onclick={() => act(bill.id, 'unpay')}>Unpay</button>
-            {/if}
+      {#each byDate(rows) as day (day.date)}
+        <div class="bill-day">
+          <h3 class="bill-date m-0">{formatDate(day.date)}</h3>
+          <hr class="bill-date-rule" />
+          <div class="bill-columns">
+            {#each day.bills as bill (`${bill.id}-${bill.shownOn}`)}
+              <article class="card stripe grid gap-3" style={`--tone: var(--tone-${bill.type})`}>
+                <a class="flex justify-between gap-3 no-underline items-center" href={`/bills/${bill.id}`} onclick={(event) => { event.preventDefault(); go(`/bills/${bill.id}`); }}>
+                  <span class="flex items-center gap-3 min-w-0">
+                    <Glyph name={bill.type} />
+                    <span class="min-w-0">
+                      <strong>{bill.name}</strong>
+                      {#if bill.locked}<Glyph name="lock" mini />{/if}
+                      <span class="block muted text-sm">
+                        <span class="type-label">{(bill.type === 'other' || bill.type === 'misc') && bill.otherLabel ? bill.otherLabel : bill.type}</span> · {bill.accountName} · {bill.recurrence}{bill.categoryName ? ` · ${bill.categoryName}` : ''}{bill.autopay ? ' · autopay' : ''}
+                      </span>
+                    </span>
+                  </span>
+                  <strong class="money">{formatMinor(bill.amountMinor, bill.currency, bill.exponent)}</strong>
+                </a>
+                <div class="flex flex-wrap gap-2">
+                  {#if !unpay && bill.status === 'active'}
+                    <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
+                    {#if !bill.locked}
+                      <button class="btn" type="button" onclick={() => act(bill.id, 'pause')}>Pause</button>
+                    {/if}
+                  {/if}
+                  {#if !unpay && bill.status === 'paused' && !bill.locked}
+                    <button class="btn" type="button" onclick={() => act(bill.id, 'resume')}>Resume</button>
+                    <button class="btn" type="button" onclick={() => act(bill.id, 'archive')}>Archive</button>
+                  {/if}
+                  {#if bill.status === 'archived'}
+                    <button class="btn" type="button" onclick={() => act(bill.id, 'unarchive')}>Unarchive</button>
+                  {/if}
+                  {#if unpay}
+                    <button class="btn" type="button" onclick={() => act(bill.id, 'unpay')}>Unpay</button>
+                  {/if}
+                </div>
+              </article>
+            {/each}
           </div>
-        </article>
+        </div>
       {/each}
     </section>
   {/snippet}

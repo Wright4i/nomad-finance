@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import { formatMinor, formatMonth, minorToInput, parseSignedMajor, todayISO } from '../lib/money';
+  import { formatMinor, formatMonth, minorToInput, parseMajor, parseSignedMajor, todayISO } from '../lib/money';
   import { follow, go } from '../lib/nav.svelte.ts';
   import type { EnvelopeSheet, PeriodStep } from '../lib/types';
 
@@ -17,6 +17,7 @@
   let periodId = $state<number | null>(null);
   let upcoming = $state(false);
   let drafts = $state<Record<number, string>>({});
+  let maximumDrafts = $state<Record<number, string>>({});
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
@@ -34,10 +35,14 @@
     sheet = data;
     payCycleId = data.payCycleId;
     const next: Record<number, string> = {};
+    const caps: Record<number, string> = {};
     for (const category of data.categories) {
       next[category.id] = minorToInput(category.amountMinor, data.exponent);
+      const cap = category.target?.amountMinor;
+      caps[category.id] = cap === null || cap === undefined ? '' : minorToInput(cap, data.exponent);
     }
     drafts = next;
+    maximumDrafts = caps;
     ready = true;
   }
 
@@ -76,8 +81,12 @@
   }
 
   function holdOf(category: EnvelopeSheet['categories'][number]): number | null {
-    if (category.role === 'locked' || category.target?.kind !== 'balance' || !category.target.amountMinor) return null;
-    return category.target.amountMinor > 0 ? category.target.amountMinor : null;
+    if (category.role === 'locked') {
+      const bills = category.billMinor ?? 0;
+      return bills > 0 ? bills : null;
+    }
+    const cap = category.target?.amountMinor ?? 0;
+    return cap > 0 ? cap : null;
   }
 
   function levelOf(category: EnvelopeSheet['categories'][number], rows: EnvelopeSheet['categories']): number {
@@ -90,19 +99,41 @@
     return Math.min(1, amount / largest);
   }
 
+  function queueSave(): void {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void save(), 1000);
+  }
+
+  function saveNow(event: KeyboardEvent): void {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (saveTimer) clearTimeout(saveTimer);
+    void save();
+  }
+
   async function save(): Promise<void> {
     if (!sheet || !editable || sheet.payCycleId === null) return;
     fields = {};
     message = '';
-    const amounts = sheet.categories
-      .filter((category) => category.archivedAt === null && category.role !== 'locked')
+    const open = sheet.categories.filter((category) => category.archivedAt === null);
+    const amounts = open.map((category) => {
+      const raw = (drafts[category.id] ?? '').trim();
+      const amountMinor = raw === '' ? 0 : parseSignedMajor(raw, sheet.exponent);
+      if (amountMinor === null) {
+        fields[`amount-${category.id}`] = 'Enter an amount.';
+      }
+      return { categoryId: category.id, amountMinor: amountMinor ?? 0 };
+    });
+    const maximums = open
+      .filter((category) => category.role !== 'locked')
       .map((category) => {
-        const raw = (drafts[category.id] ?? '').trim();
-        const amountMinor = raw === '' ? 0 : parseSignedMajor(raw, sheet.exponent);
+        const raw = (maximumDrafts[category.id] ?? '').trim();
+        if (raw === '') return { categoryId: category.id, amountMinor: null };
+        const amountMinor = parseMajor(raw, sheet.exponent);
         if (amountMinor === null) {
-          fields[`amount-${category.id}`] = 'Enter an amount.';
+          fields[`maximum-${category.id}`] = 'Enter an amount.';
         }
-        return { categoryId: category.id, amountMinor: amountMinor ?? 0 };
+        return { categoryId: category.id, amountMinor };
       });
     if (Object.keys(fields).length > 0) return;
 
@@ -111,17 +142,21 @@
       const planning = sheet.period?.upcoming === true;
       const data = await api<EnvelopeSheet>('/api/envelopes', {
         method: 'PUT',
-        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, upcoming: planning },
+        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, maximums, upcoming: planning },
       });
       sheet = data;
       payCycleId = data.payCycleId;
       upcoming = data.period?.upcoming === true;
       periodId = null;
       const next: Record<number, string> = {};
+      const caps: Record<number, string> = {};
       for (const category of data.categories) {
         next[category.id] = minorToInput(category.amountMinor, data.exponent);
+        const cap = category.target?.amountMinor;
+        caps[category.id] = cap === null || cap === undefined ? '' : minorToInput(cap, data.exponent);
       }
       drafts = next;
+      maximumDrafts = caps;
     } catch (err) {
       const problem = explain(err);
       message = problem.message;
@@ -196,7 +231,7 @@
               {@const over = hold !== null && category.amountMinor > hold}
               {@const negative = category.amountMinor < 0}
               <article
-                class="bucket-tile"
+                class="bucket-tile envelope-tile"
                 class:over
                 style={`--tone: var(--tone-${group.id}); --level: ${levelOf(category, rows)}`}
               >
@@ -205,27 +240,46 @@
                   <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
                   <strong>{category.name}</strong>
                 </span>
-                {#if category.role === 'locked'}
-                  <strong class="money">{formatMinor(category.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
-                {:else}
+                <label class="bucket-field">
+                  <span>Assigned</span>
                   <input
                     name={`amount-${category.id}`}
+                    aria-label={`Assigned ${category.name}`}
                     inputmode="decimal"
                     disabled={!editable || category.archivedAt !== null}
                     value={drafts[category.id] ?? ''}
                     oninput={(event) => {
                       drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
-                      if (saveTimer) clearTimeout(saveTimer);
-                      saveTimer = setTimeout(() => void save(), 1000);
+                      queueSave();
                     }}
+                    onkeydown={saveNow}
                   />
-                  {#if over}
-                    <span>Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</span>
-                  {:else if negative}
-                    <span class="muted">{category.overspend === 'carry' ? 'Carry' : 'Cover now'}</span>
-                  {/if}
+                </label>
+                <label class="bucket-field">
+                  <span>Max</span>
+                  <input
+                    name={`maximum-${category.id}`}
+                    aria-label={`Maximum ${category.name}`}
+                    inputmode="decimal"
+                    disabled={!editable || category.archivedAt !== null || category.role === 'locked'}
+                    value={category.role === 'locked'
+                      ? minorToInput(category.billMinor ?? 0, sheet.exponent)
+                      : (maximumDrafts[category.id] ?? '')}
+                    oninput={(event) => {
+                      if (category.role === 'locked') return;
+                      maximumDrafts[category.id] = (event.currentTarget as HTMLInputElement).value;
+                      queueSave();
+                    }}
+                    onkeydown={saveNow}
+                  />
+                </label>
+                {#if over}
+                  <span>Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</span>
+                {:else if negative}
+                  <span class="muted">{category.overspend === 'carry' ? 'Carry' : 'Cover now'}</span>
                 {/if}
                 {#if fields[`amount-${category.id}`]}<em>{fields[`amount-${category.id}`]}</em>{/if}
+                {#if fields[`maximum-${category.id}`]}<em>{fields[`maximum-${category.id}`]}</em>{/if}
               </article>
             {/each}
             </div>

@@ -222,10 +222,19 @@ final class EnvelopesTest extends TestCase
             const tile = (name) => [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes(name));
             const read = (name) => {
                 const row = tile(name);
+                const water = row ? row.querySelector('.bucket-water') : null;
+                const box = water ? water.getBoundingClientRect() : null;
+                const assigned = row ? row.querySelector('input[name^="amount-"]') : null;
+                const maximum = row ? row.querySelector('input[name^="maximum-"]') : null;
                 return {
                     found: Boolean(row),
-                    input: row ? row.querySelector('input') !== null : false,
+                    input: assigned !== null,
+                    assignedDisabled: assigned ? assigned.disabled : true,
+                    maximumDisabled: maximum ? maximum.disabled : false,
+                    maximumValue: maximum ? maximum.value : '',
                     water: row ? row.style.getPropertyValue('--level') : '',
+                    positioned: water ? getComputedStyle(water).position : '',
+                    height: box ? box.height : 0,
                 };
             };
             return { needs: read('Needs 1'), wants: read('Wants 1'), rent: read('Rent') };
@@ -233,9 +242,16 @@ final class EnvelopesTest extends TestCase
         self::assertIsArray($bars);
         self::assertTrue($bars['needs']['found']);
         self::assertTrue($bars['needs']['input']);
+        self::assertFalse($bars['needs']['maximumDisabled']);
         self::assertTrue($bars['wants']['found']);
         self::assertTrue($bars['rent']['found']);
-        self::assertFalse($bars['rent']['input']);
+        self::assertTrue($bars['rent']['input']);
+        self::assertFalse($bars['rent']['assignedDisabled']);
+        self::assertTrue($bars['rent']['maximumDisabled']);
+        self::assertSame('600.00', $bars['rent']['maximumValue']);
+        self::assertSame('absolute', $bars['needs']['positioned']);
+        self::assertGreaterThan(0, (float) $bars['needs']['water']);
+        self::assertGreaterThan(8, (float) $bars['needs']['height']);
         self::waitForText('Nov 2026');
         self::click('Next month');
         self::waitForText('Dec 2026');

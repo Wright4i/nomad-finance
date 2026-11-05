@@ -258,6 +258,18 @@ final class CategoriesTest extends TestCase
         self::clickLink('Accounts');
         self::click('Show archived');
         self::waitForText('Checking 2');
+        $cards = self::driver()->executeScript(<<<'JS'
+            const tiles = [...document.querySelectorAll('a.bucket-tile')].slice(0, 2).map((tile) => {
+                const rect = tile.getBoundingClientRect();
+                return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+            });
+            return tiles;
+        JS);
+        self::assertIsArray($cards);
+        self::assertCount(2, $cards);
+        self::assertEqualsWithDelta($cards[0]['top'], $cards[1]['top'], 2);
+        self::assertGreaterThan($cards[0]['left'], $cards[1]['left']);
+        self::assertEqualsWithDelta($cards[0]['width'], $cards[0]['height'], 2);
         self::clickLinkContaining('Checking 2');
         self::click('Unarchive');
         self::waitForText('Checking 1');

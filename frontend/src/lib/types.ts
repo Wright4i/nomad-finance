@@ -87,6 +87,7 @@ export type EnvelopeCategory = {
   role?: 'goal' | 'locked';
   overspend: Overspend;
   amountMinor: number;
+  billMinor?: number;
   remainingMinor?: number;
   archivedAt: string | null;
   target: CategoryTarget | null;

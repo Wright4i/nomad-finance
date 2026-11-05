@@ -64,6 +64,9 @@ final class EnvelopeService
         }
 
         $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
+        $maximums = array_key_exists('maximums', $input)
+            ? $this->maximums(is_array($input['maximums']) ? $input['maximums'] : null)
+            : null;
         $this->pdo->beginTransaction();
         try {
             $kept = $this->pdo->prepare('SELECT category_id, amount_minor, filled_minor FROM assignments WHERE pay_period_id = ?');
@@ -92,7 +95,9 @@ final class EnvelopeService
             $ids = array_unique([...array_keys($amounts), ...array_keys($prior)]);
             foreach ($ids as $categoryId) {
                 $keptRow = $prior[$categoryId] ?? ['amount' => 0, 'filled' => 0];
-                $amount = isset($lockedIds[$categoryId]) ? $keptRow['amount'] : ($amounts[$categoryId] ?? 0);
+                $amount = isset($lockedIds[$categoryId])
+                    ? ($amounts[$categoryId] ?? $keptRow['amount'])
+                    : ($amounts[$categoryId] ?? 0);
                 $portion = $keptRow['filled'];
                 if ($amount === 0 && $portion === 0) {
                     continue;
@@ -100,6 +105,9 @@ final class EnvelopeService
                 $insert->execute([(int) $period['id'], $categoryId, $amount, $portion]);
             }
             $this->syncAmounts($today);
+            if ($maximums !== null) {
+                $this->saveMaximums($maximums);
+            }
             $this->pdo->commit();
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -615,7 +623,8 @@ final class EnvelopeService
                         WHEN a.amount_minor > 0 THEN a.amount_minor
                         WHEN a.amount_minor < 0 AND c.overspend = \'carry\' THEN a.amount_minor
                         ELSE 0
-                    END AS amount_minor
+                    END AS amount_minor,
+                    COALESCE(a.filled_minor, 0) AS filled_minor
              FROM categories c
              LEFT JOIN assignments a ON a.category_id = c.id AND a.pay_period_id = ?
              WHERE c.user_id = ? AND (c.archived_at IS NULL OR a.id IS NOT NULL)
@@ -640,6 +649,7 @@ final class EnvelopeService
                 'role' => (string) ($row['role'] ?? 'goal'),
                 'overspend' => (string) $row['overspend'],
                 'amountMinor' => (int) $row['amount_minor'],
+                'filledMinor' => (int) $row['filled_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
             ];
         }
@@ -689,7 +699,8 @@ final class EnvelopeService
     {
         $stmt = $this->pdo->prepare(
             'SELECT c.id, c.name, c.category_group, c.role, c.overspend, c.archived_at,
-                    COALESCE(a.amount_minor, 0) AS amount_minor
+                    COALESCE(a.amount_minor, 0) AS amount_minor,
+                    COALESCE(a.filled_minor, 0) AS filled_minor
              FROM categories c
              LEFT JOIN assignments a ON a.category_id = c.id AND a.pay_period_id = ?
              WHERE c.user_id = ? AND (c.archived_at IS NULL OR a.id IS NOT NULL)
@@ -714,6 +725,7 @@ final class EnvelopeService
                 'role' => (string) ($row['role'] ?? 'goal'),
                 'overspend' => (string) $row['overspend'],
                 'amountMinor' => (int) $row['amount_minor'],
+                'filledMinor' => (int) $row['filled_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
             ];
         }
@@ -822,6 +834,92 @@ final class EnvelopeService
         return $amounts;
     }
 
+    /**
+     * A blank maximum clears a balance target. A dated target keeps its date and only the amount changes.
+     *
+     * @param list<mixed>|null $rows
+     * @return array<int, ?int>
+     */
+    private function maximums(?array $rows): array
+    {
+        if ($rows === null) {
+            throw new ApiException(422, 'Check the highlighted fields.', [
+                'maximums' => 'Enter a maximum for each bucket.',
+            ]);
+        }
+
+        $maximums = [];
+        $errors = [];
+        foreach ($rows as $index => $row) {
+            if (!is_array($row)) {
+                $errors['maximums'] = 'Enter a maximum for each bucket.';
+                continue;
+            }
+            $categoryId = $this->asInt($row['categoryId'] ?? null) ?? 0;
+            $key = 'maximum-' . ($categoryId > 0 ? (string) $categoryId : (string) $index);
+            if ($categoryId < 1 || !$this->ownsCategory($categoryId)) {
+                $errors[$key] = 'Choose a bucket.';
+                continue;
+            }
+            if (array_key_exists($categoryId, $maximums)) {
+                $errors[$key] = 'Each bucket is listed once.';
+                continue;
+            }
+            if (!array_key_exists('amountMinor', $row) || $row['amountMinor'] === null) {
+                $maximums[$categoryId] = null;
+                continue;
+            }
+            $amount = $this->asInt($row['amountMinor']);
+            if ($amount === null || $amount < 0) {
+                $errors[$key] = 'Enter an amount.';
+                continue;
+            }
+            $maximums[$categoryId] = $amount;
+        }
+
+        if ($errors !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $errors);
+        }
+
+        return $maximums;
+    }
+
+    /** @param array<int, ?int> $maximums */
+    private function saveMaximums(array $maximums): void
+    {
+        if ($maximums === []) {
+            return;
+        }
+        $role = $this->pdo->prepare('SELECT role FROM categories WHERE id = ? AND user_id = ?');
+        $existing = $this->pdo->prepare(
+            'SELECT kind, target_date, pay_cycle_id FROM targets WHERE category_id = ? AND user_id = ?'
+        );
+        foreach ($maximums as $categoryId => $amount) {
+            $role->execute([$categoryId, $this->actor->id()]);
+            if ((string) $role->fetchColumn() !== 'goal') {
+                continue;
+            }
+            $existing->execute([$categoryId, $this->actor->id()]);
+            $previous = $existing->fetch();
+            if ($amount === null || $amount < 1) {
+                if (is_array($previous) && (string) $previous['kind'] === 'balance') {
+                    $this->targets->replace($categoryId, null);
+                }
+                continue;
+            }
+            if (is_array($previous) && (string) $previous['kind'] === 'needed') {
+                $this->targets->replace($categoryId, [
+                    'kind' => 'needed',
+                    'amountMinor' => $amount,
+                    'targetDate' => (string) $previous['target_date'],
+                    'payCycleId' => (int) $previous['pay_cycle_id'],
+                ]);
+                continue;
+            }
+            $this->targets->replace($categoryId, ['kind' => 'balance', 'amountMinor' => $amount]);
+        }
+    }
+
     private function ownsCategory(int $id): bool
     {
         $stmt = $this->pdo->prepare(
@@ -899,8 +997,18 @@ final class EnvelopeService
     private function withBills(array $categories, ?array $period, string $today): array
     {
         $picture = $this->billPicture($period, $today);
+        $live = is_array($period)
+            && (($period['editable'] ?? false) === true || ($period['upcoming'] ?? false) === true);
         foreach ($categories as $index => $category) {
-            $categories[$index]['bills'] = $picture['bills'][(int) $category['id']] ?? [];
+            $list = $picture['bills'][(int) $category['id']] ?? [];
+            $categories[$index]['bills'] = $list;
+            $bills = 0;
+            if ($live) {
+                foreach ($list as $bill) {
+                    $bills += (int) $bill['amountMinor'];
+                }
+            }
+            $categories[$index]['billMinor'] = $bills;
         }
 
         return $categories;
