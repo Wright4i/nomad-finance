@@ -13,12 +13,9 @@ use App\Database\Database;
 use App\Dashboard\DashboardService;
 use App\Demo\DemoLibrary;
 use App\Envelope\EnvelopeService;
-use App\ExchangeRate\FailingRateFeed;
-use App\ExchangeRate\RateService;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
-use App\Posting\PostingService;
 use App\Target\TargetService;
 use App\Trip\Drive;
 use App\Trip\TripService;
@@ -59,9 +56,8 @@ final class EnvelopeRulesTest extends TestCase
         ]);
         $this->ownerId = (int) $_SESSION['user_id'];
         $auth->enterDemo();
-        $rates = new RateService($this->pdo, $catalog, $actor, new FailingRateFeed());
         $targets = new TargetService($this->pdo, $actor);
-        $this->envelopes = new EnvelopeService($this->pdo, $actor, $rates, $catalog, $targets);
+        $this->envelopes = new EnvelopeService($this->pdo, $actor, $catalog, $targets);
         $this->categories = new CategoryService($this->pdo, $actor, $targets);
         $this->bills = new BillService($this->pdo, $catalog, $actor);
         $this->accounts = new AccountService($this->pdo, $catalog, $actor);
@@ -87,11 +83,10 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame(-15000, $this->amount($sheet, 'Wants 1'));
         self::assertSame('cover', $this->namedCategory('Needs 1')['overspend']);
         self::assertSame('carry', $this->namedCategory('Wants 1')['overspend']);
-        self::assertSame(1335018, $sheet['poolMinor']);
+        self::assertSame(1379500, $sheet['poolMinor']);
         self::assertSame(50000, $sheet['assignedMinor']);
-        self::assertSame(1285018, $sheet['availableMinor']);
-        self::assertSame('Cash 3', $sheet['leftOut'][0]['name']);
-        self::assertSame('KPW', $sheet['leftOut'][0]['currency']);
+        self::assertSame(1329500, $sheet['availableMinor']);
+        self::assertSame([], $sheet['leftOut']);
         self::assertSame(['2026-12-01', '2026-12-31'], [$sheet['nextPeriod']['start'], $sheet['nextPeriod']['end']]);
         self::assertFalse($sheet['celebrate']);
 
@@ -106,12 +101,12 @@ final class EnvelopeRulesTest extends TestCase
         $this->setBalance('Checking 1', $checking - 1000);
         $this->setBalance('Cash 1', $cash + 1000);
         $moved = $this->envelopes->show('2026-11-03');
-        self::assertSame(1285018, $moved['availableMinor']);
+        self::assertSame(1329500, $moved['availableMinor']);
 
         $card = $this->balance('Card 1');
         $this->setBalance('Card 1', $card + 50000);
         $untouched = $this->envelopes->show('2026-11-03');
-        self::assertSame(1285018, $untouched['availableMinor']);
+        self::assertSame(1329500, $untouched['availableMinor']);
 
         $bill = $this->bill('One-Time Bill');
         self::assertSame('Needs 1', $bill['categoryName']);
@@ -140,7 +135,7 @@ final class EnvelopeRulesTest extends TestCase
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 60000]],
         ]);
         self::assertSame(60000, $this->amount($saved, 'Needs 1'));
-        self::assertSame(1275018, $saved['availableMinor']);
+        self::assertSame(1319500, $saved['availableMinor']);
         self::assertSame($before, $this->balance('Checking 1'));
 
         $closed = $this->envelopes->show('2026-11-03', $saved['payCycleId'], $sheet['closed'][0]['id']);
@@ -303,21 +298,19 @@ final class EnvelopeRulesTest extends TestCase
     {
         $catalog = new CurrencyCatalog();
         $actor = new Actor($this->pdo);
-        $rates = new RateService($this->pdo, $catalog, $actor, new FailingRateFeed());
         $dashboard = new DashboardService(
             $this->pdo,
             $catalog,
-            $rates,
             $actor,
             $this->envelopes,
             new PayCycleService($this->pdo, $actor),
-            new TripService($this->pdo, $actor, $catalog, new PostingService($this->pdo, $actor, $catalog), new Drive(false)),
+            new TripService($this->pdo, $actor, $catalog, new Drive(false)),
         );
 
         $sheet = $dashboard->show('2026-11-03');
 
-        self::assertSame(3596000, $sheet['incomeMinor']);
-        self::assertSame(1285018, $sheet['envelopes']['availableMinor']);
+        self::assertSame(3996000, $sheet['incomeMinor']);
+        self::assertSame(1329500, $sheet['envelopes']['availableMinor']);
         $byPayor = [];
         foreach ($sheet['income'] as $row) {
             $byPayor[$row['payor']] = $row['paycheckMinor'];
@@ -329,7 +322,8 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame(150000, $byPayor['Irregular Payor']);
         self::assertSame(220000, $byPayor['Weekday Payor']);
         self::assertSame(1936000, $byPayor['Monthly Weekday Payor']);
-        self::assertCount(7, $byPayor);
+        self::assertSame(400000, $byPayor['Averaged Payor']);
+        self::assertCount(8, $byPayor);
         self::assertSame('2026-10-01', $sheet['envelopes']['previousPeriod']['start']);
         self::assertSame('2026-12-01', $sheet['envelopes']['stepNext']['start']);
         self::assertTrue($sheet['envelopes']['stepNext']['upcoming']);
@@ -342,8 +336,8 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame('2026-10-01', $closed['envelopes']['period']['start']);
         self::assertFalse($closed['envelopes']['period']['editable']);
         self::assertSame(20000, $this->amount($closed['envelopes'], 'Needs 1'));
-        self::assertSame(1285018, $closed['envelopes']['availableMinor']);
-        self::assertSame(3596000, $closed['incomeMinor']);
+        self::assertSame(1329500, $closed['envelopes']['availableMinor']);
+        self::assertSame(3996000, $closed['incomeMinor']);
 
         $upcoming = $dashboard->show('2026-11-03', $sheet['envelopes']['payCycleId'], null, true);
         self::assertTrue($upcoming['envelopes']['period']['upcoming']);
@@ -351,8 +345,8 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame('2026-12-01', $upcoming['envelopes']['period']['start']);
         self::assertSame(50000, $this->amount($upcoming['envelopes'], 'Needs 1'));
         self::assertSame(-15000, $this->amount($upcoming['envelopes'], 'Wants 1'));
-        self::assertSame(1285018, $upcoming['envelopes']['availableMinor']);
-        self::assertSame(3596000, $upcoming['incomeMinor']);
+        self::assertSame(1329500, $upcoming['envelopes']['availableMinor']);
+        self::assertSame(3996000, $upcoming['incomeMinor']);
     }
 
     public function testAGroupPastItsShareIsOver(): void
@@ -445,7 +439,7 @@ final class EnvelopeRulesTest extends TestCase
 
         $sheet = $this->envelopes->show('2026-11-03');
 
-        self::assertSame('Biweekly Payor', $this->payor($sheet));
+        self::assertSame('Averaged Payor', $this->payor($sheet));
         self::assertSame(4200, $this->amount($sheet, 'Needs 1'));
         self::assertSame(4200, $this->namedCategory('Needs 1')['amountMinor']);
         self::assertSame(0, $this->amount($this->envelopes->show('2026-11-03', $this->payCycleId($sheet, 'Monthly Payor')), 'Needs 1'));
@@ -472,7 +466,7 @@ final class EnvelopeRulesTest extends TestCase
             'amounts' => [['categoryId' => $this->categoryId($week, 'Wants 1'), 'amountMinor' => 2500]],
         ]);
         self::assertSame(2500, $this->amount($saved, 'Wants 1'));
-        self::assertSame(1285018 - 2500, $saved['availableMinor']);
+        self::assertSame(1329500 - 2500, $saved['availableMinor']);
         self::assertSame(-12500, $this->namedCategory('Wants 1')['amountMinor']);
 
         $monthly = $this->envelopes->show('2026-11-03', $sheet['payCycleId']);

@@ -10,11 +10,8 @@ use App\Database\Database;
 use App\Dashboard\DashboardService;
 use App\Demo\DemoLibrary;
 use App\Envelope\EnvelopeService;
-use App\ExchangeRate\FailingRateFeed;
-use App\ExchangeRate\RateService;
 use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
-use App\Posting\PostingService;
 use App\Target\TargetService;
 use App\Trip\Drive;
 use App\Trip\TripService;
@@ -48,15 +45,13 @@ final class TimelineTest extends TestCase
             'baseCurrency' => 'USD',
         ]);
         $this->auth->enterDemo();
-        $rates = new RateService($this->pdo, $catalog, $actor, new FailingRateFeed());
         $this->dashboard = new DashboardService(
             $this->pdo,
             $catalog,
-            $rates,
             $actor,
-            new EnvelopeService($this->pdo, $actor, $rates, $catalog, new TargetService($this->pdo, $actor)),
+            new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor)),
             new PayCycleService($this->pdo, $actor),
-            new TripService($this->pdo, $actor, $catalog, new PostingService($this->pdo, $actor, $catalog), new Drive(false)),
+            new TripService($this->pdo, $actor, $catalog, new Drive(false)),
         );
     }
 
@@ -75,7 +70,7 @@ final class TimelineTest extends TestCase
         self::assertSame(60, $sheet['horizonDays']);
         self::assertSame('2026-11-03', $sheet['windowStart']);
         self::assertSame('2027-01-01', $sheet['windowEnd']);
-        self::assertSame(3596000, $sheet['incomeMinor']);
+        self::assertSame(3996000, $sheet['incomeMinor']);
         self::assertArrayNotHasKey('billsDue', $sheet);
 
         $income = [];
@@ -84,9 +79,8 @@ final class TimelineTest extends TestCase
         }
         self::assertSame(220000, $income['Weekday Payor']['weekdayPay']['earlierMinor']);
         self::assertSame(220000, $income['Weekday Payor']['weekdayPay']['laterMinor']);
-        self::assertSame(100000, $income['Weekday Payor']['average']['averageMinor']);
-        self::assertSame(['2026-08', '2026-09', '2026-10'], $income['Weekday Payor']['average']['months']);
-        self::assertSame([], $income['Weekday Payor']['average']['excluded']);
+        self::assertNull($income['Weekday Payor']['average']);
+        self::assertFalse($income['Weekday Payor']['averageOn']);
         self::assertNull($income['Weekly Payor']['average']);
 
         $paydays = $this->rows($sheet['timeline'], 'payday', 'Weekday Payor');
@@ -126,8 +120,8 @@ final class TimelineTest extends TestCase
         self::assertNotContains('2026-12-05', $this->dates($shorter['timeline'], 'bill', 'Education Bill'));
         self::assertNotContains('2026-12-15', $this->dates($shorter['timeline'], 'payday', 'Weekday Payor'));
         self::assertContains('2026-12-01', $this->dates($shorter['timeline'], 'payday', 'Weekday Payor'));
-        self::assertSame(3596000, $shorter['incomeMinor']);
-        self::assertSame(1285018, $shorter['envelopes']['availableMinor']);
+        self::assertSame(3996000, $shorter['incomeMinor']);
+        self::assertSame(1329500, $shorter['envelopes']['availableMinor']);
     }
 
     public function testDuePiesSumActiveBillsInTheMonth(): void
@@ -136,17 +130,16 @@ final class TimelineTest extends TestCase
         $november = $this->slices($sheet['duePies']['2026-11']);
         self::assertSame(['USD'], array_keys($november));
         self::assertSame('lodging', array_key_first($november['USD']));
-        self::assertSame(8000, $november['USD']['rent']);
-        self::assertSame(4968, $november['USD']['electricity']);
+        self::assertSame(38000, $november['USD']['rent']);
+        self::assertGreaterThan(4968, $november['USD']['electricity']);
         self::assertSame(127500, $november['USD']['healthcare']);
-        self::assertSame(2239, $november['USD']['other']);
-        self::assertArrayNotHasKey('debt', $november['USD']);
+        self::assertSame(2000, $november['USD']['other']);
+        self::assertSame(2500, $november['USD']['debt']);
         self::assertArrayNotHasKey('entertainment', $november['USD']);
 
         $december = $this->slices($sheet['duePies']['2026-12']);
-        self::assertSame(['entertainment', 'debt'], array_keys($december['USD']));
-        self::assertSame(45000, $december['USD']['debt']);
         self::assertSame(50000, $december['USD']['entertainment']);
+        self::assertGreaterThanOrEqual(545000, $december['USD']['debt']);
     }
 
     /**

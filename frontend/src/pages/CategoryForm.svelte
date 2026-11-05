@@ -32,8 +32,8 @@
   let name = $state('');
   let group = $state('needs');
   let overspend = $state<Overspend>('cover');
-  let role = $state<'default' | 'fuel' | 'goal'>('goal');
-  let locked = $derived(role !== 'goal');
+  let role = $state<'goal' | 'locked'>('goal');
+  let locked = $derived(role === 'locked');
   let targetKind = $state<'none' | CategoryTarget['kind']>('none');
   let targetAmount = $state('');
   let targetDate = $state('');
@@ -223,7 +223,7 @@
     {#if fields.target}<em>{fields.target}</em>{/if}
   </div>
   {/if}
-  {#if locked || targetKind === 'needed' || targetKind === 'balance'}
+  {#if !locked && (targetKind === 'needed' || targetKind === 'balance')}
     <label class="field">
       <span>Amount</span>
       <input name="targetAmount" inputmode="decimal" bind:value={targetAmount} />
@@ -263,12 +263,12 @@
 </form>
 
 <dialog class="modal" bind:this={dialog} aria-labelledby="archive-title">
-  <div class="grid gap-3">
+  <div class="modal-body">
     <h2 id="archive-title" class="text-xl m-0">Archive this bucket?</h2>
     <p class="m-0">Archiving hides the name. The bucket stays in the books.</p>
-    <div class="flex flex-wrap gap-2">
-      <button class="btn" type="button" onclick={closeArchive}>Cancel</button>
-      <button class="btn danger" type="button" disabled={saving} onclick={archive}>Archive bucket</button>
-    </div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={closeArchive}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={archive}>Archive bucket</button>
   </div>
 </dialog>

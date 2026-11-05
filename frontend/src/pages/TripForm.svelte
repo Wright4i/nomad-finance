@@ -2,11 +2,11 @@
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Globe from '../components/Globe.svelte';
-  import { api, ApiError, explain } from '../lib/api';
+  import { api, explain } from '../lib/api';
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
-  import { exponentOf, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
-  import type { Account, Category, ChargeQuote, Trip } from '../lib/types';
+  import type { Account, Trip } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
 
@@ -26,31 +26,19 @@
   let total = $state('');
   let amountDue = $state('');
   let accounts = $state<Account[]>([]);
-  let categories = $state<Category[]>([]);
-  let categoryId = $state('');
   let search = $state('');
   let places = $state<{ name: string; latitude: string; longitude: string }[]>([]);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
-  let quote = $state<ChargeQuote | null>(null);
-  let pendingId = $state<number | null>(null);
-  let applyCharge = $state(false);
-  let dialog: HTMLDialogElement | undefined = $state();
 
   let account = $derived(accounts.find((item) => String(item.id) === accountId) ?? null);
-  let exponent = $derived(account ? account.exponent : exponentOf('USD'));
-  let currency = $derived(account?.currency ?? 'USD');
+  let exponent = $derived(account ? account.exponent : 2);
 
   onMount(async () => {
     try {
-      const [accountData, categoryData] = await Promise.all([
-        api<{ accounts: Account[] }>('/api/accounts'),
-        api<{ categories: Category[] }>('/api/categories'),
-      ]);
+      const accountData = await api<{ accounts: Account[] }>('/api/accounts');
       accounts = accountData.accounts;
-      categories = categoryData.categories;
-      if (categories[0]) categoryId = String(categories[0].id);
       if (!id && accounts[0]) accountId = String(accounts[0].id);
       if (!id) return;
       const data = await api<{ trip: Trip }>(`/api/trips/${id}?today=${todayISO()}`);
@@ -183,36 +171,9 @@
     try {
       const path = id ? `/api/trips/${id}` : '/api/trips';
       const method = id ? 'PATCH' : 'POST';
-      const data = await api<{ trip: Trip }>(path, { method, body: body(applyCharge ? { applyCharge: true } : {}) });
-      applyCharge = false;
-      const trip = data.trip;
-      if (!id && trip.depositMinor > 0 && !trip.depositCharged) {
-        pendingId = trip.id;
-        const quoted = await api<{ quote: ChargeQuote }>(`/api/trips/${trip.id}/quote`, {
-          method: 'POST',
-          body: { part: 'deposit' },
-        });
-        quote = quoted.quote;
-        dialog?.showModal();
-        return;
-      }
+      await api<{ trip: Trip }>(path, { method, body: body() });
       go('/trips');
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && err.fields.oldBalanceMinor) {
-        quote = {
-          accountName: err.fields.accountName ?? account?.name ?? '',
-          currency,
-          exponent,
-          oldBalanceMinor: Number(err.fields.oldBalanceMinor),
-          newBalanceMinor: Number(err.fields.newBalanceMinor),
-          refused: err.fields.refused ?? null,
-          overLimit: false,
-          amountMinor: 0,
-        };
-        applyCharge = true;
-        dialog?.showModal();
-        return;
-      }
       const problem = explain(err);
       message = problem.message;
       fields = problem.fields;
@@ -221,38 +182,9 @@
     }
   }
 
-  async function apply(): Promise<void> {
-    if (applyCharge && id) {
-      try {
-        await api(`/api/trips/${id}`, { method: 'PATCH', body: body({ applyCharge: true }) });
-        dialog?.close();
-        go('/trips');
-      } catch (err) {
-        message = explain(err).message;
-      }
-      return;
-    }
-    if (pendingId === null) return;
-    try {
-      await api(`/api/trips/${pendingId}/apply`, {
-        method: 'POST',
-        body: { part: 'deposit', categoryId: Number(categoryId), today: todayISO() },
-      });
-      dialog?.close();
-      go('/trips');
-    } catch (err) {
-      message = explain(err).message;
-    }
-  }
-
-  function skip(): void {
-    dialog?.close();
-    go('/trips');
-  }
-
   async function remove(): Promise<void> {
     if (!id) return;
-    if (!confirm('Delete this stay and reverse its lodging charges?')) return;
+    if (!confirm('Delete this stay?')) return;
     await api(`/api/trips/${id}/delete`, { method: 'POST', body: { confirm: true } });
     go('/trips');
   }
@@ -349,27 +281,3 @@
     {#if id}<button class="btn danger" type="button" onclick={remove}>Delete</button>{/if}
   </div>
 </form>
-
-<dialog class="modal" bind:this={dialog}>
-  {#if quote}
-    <h2 class="m-0 text-2xl">Charge the deposit?</h2>
-    <p>{quote.accountName}</p>
-    <p>{formatMinor(quote.oldBalanceMinor, quote.currency, quote.exponent)} → {formatMinor(quote.newBalanceMinor, quote.currency, quote.exponent)}</p>
-    {#if quote.overLimit}<p>This would put the card over its limit.</p>{/if}
-    {#if quote.refused}<p>{quote.refused}</p>{/if}
-    {#if !applyCharge}
-      <label class="field">
-        <span>Bucket</span>
-        <select name="categoryId" bind:value={categoryId}>
-          {#each categories as category (category.id)}
-            <option value={String(category.id)}>{category.name}</option>
-          {/each}
-        </select>
-      </label>
-    {/if}
-    <div class="flex gap-2">
-      {#if !quote.refused}<button class="btn primary" type="button" onclick={apply}>Apply</button>{/if}
-      <button class="btn" type="button" onclick={skip}>Skip</button>
-    </div>
-  {/if}
-</dialog>

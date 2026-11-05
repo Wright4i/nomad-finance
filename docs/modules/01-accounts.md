@@ -5,12 +5,12 @@ Create and edit an account for the signed-in user. Demo and the owner do not see
 | Field | Rule |
 | --- | --- |
 | Name | Required, trimmed, 1–80 characters |
-| Type | checking, savings, cash, credit, loan, other |
+| Type | checking, savings, cash, credit, loan, fuel, other |
 | Side | Implied, except other, which asks asset or liability |
-| Currency | One ISO code, chosen from the dropdown as `USD (US Dollar)` |
-| Balance | Integer minor units, zero or greater |
+| Currency | Not asked. The account is stored as dollars |
+| Balance | Integer cents, zero or greater |
 | Interest | Optional basis points, 0–100000 |
-| Minimum due | Optional, credit and loan only, same currency as the account |
+| Minimum due | Optional, credit and loan only, in cents |
 | Due day | Optional, credit and loan only, 1–31 |
 | Credit limit | Optional, credit only |
 | Institution | Optional, up to 120 characters |

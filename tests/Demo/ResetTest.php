@@ -13,7 +13,6 @@ use App\Database\Database;
 use App\Demo\DemoLibrary;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
-use App\Money\RateBaseline;
 use App\PayCycle\PayCycleService;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -73,7 +72,7 @@ final class ResetTest extends TestCase
         $demo = $auth->enterDemo();
         self::assertSame('demo', $demo['role']);
         $seeded = $accounts->list(false);
-        self::assertCount(10, $seeded);
+        self::assertCount(11, $seeded);
         $checking = $this->named($seeded, 'Checking 1');
         self::assertSame('checking', $checking['type']);
         self::assertSame(249000, $checking['balanceMinor']);
@@ -84,7 +83,7 @@ final class ResetTest extends TestCase
             'currency' => 'USD',
             'balanceMinor' => 100,
         ]);
-        self::assertCount(11, $accounts->list(false));
+        self::assertCount(12, $accounts->list(false));
 
         try {
             $accounts->get($harbor['id']);
@@ -95,7 +94,7 @@ final class ResetTest extends TestCase
 
         (new DemoLibrary($this->pdo, $catalog))->resetDemo();
         $restored = $accounts->list(false);
-        self::assertCount(10, $restored);
+        self::assertCount(11, $restored);
         $names = array_column($restored, 'name');
         self::assertNotContains('Scratch', $names);
         self::assertContains('Checking 1', $names);
@@ -125,7 +124,7 @@ final class ResetTest extends TestCase
             'SELECT DISTINCT type FROM accounts WHERE user_id = ? ORDER BY type',
             [$demoId],
         );
-        self::assertSame(['cash', 'checking', 'credit', 'loan', 'other', 'savings'], $types);
+        self::assertSame(['cash', 'checking', 'credit', 'fuel', 'loan', 'other', 'savings'], $types);
 
         $otherSides = $this->column(
             "SELECT DISTINCT side FROM accounts WHERE user_id = ? AND type = 'other' ORDER BY side",
@@ -146,17 +145,23 @@ final class ResetTest extends TestCase
             array_map(intval(...), $card->fetch() ?: []),
         );
 
-        $rates = $this->column(
-            'SELECT rate FROM exchange_rates WHERE user_id = ? AND currency = \'JPY\'',
+        $currencies = $this->column(
+            'SELECT DISTINCT currency FROM accounts WHERE user_id = ?',
             [$demoId],
         );
-        self::assertSame([RateBaseline::rates()['JPY']], $rates);
-        $eurRates = $this->pdo->prepare('SELECT COUNT(*) FROM exchange_rates WHERE user_id = ? AND currency = \'EUR\'');
-        $eurRates->execute([$demoId]);
-        self::assertSame(1, (int) $eurRates->fetchColumn());
-        $rateCount = $this->pdo->prepare('SELECT COUNT(*) FROM exchange_rates WHERE user_id = ?');
-        $rateCount->execute([$demoId]);
-        self::assertSame(count(RateBaseline::rates()), (int) $rateCount->fetchColumn());
+        self::assertSame(['USD'], $currencies);
+        $cash = $this->pdo->prepare(
+            'SELECT name, balance_minor FROM accounts WHERE user_id = ? AND name IN (\'Savings 2\', \'Cash 2\', \'Cash 3\') ORDER BY name'
+        );
+        $cash->execute([$demoId]);
+        self::assertSame([
+            ['name' => 'Cash 2', 'balance_minor' => 100000],
+            ['name' => 'Cash 3', 'balance_minor' => 10000],
+            ['name' => 'Savings 2', 'balance_minor' => 20000],
+        ], $cash->fetchAll());
+        self::assertSame(0, (int) $this->pdo->query(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('exchange_rates', 'postings', 'posting_lines')"
+        )->fetchColumn());
 
         $billTypes = $this->column(
             'SELECT DISTINCT b.type FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? ORDER BY b.type',
@@ -183,16 +188,25 @@ final class ResetTest extends TestCase
             'SELECT DISTINCT b.status FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? ORDER BY b.status',
             [$demoId],
         );
-        self::assertSame(['active', 'paid', 'paused'], $statuses);
+        self::assertSame(['active', 'archived', 'paid', 'paused'], $statuses);
 
         $names = $this->column(
             'SELECT b.name FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? ORDER BY b.name',
             [$demoId],
         );
         self::assertSame([
+            'Archived Bill',
+            'Card 1',
             'Childcare Bill',
             'Education Bill',
             'Emergency Bill',
+            'Fuel 1',
+            'Fuel 1',
+            'Fuel 1',
+            'Fuel 1',
+            'Fuel 1',
+            'Fuel 1',
+            'Fuel 1',
             'Fuel Bill',
             'Groceries Bill',
             'Insurance Bill',
@@ -200,6 +214,7 @@ final class ResetTest extends TestCase
             'Investments Bill',
             'Laundry Bill',
             'Liquidities Bill',
+            'Loan 1',
             'Lodging Bill',
             'Mailbox Bill',
             'Maintenance Bill',
@@ -243,10 +258,9 @@ final class ResetTest extends TestCase
         $ownerId = $_SESSION['user_id'];
         $actor = new Actor($this->pdo);
         $categories = new CategoryService($this->pdo, $actor, new TargetService($this->pdo, $actor));
-        self::assertSame(
-            ['Needs Default', 'Fuel Bucket', 'Wants Default', 'Savings Default'],
-            array_column($categories->list(true), 'name'),
-        );
+        $ownerNames = array_column($categories->list(true), 'name');
+        self::assertContains('Rent', $ownerNames);
+        self::assertNotContains('Needs Default', $ownerNames);
 
         $auth->enterDemo();
         $categories->create(['name' => 'Scratch Category', 'group' => 'wants']);
@@ -257,14 +271,12 @@ final class ResetTest extends TestCase
         foreach ($rows as $row) {
             $byName[(string) $row['name']] = $row;
         }
-        self::assertSame(
-            [
-                'Needs Default', 'Fuel Bucket', 'Archived Category', 'Needs 1',
-                'Wants Default', 'Wants 1',
-                'Savings Default', 'Needed By Date 1', 'Savings 1', 'Target Balance 1',
-            ],
-            array_column($rows, 'name'),
-        );
+        $names = array_column($rows, 'name');
+        foreach (['Archived Category', 'Needs 1', 'Wants 1', 'Needed By Date 1', 'Savings 1', 'Target Balance 1', 'Fuel', 'Rent'] as $expected) {
+            self::assertContains($expected, $names);
+        }
+        self::assertNotContains('Needs Default', $names);
+        self::assertNotContains('Fuel Bucket', $names);
         self::assertNull($byName['Needs 1']['target']);
         self::assertSame('needed', $byName['Needed By Date 1']['target']['kind']);
         self::assertSame(120000, $byName['Needed By Date 1']['target']['amountMinor']);
@@ -288,10 +300,9 @@ final class ResetTest extends TestCase
         self::assertNotContains('Archived Category', array_column($categories->list(false), 'name'));
 
         $_SESSION['user_id'] = $ownerId;
-        self::assertSame(
-            ['Needs Default', 'Fuel Bucket', 'Wants Default', 'Savings Default'],
-            array_column($categories->list(true), 'name'),
-        );
+        $restored = array_column($categories->list(true), 'name');
+        self::assertContains('Rent', $restored);
+        self::assertNotContains('Needs 1', $restored);
     }
 
     public function testSeedStoresOneCyclePerPayor(): void
@@ -324,7 +335,7 @@ final class ResetTest extends TestCase
             $byName[(string) $row['payor']] = $row;
         }
         self::assertSame(
-            ['Archived Payor', 'Biweekly Payor', 'Irregular Payor', 'Monthly Payor', 'Monthly Weekday Payor', 'Semimonthly Payor', 'Weekday Payor', 'Weekly Payor'],
+            ['Archived Payor', 'Averaged Payor', 'Biweekly Payor', 'Irregular Payor', 'Monthly Payor', 'Monthly Weekday Payor', 'Semimonthly Payor', 'Weekday Payor', 'Weekly Payor'],
             array_column($rows, 'payor'),
         );
         self::assertNotContains('Scratch Payor', array_column($rows, 'payor'));
@@ -344,10 +355,12 @@ final class ResetTest extends TestCase
         self::assertSame(22, $byName['Monthly Weekday Payor']['monthlyWeekday']['weekdays']);
         self::assertSame(15, $byName['Semimonthly Payor']['secondDay']);
         self::assertSame('weekdays', $byName['Weekday Payor']['hoursMode']);
-        self::assertSame(3, $byName['Weekday Payor']['averageMonths']);
+        self::assertFalse($byName['Weekday Payor']['averageOn']);
         self::assertSame(220000, $byName['Weekday Payor']['paycheckMinor']);
         self::assertSame('typed', $byName['Weekly Payor']['hoursMode']);
-        self::assertNull($byName['Weekly Payor']['averageMonths']);
+        self::assertFalse($byName['Weekly Payor']['averageOn']);
+        self::assertTrue($byName['Averaged Payor']['averageOn']);
+        self::assertSame(400000, $byName['Averaged Payor']['paycheckMinor']);
         self::assertSame('2026-12-15', $byName['Irregular Payor']['nextPayday']);
         $user = $this->pdo->query("SELECT horizon_days, fuel_price_minor FROM user WHERE role = 'demo'")->fetch();
         self::assertIsArray($user);
@@ -359,8 +372,23 @@ final class ResetTest extends TestCase
         self::assertNull($this->pdo->query("SELECT rating_comment FROM trips WHERE place_name = 'Stay 1'")->fetchColumn());
         self::assertSame(7, (int) $this->pdo->query("SELECT rating_half_stars FROM trips WHERE place_name = 'Stay 2'")->fetchColumn());
         self::assertSame('Comment 1', $this->pdo->query("SELECT rating_comment FROM trips WHERE place_name = 'Stay 2'")->fetchColumn());
-        self::assertSame(1, (int) $this->pdo->query("SELECT COUNT(*) FROM postings WHERE payee = 'Inflow 1' AND direction = 'in' AND pay_cycle_id IS NOT NULL")->fetchColumn());
-        self::assertSame(5, (int) $this->pdo->query('SELECT COUNT(*) FROM postings WHERE odometer_miles IS NOT NULL')->fetchColumn());
+        $fuel = $this->pdo->query(
+            "SELECT b.anchor_date, b.amount_minor, b.status, b.odometer_miles, b.price_per_gallon_minor, b.vehicle_id IS NOT NULL AS has_vehicle
+             FROM bills b
+             JOIN accounts a ON a.id = b.account_id
+             JOIN user u ON u.id = a.user_id
+             WHERE u.role = 'demo' AND b.name = 'Fuel 1' AND b.status = 'paid'
+             ORDER BY b.anchor_date, b.id"
+        )->fetchAll();
+        self::assertSame([
+            ['anchor_date' => '2026-09-15', 'amount_minor' => 1000, 'status' => 'paid', 'odometer_miles' => 9980, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-10-01', 'amount_minor' => 600, 'status' => 'paid', 'odometer_miles' => 10000, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-10-01', 'amount_minor' => 400, 'status' => 'paid', 'odometer_miles' => 10000, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-10-15', 'amount_minor' => 500, 'status' => 'paid', 'odometer_miles' => null, 'price_per_gallon_minor' => null, 'has_vehicle' => 0],
+            ['anchor_date' => '2026-11-01', 'amount_minor' => 2000, 'status' => 'paid', 'odometer_miles' => 10100, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-11-08', 'amount_minor' => 1000, 'status' => 'paid', 'odometer_miles' => 10300, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-11-18', 'amount_minor' => 1000, 'status' => 'paid', 'odometer_miles' => 10500, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
+        ], $fuel);
         $vehicle = $this->pdo->query("SELECT name, kind, starred, mpg_min_tenths, mpg_max_tenths FROM vehicles WHERE name = 'Vehicle 1'")->fetch();
         self::assertIsArray($vehicle);
         self::assertSame('rv', $vehicle['kind']);

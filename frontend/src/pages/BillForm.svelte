@@ -3,9 +3,8 @@
   import DateField from '../components/DateField.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import CurrencySelect from '../components/CurrencySelect.svelte';
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
-  import { exponentOf, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import type { Account, Bill, Category } from '../lib/types';
 
@@ -20,7 +19,15 @@
     travel: 'wants', memberships: 'wants', software: 'wants', pets: 'wants', misc: 'wants',
     debt: 'savings', emergency: 'savings', repairs: 'savings', investments: 'savings', liquidities: 'savings',
   };
-  const types = Object.keys(groups);
+  const typeGroups = [
+    { id: 'needs', label: 'Needs', types: typesIn('needs') },
+    { id: 'wants', label: 'Wants', types: typesIn('wants') },
+    { id: 'savings', label: 'Savings', types: typesIn('savings') },
+  ] as const;
+
+  function typesIn(group: 'needs' | 'wants' | 'savings'): string[] {
+    return Object.keys(groups).filter((key) => groups[key] === group);
+  }
   const recurrences = ['once', 'weekly', 'monthly', 'yearly'];
 
   let accounts = $state<Account[]>([]);
@@ -31,40 +38,34 @@
   let otherLabel = $state('');
   let accountId = $state('');
   let amount = $state('');
-  let currency = $state('');
-  let currencyTouched = $state(false);
   let recurrence = $state('monthly');
   let nextDueDate = $state(todayISO());
   let autopay = $state(false);
   let notes = $state('');
   let status = $state<Bill['status']>('active');
+  let locked = $state(false);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
   let ready = $state(false);
 
-  let account = $derived(accounts.find((item) => String(item.id) === accountId) ?? null);
-  let exponent = $derived(exponentOf(currency || account?.currency || 'USD'));
+  const exponent = 2;
   let bucketChoices = $derived.by(() => {
     const group = groups[type] ?? 'needs';
     return categories.filter((category) => {
       if (category.archivedAt !== null) return false;
-      if (type === 'fuel') return category.role === 'fuel';
-      return category.group === group && category.role !== 'fuel';
+      if (category.locked) return category.billType === type;
+      if (type === 'fuel') return false;
+      return category.group === group && category.role === 'goal';
     });
   });
   let named = $derived(type === 'other' || type === 'misc');
 
   $effect(() => {
-    if (id || currencyTouched || !account) return;
-    currency = account.currency;
-  });
-
-  $effect(() => {
-    if (!ready) return;
+    if (!ready || locked) return;
     const open = bucketChoices;
     if (open.some((category) => String(category.id) === categoryId)) return;
-    const fallback = type === 'fuel' ? open[0] : open.find((category) => category.role === 'default');
+    const fallback = open.find((category) => category.locked && category.billType === type) ?? open[0];
     categoryId = fallback ? String(fallback.id) : '';
   });
 
@@ -87,15 +88,14 @@
       type = bill.type;
       otherLabel = bill.otherLabel ?? '';
       accountId = String(bill.accountId);
-      amount = minorToInput(bill.amountMinor, bill.exponent);
-      currency = bill.currency;
-      currencyTouched = true;
+      amount = minorToInput(bill.amountMinor, 2);
       recurrence = bill.recurrence;
       nextDueDate = bill.nextDueDate;
       autopay = bill.autopay;
       categoryId = bill.categoryId === null ? '' : String(bill.categoryId);
       notes = bill.notes ?? '';
       status = bill.status;
+      locked = bill.locked;
       if (!accounts.some((item) => item.id === bill.accountId)) {
         accounts = [...accounts, {
           id: bill.accountId,
@@ -109,6 +109,7 @@
           minimumDueMinor: null,
           dueDay: null,
           creditLimitMinor: null,
+          autopayChoice: 'none',
           institution: null,
           notes: null,
           archivedAt: 'archived',
@@ -129,7 +130,6 @@
     if (amountMinor === null || amountMinor < 1) {
       fields.amountMinor = 'Enter an amount greater than zero.';
     }
-    if (!/^[A-Za-z]{3}$/.test(currency.trim())) fields.currency = 'Use a three-letter currency code.';
     if (!accountId) fields.accountId = 'Choose the account this bill is drawn from.';
     if (!categoryId) fields.categoryId = 'Choose a bucket.';
     const dueOn = readDateInput('nextDueDate');
@@ -145,7 +145,6 @@
         otherLabel: named ? otherLabel : null,
         accountId: Number(accountId),
         amountMinor,
-        currency: currency.trim().toUpperCase(),
         recurrence,
         nextDueDate,
         autopay,
@@ -180,7 +179,7 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit bill' : 'New bill'}</h1>
-  <p class="muted m-0">One amount in the currency you choose. Saving writes that amount into the bucket on the oldest pay cycle. Marking paid leaves the account and the bucket as they are.</p>
+  <p class="muted m-0">One amount. Saving writes that amount into the bucket on the oldest pay cycle. Marking paid leaves the account and the bucket as they are.</p>
   {#if ready && accounts.length === 0 && !id}
     <p>Create an account first. <a href="/accounts/new" onclick={(event) => { event.preventDefault(); go('/accounts/new'); }}>New account</a></p>
   {/if}
@@ -192,12 +191,21 @@
   </label>
   <div class="field">
     <span>Type</span>
-    <div class="flex flex-wrap gap-2">
-      {#each types as option}
-        <button class="choice" class:on={type === option} type="button" style={`--tone: var(--tone-${option})`} onclick={() => (type = option)}>
-          <Glyph name={option} mini />
-          {option}
-        </button>
+    <div class="grid gap-3">
+      {#each typeGroups as band, bandIndex (band.id)}
+        {#if bandIndex > 0}<hr class="m-0" />{/if}
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="group-title" style={`--tone: var(--tone-${band.id})`}>
+            <Glyph name={band.id} mini />
+            {band.label}
+          </span>
+          {#each band.types as option}
+            <button class="choice" class:on={type === option} type="button" style={`--tone: var(--tone-${option})`} disabled={locked} onclick={() => (type = option)}>
+              <Glyph name={option} mini />
+              {option}
+            </button>
+          {/each}
+        </div>
       {/each}
     </div>
     {#if fields.type}<em>{fields.type}</em>{/if}
@@ -214,29 +222,20 @@
     <select name="accountId" bind:value={accountId}>
       <option value="">Choose an account</option>
       {#each accounts as item}
-        <option value={String(item.id)}>{item.name} · {item.currency}</option>
+        <option value={String(item.id)}>{item.name}</option>
       {/each}
     </select>
     {#if fields.accountId}<em>{fields.accountId}</em>{/if}
   </label>
-  <div class="grid grid-cols-2 gap-3">
-    <label class="field">
-      <span>Amount</span>
-      <input name="amount" inputmode="decimal" bind:value={amount} />
-      {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
-    </label>
-    <label class="field">
-      <span>Currency</span>
-      <CurrencySelect
-        name="currency"
-        bind:value={currency}
-        onchange={() => (currencyTouched = true)}
-      />
-      {#if fields.currency}<em>{fields.currency}</em>{/if}
-    </label>
-  </div>
-  {#if type === 'fuel'}
-    <p class="m-0">Bucket <strong data-bucket="fuel">{bucketChoices[0]?.name ?? 'Fuel Bucket'}</strong></p>
+  <label class="field">
+    <span>Amount</span>
+    <input name="amount" inputmode="decimal" bind:value={amount} />
+    {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
+  </label>
+  {#if type === 'fuel' || locked}
+    <p class="m-0">Bucket <strong data-bucket={type}>{bucketChoices.find((category) => category.locked)?.name ?? 'Fuel'}</strong>
+      {#if locked}<Glyph name="lock" mini />{/if}
+    </p>
   {:else}
     <label class="field">
       <span>Bucket</span>
@@ -269,16 +268,22 @@
     {#if fields.notes}<em>{fields.notes}</em>{/if}
   </label>
   <div class="flex flex-wrap gap-2">
-    {#if status === 'active' || status === 'paused' || !id}
+    {#if !locked && (status === 'active' || status === 'paused' || status === 'paid' || !id)}
       <button class="btn primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save bill'}</button>
     {/if}
     <a class="btn" href="/bills" onclick={(event) => { event.preventDefault(); go('/bills'); }}>Back</a>
     {#if id && status === 'active'}
       <button class="btn" type="button" disabled={saving} onclick={() => act('paid', { paidOn: todayISO() })}>Mark paid</button>
-      <button class="btn" type="button" disabled={saving} onclick={() => act('pause')}>Pause</button>
+      {#if !locked}
+        <button class="btn" type="button" disabled={saving} onclick={() => act('pause')}>Pause</button>
+      {/if}
     {/if}
-    {#if id && status === 'paused'}
+    {#if id && status === 'paused' && !locked}
       <button class="btn" type="button" disabled={saving} onclick={() => act('resume')}>Resume</button>
+      <button class="btn" type="button" disabled={saving} onclick={() => act('archive')}>Archive</button>
+    {/if}
+    {#if id && status === 'archived'}
+      <button class="btn" type="button" disabled={saving} onclick={() => act('unarchive')}>Unarchive</button>
     {/if}
     {#if id && status === 'paid'}
       <button class="btn" type="button" disabled={saving} onclick={() => act('unpay')}>Unpay</button>

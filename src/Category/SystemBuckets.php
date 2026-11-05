@@ -4,53 +4,50 @@ declare(strict_types=1);
 
 namespace App\Category;
 
+use App\Bill\BillTypes;
 use PDO;
 
 final class SystemBuckets
 {
-    /** @var array<string, string> */
-    public const DEFAULTS = [
-        'needs' => 'Needs Default',
-        'wants' => 'Wants Default',
-        'savings' => 'Savings Default',
-    ];
-
-    public const FUEL = 'Fuel Bucket';
-
-    /** @var list<string> */
-    public const RESERVED = ['Needs Default', 'Wants Default', 'Savings Default', 'Fuel Bucket'];
-
     public static function ensure(PDO $pdo, int $userId): void
     {
         $now = gmdate('c');
         $insert = $pdo->prepare(
-            'INSERT INTO categories (user_id, name, category_group, amount_minor, overspend, role, created_at, updated_at)
-             SELECT ?, ?, ?, 0, \'cover\', ?, ?, ?
+            'INSERT INTO categories (user_id, name, category_group, amount_minor, overspend, role, bill_type, created_at, updated_at)
+             SELECT ?, ?, ?, 0, \'cover\', \'locked\', ?, ?, ?
              WHERE NOT EXISTS (
-                SELECT 1 FROM categories WHERE user_id = ? AND role = ? AND category_group = ?
+                SELECT 1 FROM categories WHERE user_id = ? AND role = \'locked\' AND bill_type = ?
              )'
         );
-        foreach (self::DEFAULTS as $group => $name) {
-            $insert->execute([$userId, $name, $group, 'default', $now, $now, $userId, 'default', $group]);
+        foreach (BillTypes::GROUP as $type => $group) {
+            $insert->execute([
+                $userId,
+                BillTypes::label($type),
+                $group,
+                $type,
+                $now,
+                $now,
+                $userId,
+                $type,
+            ]);
         }
-        $insert->execute([$userId, self::FUEL, 'needs', 'fuel', $now, $now, $userId, 'fuel', 'needs']);
     }
 
-    public static function id(PDO $pdo, int $userId, string $role, string $group): int
+    public static function idForType(PDO $pdo, int $userId, string $type): int
     {
         self::ensure($pdo, $userId);
         $stmt = $pdo->prepare(
-            'SELECT id FROM categories WHERE user_id = ? AND role = ? AND category_group = ?'
+            'SELECT id FROM categories WHERE user_id = ? AND role = \'locked\' AND bill_type = ?'
         );
-        $stmt->execute([$userId, $role, $group]);
+        $stmt->execute([$userId, $type]);
 
         return (int) $stmt->fetchColumn();
     }
 
     public static function reserved(string $name): bool
     {
-        foreach (self::RESERVED as $reserved) {
-            if (strcasecmp($name, $reserved) === 0) {
+        foreach (BillTypes::LABEL as $label) {
+            if (strcasecmp($name, $label) === 0) {
                 return true;
             }
         }

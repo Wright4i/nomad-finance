@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Demo;
 
-use App\Bill\BillTypes;
 use App\Category\SystemBuckets;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
-use App\Money\RateBaseline;
 use PDO;
 
 final class DemoLibrary
@@ -47,24 +45,20 @@ final class DemoLibrary
         $this->pdo->beginTransaction();
         try {
             $this->pdo->prepare(
-                'DELETE FROM posting_lines WHERE posting_id IN (SELECT id FROM postings WHERE user_id = ?)'
-            )->execute([$id]);
-            $this->pdo->prepare('DELETE FROM postings WHERE user_id = ?')->execute([$id]);
-            $this->pdo->prepare('DELETE FROM vehicles WHERE user_id = ?')->execute([$id]);
-            $this->pdo->prepare('DELETE FROM trips WHERE user_id = ?')->execute([$id]);
-            $this->pdo->prepare(
                 'DELETE FROM assignments WHERE pay_period_id IN (SELECT id FROM pay_periods WHERE user_id = ?)'
             )->execute([$id]);
             $this->pdo->prepare('DELETE FROM pay_periods WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare(
                 'DELETE FROM bills WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?)'
             )->execute([$id]);
+            $this->pdo->prepare('DELETE FROM trips WHERE user_id = ?')->execute([$id]);
+            $this->pdo->prepare('DELETE FROM vehicles WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE FROM accounts WHERE user_id = ?')->execute([$id]);
-            $this->pdo->prepare('DELETE FROM rate_quotes WHERE user_id = ?')->execute([$id]);
-            $this->pdo->prepare('DELETE FROM rate_polls WHERE user_id = ?')->execute([$id]);
-            $this->pdo->prepare('DELETE FROM exchange_rates WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE FROM targets WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE FROM categories WHERE user_id = ?')->execute([$id]);
+            $this->pdo->prepare(
+                'DELETE FROM payroll_entries WHERE pay_cycle_id IN (SELECT id FROM pay_cycles WHERE user_id = ?)'
+            )->execute([$id]);
             $this->pdo->prepare('DELETE FROM pay_cycles WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare(
                 'UPDATE user SET name = ?, password_hash = ?, base_currency = ?, theme = ? WHERE id = ? AND role = \'demo\''
@@ -121,24 +115,28 @@ final class DemoLibrary
             'name' => 'Savings 1', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 1000000,
         ], $now);
         $this->account($userId, [
-            'name' => 'Savings 2', 'type' => 'savings', 'side' => 'asset', 'currency' => 'EUR', 'balance' => 20000,
+            'name' => 'Savings 2', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 20000,
         ], $now);
         $cash = $this->account($userId, [
             'name' => 'Cash 1', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 500,
         ], $now);
         $this->account($userId, [
-            'name' => 'Cash 2', 'type' => 'cash', 'side' => 'asset', 'currency' => 'JPY', 'balance' => 100000,
+            'name' => 'Cash 2', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 100000,
         ], $now);
         $this->account($userId, [
-            'name' => 'Cash 3', 'type' => 'cash', 'side' => 'asset', 'currency' => 'KPW', 'balance' => 10000,
+            'name' => 'Cash 3', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 10000,
         ], $now);
         $card = $this->account($userId, [
             'name' => 'Card 1', 'type' => 'credit', 'side' => 'liability', 'currency' => 'USD', 'balance' => 40000,
-            'interest' => 1999, 'minimum' => 2500, 'dueDay' => 15, 'limit' => 200000,
+            'interest' => 1999, 'minimum' => 2500, 'dueDay' => 15, 'limit' => 200000, 'autopay' => 'minimum',
         ], $now);
         $loan = $this->account($userId, [
             'name' => 'Loan 1', 'type' => 'loan', 'side' => 'liability', 'currency' => 'USD', 'balance' => 500000,
-            'interest' => 699, 'minimum' => 15000, 'dueDay' => 1,
+            'interest' => 699, 'minimum' => 15000, 'dueDay' => 1, 'autopay' => 'balance',
+        ], $now);
+        $this->account($userId, [
+            'name' => 'Fuel 1', 'type' => 'fuel', 'side' => 'liability', 'currency' => 'USD', 'balance' => 8000,
+            'interest' => 0, 'minimum' => 2500, 'dueDay' => 20, 'limit' => 50000,
         ], $now);
         $otherAsset = $this->account($userId, [
             'name' => 'Other 1', 'type' => 'other', 'side' => 'asset', 'currency' => 'USD', 'balance' => 75000,
@@ -190,7 +188,6 @@ final class DemoLibrary
         $this->bill($cash, [
             'name' => 'Other Bill', 'type' => 'other', 'otherLabel' => 'Custom 1', 'amount' => 2000,
             'recurrence' => 'once', 'anchor' => '2026-11-18', 'next' => '2026-11-18', 'status' => 'active',
-            'currency' => 'EUR',
         ], $now);
         $this->bill($otherAsset, [
             'name' => 'Overdue Monthly Bill', 'type' => 'rent', 'amount' => 30000,
@@ -203,6 +200,20 @@ final class DemoLibrary
         $this->bill($checking, [
             'name' => 'Paid One-Time Bill', 'type' => 'healthcare', 'amount' => 9900,
             'recurrence' => 'once', 'anchor' => '2026-10-01', 'next' => '2026-10-01', 'status' => 'paid', 'paidOn' => '2026-10-01',
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Archived Bill', 'type' => 'groceries', 'amount' => 1100,
+            'recurrence' => 'once', 'anchor' => '2026-10-02', 'next' => '2026-10-02', 'status' => 'archived',
+        ], $now);
+        $this->bill($card, [
+            'name' => 'Card 1', 'type' => 'debt', 'amount' => 2500,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-15', 'next' => '2026-11-15', 'status' => 'active',
+            'sourceAccountId' => $card,
+        ], $now);
+        $this->bill($loan, [
+            'name' => 'Loan 1', 'type' => 'debt', 'amount' => 500000,
+            'recurrence' => 'monthly', 'anchor' => '2026-12-01', 'next' => '2026-12-01', 'status' => 'active',
+            'sourceAccountId' => $loan,
         ], $now);
         $this->bill($checking, [
             'name' => 'Paid Weekly Bill', 'type' => 'electricity', 'amount' => 2468,
@@ -263,8 +274,6 @@ final class DemoLibrary
             'recurrence' => 'monthly', 'anchor' => '2026-11-21', 'next' => '2026-11-21', 'status' => 'active',
         ], $now);
 
-        RateBaseline::seed($this->pdo, $userId, 'USD', [], $now);
-
         $this->category($userId, 'Needs 1', 'needs', $now);
         $this->category($userId, 'Wants 1', 'wants', $now, false, 'carry');
         $this->category($userId, 'Savings 1', 'savings', $now);
@@ -274,7 +283,11 @@ final class DemoLibrary
         $this->payCycle($userId, 'Weekly Payor', '2026-11-01', 'weekly', $now, null, null, false, 'hourly', 2500, 4000);
         $this->payCycle($userId, 'Biweekly Payor', '2026-11-01', 'biweekly', $now, null, null, false, 'hourly', 3000, 8000);
         $this->payCycle($userId, 'Semimonthly Payor', '2026-11-01', 'semimonthly', $now, 15, null, false, 'salary', 6000000);
-        $this->payCycle($userId, 'Weekday Payor', '2026-11-01', 'semimonthly', $now, 15, null, false, 'hourly', 2500, null, 'weekdays', 3);
+        $this->payCycle($userId, 'Weekday Payor', '2026-11-01', 'semimonthly', $now, 15, null, false, 'hourly', 2500, null, 'weekdays');
+        $averaged = $this->payCycle($userId, 'Averaged Payor', '2026-11-01', 'semimonthly', $now, 15, null, false, 'fixed', 10000, null, 'typed', true);
+        $this->payroll($averaged, '2026-10-01', 300000);
+        $this->payroll($averaged, '2026-10-15', 500000);
+        $this->payroll($averaged, '2026-11-01', 400000);
         $this->payCycle($userId, 'Monthly Payor', '2026-11-01', 'monthly', $now, null, null, false, 'salary', 8400000);
         $this->payCycle($userId, 'Monthly Weekday Payor', '2026-11-01', 'monthly', $now, null, null, false, 'hourly', 11000, 800, 'weekdays');
         $this->payCycle($userId, 'Irregular Payor', '2026-11-01', 'irregular', $now, null, '2026-12-15', false, 'fixed', 150000);
@@ -310,12 +323,7 @@ final class DemoLibrary
         $cash = (int) $account->fetchColumn();
         $account->execute([$userId, 'Savings 1']);
         $savings = (int) $account->fetchColumn();
-        $category->execute([$userId, 'Needs 1']);
-        $needs = (int) $category->fetchColumn();
-        $category->execute([$userId, 'Wants 1']);
-        $wants = (int) $category->fetchColumn();
-        $category->execute([$userId, 'Fuel Bucket']);
-        $fuel = (int) $category->fetchColumn();
+        $fuel = SystemBuckets::idForType($this->pdo, $userId, 'fuel');
 
         $this->pdo->prepare('UPDATE accounts SET interest_bps = ? WHERE id = ?')->execute([450, $savings]);
 
@@ -333,42 +341,35 @@ final class DemoLibrary
                 rating_half_stars, rating_comment, created_at, updated_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([$userId, 'Stay 2', 'Site 34', '2026-12-01', '2026-12-05', '34.0522', '-118.2437', 'Los Angeles', 'CA', '1 Main St, Los Angeles, CA 90012', $cash, 8000, 7000, '2026-12-01', 7, 'Comment 1', $now, $now]);
-        $stay2 = (int) $this->pdo->lastInsertId();
-
-        $insert = $this->pdo->prepare(
-            'INSERT INTO postings (
-                user_id, account_id, category_id, trip_id, amount_minor, direction, payee, memo,
-                posted_on, lodging_part, odometer_miles, price_per_gallon_minor, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)'
-        );
-        $insert->execute([$userId, $checking, $needs, null, 1500, 'out', 'Payee 1', '2026-11-02', null, null, null, $now, $now]);
-        $split = (int) $this->pdo->lastInsertId();
-        $line = $this->pdo->prepare(
-            'INSERT INTO posting_lines (posting_id, category_id, amount_minor) VALUES (?, ?, ?)'
-        );
-        $line->execute([$split, $needs, 1000]);
-        $line->execute([$split, $wants, 500]);
-        $insert->execute([$userId, $checking, $needs, null, 500, 'in', 'Payee 2', '2026-11-03', null, null, null, $now, $now]);
-        $insert->execute([$userId, $cash, $needs, $stay2, 1000, 'out', 'Stay 2', '2026-11-03', 'deposit', null, null, $now, $now]);
-        $insert->execute([$userId, $cash, $fuel, null, 1000, 'out', 'Fuel 1', '2026-09-15', null, 9980, 400, $now, $now]);
-        $insert->execute([$userId, $cash, $fuel, null, 1000, 'out', 'Fuel 1', '2026-10-01', null, 10000, 400, $now, $now]);
-        $insert->execute([$userId, $cash, $fuel, null, 500, 'out', 'Fuel 1', '2026-10-15', null, null, null, $now, $now]);
-        $insert->execute([$userId, $cash, $fuel, null, 2000, 'out', 'Fuel 1', '2026-11-01', null, 10100, 400, $now, $now]);
-        $insert->execute([$userId, $cash, $fuel, null, 1000, 'out', 'Fuel 1', '2026-11-08', null, 10300, 400, $now, $now]);
-        $insert->execute([$userId, $cash, $fuel, null, 1000, 'out', 'Fuel 1', '2026-11-18', null, 10500, 400, $now, $now]);
         $vehicle = $this->vehicle($userId, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-09-15', 1000, 9980, 400, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-10-01', 600, 10000, 400, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-10-01', 400, 10000, 400, $now);
+        $this->fuelBill($cash, $fuel, null, '2026-10-15', 500, null, null, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-11-01', 2000, 10100, 400, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-11-08', 1000, 10300, 400, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-11-18', 1000, 10500, 400, $now);
+    }
+
+    private function fuelBill(
+        int $accountId,
+        int $categoryId,
+        ?int $vehicleId,
+        string $date,
+        int $amount,
+        ?int $odometer,
+        ?int $price,
+        string $now,
+    ): void {
         $this->pdo->prepare(
-            'UPDATE postings SET vehicle_id = ?
-             WHERE user_id = ? AND (odometer_miles IS NOT NULL OR price_per_gallon_minor IS NOT NULL)'
-        )->execute([$vehicle, $userId]);
-        $cycle = $this->pdo->prepare('SELECT id FROM pay_cycles WHERE user_id = ? AND payor = ?');
-        $cycle->execute([$userId, 'Weekday Payor']);
-        $this->pdo->prepare(
-            'INSERT INTO postings (
-                user_id, account_id, category_id, trip_id, amount_minor, direction, payee, memo,
-                posted_on, lodging_part, odometer_miles, price_per_gallon_minor, pay_cycle_id, created_at, updated_at
-             ) VALUES (?, ?, ?, NULL, ?, \'in\', ?, NULL, ?, NULL, NULL, NULL, ?, ?, ?)'
-        )->execute([$userId, $checking, $needs, 300000, 'Inflow 1', '2026-10-20', (int) $cycle->fetchColumn(), $now, $now]);
+            'INSERT INTO bills (
+                name, type, account_id, category_id, amount_minor, currency,
+                recurrence, anchor_date, next_due_date, last_paid_on, autopay, status,
+                created_at, updated_at, vehicle_id, odometer_miles, price_per_gallon_minor
+             ) VALUES (\'Fuel 1\', \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, \'paid\', ?, ?, ?, ?, ?)'
+        )->execute([
+            $accountId, $categoryId, $amount, $date, $date, $date, $now, $now, $vehicleId, $odometer, $price,
+        ]);
     }
 
     private function seedEnvelopes(int $userId, string $now): void
@@ -425,8 +426,8 @@ final class DemoLibrary
         $this->pdo->prepare(
             'INSERT INTO accounts (
                 user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
-                due_day, credit_limit_minor, archived_at, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                due_day, credit_limit_minor, autopay_choice, archived_at, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId,
             $row['name'],
@@ -438,6 +439,7 @@ final class DemoLibrary
             $row['minimum'] ?? null,
             $row['dueDay'] ?? null,
             $row['limit'] ?? null,
+            $row['autopay'] ?? 'none',
             !empty($row['archived']) ? $now : null,
             $now,
             $now,
@@ -455,22 +457,19 @@ final class DemoLibrary
         $userId = is_array($account) ? (int) $account['user_id'] : 0;
         $currency = $row['currency'] ?? (is_array($account) ? (string) $account['currency'] : 'USD');
         $this->currencies->assert($currency);
-        $role = $row['type'] === 'fuel' ? 'fuel' : 'default';
-        $bucket = $this->pdo->prepare(
-            'SELECT id FROM categories WHERE user_id = ? AND role = ? AND category_group = ? AND archived_at IS NULL'
-        );
-        $bucket->execute([$userId, $role, BillTypes::group($row['type'])]);
+        $bucketId = SystemBuckets::idForType($this->pdo, $userId, $row['type']);
         $this->pdo->prepare(
             'INSERT INTO bills (
                 name, type, other_label, account_id, category_id, amount_minor, currency,
-                recurrence, anchor_date, next_due_date, last_paid_on, autopay, status, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                recurrence, anchor_date, next_due_date, last_paid_on, autopay, status, created_at, updated_at,
+                source_account_id
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $row['name'],
             $row['type'],
             $row['otherLabel'] ?? null,
             $accountId,
-            (int) $bucket->fetchColumn(),
+            $bucketId,
             $row['amount'],
             $currency,
             $row['recurrence'],
@@ -481,6 +480,7 @@ final class DemoLibrary
             $row['status'],
             $now,
             $now,
+            $row['sourceAccountId'] ?? null,
         ]);
     }
 
@@ -488,8 +488,9 @@ final class DemoLibrary
     {
         $this->pdo->prepare(
             'INSERT INTO vehicles (
-                user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
+                user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
+                current_odometer_miles, origin_odometer_miles, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, 1, 10500, 9800, ?, ?)'
         )->execute([$userId, 'Vehicle 1', 'rv', 60, 120, $now, $now]);
 
         return (int) $this->pdo->lastInsertId();
@@ -523,12 +524,12 @@ final class DemoLibrary
         int $rate = 0,
         ?int $hours = null,
         string $hoursMode = 'typed',
-        ?int $averageMonths = null,
-    ): void {
+        bool $averageOn = false,
+    ): int {
         $this->pdo->prepare(
             'INSERT INTO pay_cycles (
                 user_id, payor, payday, length, second_day, next_payday,
-                pay_kind, rate_minor, hours_hundredths, hours_mode, average_months,
+                pay_kind, rate_minor, hours_hundredths, hours_mode, average_on,
                 archived_at, created_at, updated_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
@@ -542,11 +543,20 @@ final class DemoLibrary
             $rate,
             $hours,
             $hoursMode,
-            $averageMonths,
+            $averageOn ? 1 : 0,
             $archived ? $now : null,
             $now,
             $now,
         ]);
+
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    private function payroll(int $cycleId, string $payday, int $amount): void
+    {
+        $this->pdo->prepare(
+            'INSERT INTO payroll_entries (pay_cycle_id, payday, amount_minor) VALUES (?, ?, ?)'
+        )->execute([$cycleId, $payday, $amount]);
     }
 
 }

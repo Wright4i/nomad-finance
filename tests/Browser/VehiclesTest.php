@@ -90,6 +90,7 @@ final class VehiclesTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
@@ -110,6 +111,7 @@ final class VehiclesTest extends TestCase
         self::assertFalse(self::colorFieldPresent());
         self::type('name', 'Vehicle 2');
         self::click('truck');
+        self::type('currentOdometer', '0');
         self::click('Save vehicle');
         self::waitForText('Fuel');
         self::assertFalse(self::colorFieldPresent());

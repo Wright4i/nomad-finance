@@ -2,15 +2,29 @@
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import { formatDate, formatMinor, todayISO } from '../lib/money';
+  import { formatDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { PayCycle } from '../lib/types';
+
+  type PayrollRow = {
+    payday: string;
+    amountMinor: number | null;
+    hours: string | null;
+    keyed: boolean;
+    projectedMinor: number | null;
+  };
 
   let cycles = $state<PayCycle[]>([]);
   let includeArchived = $state(false);
   let message = $state('');
   let ready = $state(false);
+  let payrollCycle = $state<PayCycle | null>(null);
+  let payrollRows = $state<PayrollRow[]>([]);
+  let payrollDrafts = $state<Record<string, string>>({});
+  let payrollHours = $state<Record<string, string>>({});
+  let extraDate = $state('');
+  let payrollDialog: HTMLDialogElement | undefined = $state();
 
   async function load(): Promise<void> {
     const data = await api<{ payCycles: PayCycle[] }>(
@@ -29,6 +43,66 @@
   function toggle(): void {
     includeArchived = !includeArchived;
     void load();
+  }
+
+  async function openPayroll(cycle: PayCycle): Promise<void> {
+    payrollCycle = cycle;
+    const data = await api<{ payroll: { rows: PayrollRow[] } }>(
+      `/api/pay-cycles/${cycle.id}/payroll?today=${todayISO()}`,
+    );
+    payrollRows = data.payroll.rows;
+    const drafts: Record<string, string> = {};
+    const hours: Record<string, string> = {};
+    for (const row of data.payroll.rows) {
+      drafts[row.payday] = row.amountMinor === null ? '' : minorToInput(row.amountMinor, 2);
+      hours[row.payday] = row.hours ?? '';
+    }
+    payrollDrafts = drafts;
+    payrollHours = hours;
+    extraDate = '';
+    payrollDialog?.showModal();
+  }
+
+  function fillFromHours(payday: string): void {
+    if (!payrollCycle || payrollCycle.payKind !== 'hourly') return;
+    const raw = (payrollHours[payday] ?? '').trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(raw)) return;
+    const [whole, frac = ''] = raw.split('.');
+    const hundredths = Number(whole) * 100 + Number(frac.padEnd(2, '0').slice(0, 2));
+    const amount = Math.round((payrollCycle.rateMinor * hundredths) / 100);
+    payrollDrafts[payday] = minorToInput(amount, 2);
+  }
+
+  function addDate(): void {
+    const payday = extraDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(payday)) return;
+    if (payrollRows.some((row) => row.payday === payday)) return;
+    payrollRows = [...payrollRows, {
+      payday,
+      amountMinor: null,
+      hours: null,
+      keyed: false,
+      projectedMinor: null,
+    }].sort((left, right) => left.payday.localeCompare(right.payday));
+    payrollDrafts[payday] = '';
+  }
+
+  async function savePayroll(): Promise<void> {
+    if (!payrollCycle) return;
+    const entries = payrollRows.map((row) => {
+      const raw = (payrollDrafts[row.payday] ?? '').trim();
+      return {
+        payday: row.payday,
+        amountMinor: raw === '' ? null : parseMajor(raw, 2),
+        hours: payrollCycle?.payKind === 'hourly' ? (payrollHours[row.payday] ?? '') : null,
+      };
+    });
+    await api(`/api/pay-cycles/${payrollCycle.id}/payroll`, {
+      method: 'PUT',
+      body: { today: todayISO(), entries },
+    });
+    payrollDialog?.close();
+    await load();
   }
 
   function span(cycle: PayCycle): string {
@@ -72,6 +146,7 @@
         </span>
       </a>
       <p class="group-title text-xl m-0" style={`--tone: var(--tone-${cycle.length})`}>{span(cycle)}</p>
+      <button class="btn w-fit" type="button" onclick={() => void openPayroll(cycle)}>Payroll</button>
       <p class="m-0">
         {cycle.payKind === 'salary' ? 'Salary' : cycle.payKind === 'hourly' ? 'Hourly' : 'Fixed'}
         {#if cycle.paycheckMinor !== null}
@@ -91,3 +166,48 @@
     </article>
   {/each}
 </div>
+
+<dialog class="modal wide" bind:this={payrollDialog} aria-labelledby="payroll-title">
+  <div class="modal-body">
+    <h2 id="payroll-title" class="m-0 text-2xl">Payroll{payrollCycle ? ` · ${payrollCycle.payor}` : ''}</h2>
+    <p class="m-0">One amount per payday. A blank amount is not keyed. A keyed amount is the paycheck on that date.</p>
+    {#each payrollRows as row (row.payday)}
+      <label class="field">
+        <span>{formatDate(row.payday)}{row.projectedMinor !== null ? ` · ${formatMinor(row.projectedMinor, session.user?.baseCurrency ?? 'USD')}` : ''}</span>
+        {#if payrollCycle?.payKind === 'hourly'}
+          <input
+            name={`hours-${row.payday}`}
+            inputmode="decimal"
+            placeholder="Hours"
+            value={payrollHours[row.payday] ?? ''}
+            oninput={(event) => {
+              payrollHours[row.payday] = (event.currentTarget as HTMLInputElement).value;
+              fillFromHours(row.payday);
+            }}
+          />
+        {/if}
+        <input
+          name={`amount-${row.payday}`}
+          inputmode="decimal"
+          value={payrollDrafts[row.payday] ?? ''}
+          oninput={(event) => {
+            payrollDrafts[row.payday] = (event.currentTarget as HTMLInputElement).value;
+          }}
+        />
+      </label>
+    {/each}
+    {#if payrollCycle?.length === 'irregular'}
+      <label class="field">
+        <span>Add a date</span>
+        <input name="extraDate" placeholder="YYYY-MM-DD" bind:value={extraDate} />
+      </label>
+    {/if}
+  </div>
+  <div class="modal-actions">
+    {#if payrollCycle?.length === 'irregular'}
+      <button class="btn" type="button" onclick={addDate}>Add a date</button>
+    {/if}
+    <button class="btn" type="button" onclick={() => payrollDialog?.close()}>Close</button>
+    <button class="btn primary" type="button" onclick={() => void savePayroll()}>Save payroll</button>
+  </div>
+</dialog>

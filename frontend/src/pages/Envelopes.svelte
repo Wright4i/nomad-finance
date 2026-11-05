@@ -3,7 +3,6 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { formatMinor, formatMonth, minorToInput, parseSignedMajor, todayISO } from '../lib/money';
-  import { targetHint } from '../lib/target';
   import { follow, go } from '../lib/nav.svelte.ts';
   import type { EnvelopeSheet, PeriodStep } from '../lib/types';
 
@@ -22,6 +21,7 @@
   let message = $state('');
   let saving = $state(false);
   let ready = $state(false);
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   let editable = $derived(sheet?.period?.editable === true);
 
@@ -70,15 +70,24 @@
   }
 
   function inGroup(id: string): EnvelopeSheet['categories'] {
-    return (sheet?.categories ?? []).filter((category) => category.group === id);
+    return (sheet?.categories ?? [])
+      .filter((category) => category.group === id)
+      .sort((left, right) => Number(left.role === 'locked') - Number(right.role === 'locked') || left.name.localeCompare(right.name));
   }
 
-  function remainFill(assigned: number, remaining: number): { scale: number; over: boolean } {
-    if (remaining < 0) return { scale: 1, over: true };
-    if (remaining === 0) return { scale: 0, over: assigned > 0 };
-    if (assigned <= 0) return { scale: 1, over: false };
-    const ratio = Math.min(remaining / assigned, 1);
-    return { scale: Math.round(ratio * 1000) / 1000, over: false };
+  function holdOf(category: EnvelopeSheet['categories'][number]): number | null {
+    if (category.role === 'locked' || category.target?.kind !== 'balance' || !category.target.amountMinor) return null;
+    return category.target.amountMinor > 0 ? category.target.amountMinor : null;
+  }
+
+  function levelOf(category: EnvelopeSheet['categories'][number], rows: EnvelopeSheet['categories']): number {
+    const amount = category.amountMinor;
+    if (amount <= 0) return 0;
+    const hold = holdOf(category);
+    if (hold !== null) return Math.min(1, amount / hold);
+    const largest = Math.max(...rows.map((row) => row.amountMinor), 0);
+    if (largest <= 0) return 0;
+    return Math.min(1, amount / largest);
   }
 
   async function save(): Promise<void> {
@@ -86,7 +95,7 @@
     fields = {};
     message = '';
     const amounts = sheet.categories
-      .filter((category) => category.archivedAt === null)
+      .filter((category) => category.archivedAt === null && category.role !== 'locked')
       .map((category) => {
         const raw = (drafts[category.id] ?? '').trim();
         const amountMinor = raw === '' ? 0 : parseSignedMajor(raw, sheet.exponent);
@@ -147,7 +156,7 @@
       <section class="hero">
         <p class="kicker m-0">Available to assign</p>
         <p class="figure">{formatMinor(sheet.availableMinor, sheet.baseCurrency, sheet.exponent)}</p>
-        <p class="muted m-0" title="Checking, savings, and cash, converted, minus what is assigned in open months.">
+        <p class="muted m-0" title="Checking, savings, and cash, minus what is assigned in open months.">
           {formatMinor(sheet.assignedMinor, sheet.baseCurrency, sheet.exponent)} assigned of {formatMinor(sheet.poolMinor, sheet.baseCurrency, sheet.exponent)}
         </p>
       </section>
@@ -158,20 +167,6 @@
 
       {#if sheet.billLeftOut && sheet.billLeftOut.length > 0}
         <p class="muted m-0">Left out of the fill: {sheet.billLeftOut.join(', ')}</p>
-      {/if}
-      {#if sheet.leftOut.length > 0}
-        <section class="grid gap-2">
-          <h2 class="group-title text-2xl" style="--tone: var(--amber)">Left out of the pool</h2>
-          {#each sheet.leftOut as account (account.accountId)}
-            <a class="row stripe warn" href={`/accounts/${account.accountId}`} onclick={(event) => follow(event, `/accounts/${account.accountId}`)}>
-              <span>
-                <strong>{account.name}</strong>
-                <span class="block muted text-sm">No {sheet.baseCurrency} rate for {account.currency}</span>
-              </span>
-              <strong class="amber money">{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
-            </a>
-          {/each}
-        </section>
       {/if}
 
       <div class="flex flex-wrap items-center gap-2">
@@ -195,64 +190,48 @@
               <Glyph name={group.id} />
               {group.label}
             </h2>
+            <div class="bucket-board">
             {#each rows as category (category.id)}
-              {@const remaining = category.remainingMinor ?? category.amountMinor}
-              {@const fill = remainFill(category.amountMinor, remaining)}
-              <label class="field" style={`--tone: var(--tone-${group.id})`}>
-                <span class="flex items-center justify-between gap-3">
-                  <span>
-                    {category.name}
-                    <span class="muted"> · {category.overspend === 'carry' ? 'Carry' : 'Cover now'}</span>
-                    {#if category.target}
-                      <span class="block muted text-sm">{targetHint(category.target, sheet.baseCurrency, sheet.exponent)}</span>
-                    {/if}
-                  </span>
-                  <strong>{formatMinor(category.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+              {@const hold = holdOf(category)}
+              {@const over = hold !== null && category.amountMinor > hold}
+              {@const negative = category.amountMinor < 0}
+              <article
+                class="bucket-tile"
+                class:over
+                style={`--tone: var(--tone-${group.id}); --level: ${levelOf(category, rows)}`}
+              >
+                <span class="bucket-water"></span>
+                <span class="flex items-center gap-1">
+                  <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
+                  <strong>{category.name}</strong>
                 </span>
-                <span
-                  class="remain-meter"
-                  class:over={fill.over}
-                  role="meter"
-                  aria-valuemin="0"
-                  aria-valuemax={Math.max(category.amountMinor, 0)}
-                  aria-valuenow={Math.max(remaining, 0)}
-                  aria-label={`${category.name} has ${formatMinor(remaining, sheet.baseCurrency, sheet.exponent)} remaining of ${formatMinor(category.amountMinor, sheet.baseCurrency, sheet.exponent)}`}
-                >
-                  <span class={fill.over && fill.scale > 0 ? 'gauge-over' : 'gauge-fill'} style={`transform: scaleX(${fill.scale})`}></span>
-                </span>
-                <span class="muted text-sm">{formatMinor(remaining, sheet.baseCurrency, sheet.exponent)} remaining</span>
-                {#if category.bills && category.bills.length > 0}
-                  <ul class="m-0 grid gap-1 text-sm">
-                    {#each category.bills as bill (bill.id)}
-                      <li>{bill.name} · {formatMinor(bill.amountMinor, sheet.baseCurrency, sheet.exponent)}</li>
-                    {/each}
-                  </ul>
+                {#if category.role === 'locked'}
+                  <strong class="money">{formatMinor(category.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+                {:else}
+                  <input
+                    name={`amount-${category.id}`}
+                    inputmode="decimal"
+                    disabled={!editable || category.archivedAt !== null}
+                    value={drafts[category.id] ?? ''}
+                    oninput={(event) => {
+                      drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
+                      if (saveTimer) clearTimeout(saveTimer);
+                      saveTimer = setTimeout(() => void save(), 1000);
+                    }}
+                  />
+                  {#if over}
+                    <span>Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</span>
+                  {:else if negative}
+                    <span class="muted">{category.overspend === 'carry' ? 'Carry' : 'Cover now'}</span>
+                  {/if}
                 {/if}
-                <input
-                  name={`amount-${category.id}`}
-                  inputmode="decimal"
-                  disabled={!editable || category.archivedAt !== null}
-                  value={drafts[category.id] ?? ''}
-                  oninput={(event) => {
-                    drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
-                  }}
-                />
                 {#if fields[`amount-${category.id}`]}<em>{fields[`amount-${category.id}`]}</em>{/if}
-              </label>
+              </article>
             {/each}
+            </div>
           </section>
         {/if}
       {/each}
-
-      {#if editable}
-        <button
-          class="btn primary w-fit"
-          type="button"
-          title="Save these amounts in the current month. Account balances stay as you typed them."
-          disabled={saving}
-          onclick={save}
-        >{saving ? 'Saving…' : 'Save assignments'}</button>
-      {/if}
 
     {/if}
   {/if}

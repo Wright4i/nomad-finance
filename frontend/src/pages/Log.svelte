@@ -1,368 +1,195 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
+  import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
-  import { exponentOf, formatDate, formatMinor, parseMajor, todayISO } from '../lib/money';
-  import type { Account, Category, ChargeQuote, EnvelopeSheet, Posting, Trip, Vehicle } from '../lib/types';
+  import { parseMajor, todayISO } from '../lib/money';
+  import { go } from '../lib/nav.svelte.ts';
+  import type { Account, Category, Vehicle } from '../lib/types';
 
+  const wantTypes = [
+    'restaurants', 'entertainment', 'subscriptions', 'shopping', 'travel',
+    'memberships', 'software', 'pets', 'misc',
+  ];
+
+  let kind = $state<'fuel' | 'want'>('fuel');
   let accounts = $state<Account[]>([]);
-  let categories = $state<Category[]>([]);
-  let trips = $state<Trip[]>([]);
   let vehicles = $state<Vehicle[]>([]);
-  let postings = $state<Posting[]>([]);
+  let categories = $state<Category[]>([]);
   let accountId = $state('');
-  let categoryId = $state('');
   let vehicleId = $state('');
-  let tripId = $state('');
+  let wantType = $state('restaurants');
+  let name = $state('');
   let amount = $state('');
-  let direction = $state<'out' | 'in'>('out');
   let postedOn = $state(todayISO());
-  let stayDate = $state('');
-  let payee = $state('');
-  let memo = $state('');
   let odometer = $state('');
   let price = $state('');
+  let notes = $state('');
   let fields = $state<Record<string, string>>({});
   let message = $state('');
-  let saved = $state<Posting | null>(null);
-  let sheet = $state<EnvelopeSheet | null>(null);
-  let quote = $state<ChargeQuote | null>(null);
-  let pending = $state<Record<string, unknown> | null>(null);
-  let quoting = $state(false);
-  let dialog: HTMLDialogElement | undefined = $state();
+  let saving = $state(false);
 
-  let account = $derived(accounts.find((item) => String(item.id) === accountId) ?? null);
-  let category = $derived(categories.find((item) => String(item.id) === categoryId) ?? null);
-  let fuelOn = $derived(Boolean(category?.fuel));
-  let exponent = $derived(account?.exponent ?? exponentOf('USD'));
-  let remaining = $derived(sheet?.categories.find((item) => String(item.id) === categoryId) ?? null);
-  let today = $derived(todayISO());
-  let floorMiles = $derived(fuelOn && vehicleId !== '' ? lastOdometer(vehicleId) : null);
-  let odometerVehicle = $state('');
-
-  function coveringStay(date: string, rows: Trip[]): string {
-    const covering = rows.filter((trip) => trip.arriveOn <= date && trip.departOn >= date);
-    const arriving = covering.find((trip) => trip.arriveOn === date);
-    if (arriving) return String(arriving.id);
-    return covering[0] ? String(covering[0].id) : '';
-  }
-
-  function defaultVehicle(rows: Vehicle[]): string {
-    const starred = rows.find((item) => item.starred);
-    if (starred) return String(starred.id);
-    if (rows.length === 1) return String(rows[0].id);
-    return '';
-  }
-
-  function lastOdometer(id: string): number | null {
-    let last: number | null = null;
-    for (const posting of postings) {
-      if (String(posting.vehicleId) !== id || posting.odometerMiles === null) continue;
-      if (last === null || posting.odometerMiles > last) last = posting.odometerMiles;
-    }
-    return last;
-  }
-
-  function prefillOdometer(id: string): void {
-    const last = id === '' ? null : lastOdometer(id);
-    odometer = last === null ? '' : String(last);
-  }
-
-  function syncStay(date: string): void {
-    stayDate = date;
-    tripId = coveringStay(date, trips);
-  }
-
-  $effect(() => {
-    if (!fuelOn || vehicleId === '') {
-      odometerVehicle = '';
-      return;
-    }
-    if (vehicleId === odometerVehicle) return;
-    odometerVehicle = vehicleId;
-    prefillOdometer(vehicleId);
-  });
-
-  function onDate(): void {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(postedOn) && postedOn !== stayDate) syncStay(postedOn);
-  }
-
-  function focusField(problems: Record<string, string>): void {
-    const names: Record<string, string> = {
-      amountMinor: 'amount',
-      accountId: 'accountId',
-      categoryId: 'categoryId',
-      vehicleId: 'vehicleId',
-      odometerMiles: 'odometer',
-      pricePerGallonMinor: 'price',
-      postedOn: 'postedOn',
-      payee: 'payee',
-      memo: 'memo',
-      tripId: 'tripId',
-    };
-    for (const key of Object.keys(names)) {
-      if (!problems[key]) continue;
-      document.querySelector<HTMLElement>(`[name="${names[key]}"]`)?.focus();
-      return;
-    }
-  }
+  let vehicle = $derived(vehicles.find((item) => String(item.id) === vehicleId) ?? null);
+  let entered = $derived(Number(odometer));
+  let miles = $derived(
+    vehicle && odometer.trim() !== '' && Number.isInteger(entered) && entered >= vehicle.currentOdometerMiles
+      ? entered - vehicle.currentOdometerMiles
+      : null,
+  );
+  let fuelAccounts = $derived(accounts.filter((item) => item.type === 'fuel' && item.archivedAt === null));
 
   onMount(async () => {
     try {
-      const [accountData, categoryData, tripData, postingData, envelopeData, vehicleData] = await Promise.all([
+      const [accountData, vehicleData, categoryData] = await Promise.all([
         api<{ accounts: Account[] }>('/api/accounts'),
-        api<{ categories: Category[] }>('/api/categories'),
-        api<{ trips: Trip[] }>(`/api/trips?today=${todayISO()}&fuel=0`),
-        api<{ postings: Posting[] }>('/api/postings'),
-        api<EnvelopeSheet>(`/api/envelopes?today=${todayISO()}`),
         api<{ vehicles: Vehicle[] }>('/api/vehicles'),
+        api<{ categories: Category[] }>('/api/categories'),
       ]);
-      accounts = accountData.accounts;
-      categories = categoryData.categories;
-      trips = tripData.trips;
-      postings = postingData.postings;
-      sheet = envelopeData;
+      accounts = accountData.accounts.filter((item) => item.archivedAt === null);
       vehicles = vehicleData.vehicles;
-      if (accounts[0]) accountId = String(accounts[0].id);
-      if (categories[0]) categoryId = String(categories[0].id);
-      vehicleId = defaultVehicle(vehicles);
-      syncStay(postedOn);
+      categories = categoryData.categories;
+      const starred = vehicles.find((item) => item.starred) ?? vehicles[0];
+      if (starred) vehicleId = String(starred.id);
+      const fuel = accounts.find((item) => item.type === 'fuel');
+      if (fuel) accountId = String(fuel.id);
     } catch (err) {
       message = explain(err).message;
     }
   });
+
+  function bucketName(): string {
+    const match = categories.find((item) => item.locked && item.billType === wantType);
+    return match?.name ?? wantType;
+  }
 
   async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     fields = {};
     message = '';
-    const amountMinor = parseMajor(amount, exponent);
-    const parsedDate = readDateInput('postedOn');
-    const problems: Record<string, string> = {};
-    if (amountMinor === null || amountMinor <= 0) {
-      problems.amountMinor = 'Enter an amount greater than zero.';
-    }
-    if (!parsedDate) {
-      problems.postedOn = DATE_INPUT_ERROR;
-    } else if (parsedDate > today) {
-      problems.postedOn = 'Use today or an earlier date.';
-    } else {
-      postedOn = parsedDate;
-    }
-    if (fuelOn && (odometer.trim() !== '' || price.trim() !== '') && vehicleId === '') {
-      problems.vehicleId = 'Choose a vehicle.';
-    }
-    const priceMinor = !fuelOn || price.trim() === '' ? null : parseMajor(price, exponent);
-    if (fuelOn && price.trim() !== '' && (priceMinor === null || priceMinor <= 0)) {
-      problems.pricePerGallonMinor = 'Enter a price per gallon greater than zero.';
-    }
-    const floor = fuelOn && vehicleId !== '' ? lastOdometer(vehicleId) : null;
-    const miles = odometer.trim() === '' ? null : Number(odometer);
-    if (floor !== null && miles !== null && (!Number.isInteger(miles) || miles < floor)) {
-      problems.odometerMiles = `Enter an odometer at or above ${floor}.`;
-    }
-    if (Object.keys(problems).length > 0 || amountMinor === null) {
-      fields = problems;
-      focusField(problems);
-      return;
-    }
+    const date = readDateInput('date');
+    if (!date) fields.date = DATE_INPUT_ERROR;
+    else if (date > todayISO()) fields.date = 'The date cannot be after today.';
+    const amountMinor = parseMajor(amount, 2);
+    if (amountMinor === null || amountMinor < 1) fields.amountMinor = 'Enter an amount greater than zero.';
+    if (accountId === '') fields.accountId = 'Choose an account.';
     const body: Record<string, unknown> = {
+      kind,
       accountId: Number(accountId),
-      categoryId: Number(categoryId),
       amountMinor,
-      direction,
-      postedOn,
-      today,
-      payee,
-      memo,
-      tripId: tripId === '' ? null : Number(tripId),
+      date,
+      notes: notes.trim() === '' ? null : notes,
+      today: todayISO(),
     };
-    if (fuelOn) {
-      if (odometer.trim() !== '') body.odometerMiles = Number(odometer);
-      if (priceMinor !== null) body.pricePerGallonMinor = priceMinor;
-      if (vehicleId !== '' && (odometer.trim() !== '' || priceMinor !== null)) body.vehicleId = Number(vehicleId);
+    if (kind === 'fuel') {
+      if (vehicleId === '') fields.vehicleId = 'Choose a vehicle.';
+      const reading = Number(odometer);
+      if (odometer.trim() === '' || !Number.isInteger(reading) || reading < 0) {
+        fields.odometerMiles = 'Enter the odometer.';
+      }
+      body.vehicleId = Number(vehicleId);
+      body.odometerMiles = reading;
+      if (price.trim() !== '') {
+        const priceMinor = parseMajor(price, 2);
+        if (priceMinor === null || priceMinor < 1) fields.pricePerGallonMinor = 'Enter a price per gallon greater than zero, or leave it blank.';
+        body.pricePerGallonMinor = priceMinor;
+      }
+    } else {
+      if (name.trim() === '') fields.name = 'Use a name of 1 to 80 characters.';
+      body.type = wantType;
+      body.name = name.trim();
+      if (wantType === 'misc') body.otherLabel = name.trim();
     }
-    quoting = true;
+    if (Object.keys(fields).length > 0) return;
+    saving = true;
     try {
-      const data = await api<{ quote: ChargeQuote }>('/api/postings/quote', { method: 'POST', body });
-      pending = body;
-      quote = data.quote;
-      dialog?.showModal();
+      await api('/api/logs', { method: 'POST', body });
+      go('/calendar');
     } catch (err) {
       const problem = explain(err);
       message = problem.message;
       fields = problem.fields;
-      focusField(problem.fields);
-    } finally {
-      quoting = false;
+      saving = false;
     }
-  }
-
-  async function apply(): Promise<void> {
-    if (!pending || quote?.refused) return;
-    try {
-      const data = await api<{ posting: Posting }>('/api/postings', { method: 'POST', body: pending });
-      saved = data.posting;
-      dialog?.close();
-      quote = null;
-      pending = null;
-      amount = '';
-      price = '';
-      await reload();
-      if (fuelOn && vehicleId !== '') prefillOdometer(vehicleId);
-    } catch (err) {
-      message = explain(err).message;
-    }
-  }
-
-  function cancel(): void {
-    dialog?.close();
-    quote = null;
-    pending = null;
-  }
-
-  async function reload(): Promise<void> {
-    const [accountData, postingData, envelopeData] = await Promise.all([
-      api<{ accounts: Account[] }>('/api/accounts'),
-      api<{ postings: Posting[] }>('/api/postings'),
-      api<EnvelopeSheet>(`/api/envelopes?today=${todayISO()}`),
-    ]);
-    accounts = accountData.accounts;
-    postings = postingData.postings;
-    sheet = envelopeData;
   }
 </script>
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
-  <h1 class="m-0 text-4xl">New Log</h1>
-  {#if message}<p class="banner m-0" aria-live="polite">{message}</p>{/if}
-  {#if account}
-    <p class="m-0">{account.name} <span class="money">{formatMinor(account.balanceMinor, account.currency, account.exponent)}</span></p>
-  {/if}
-  {#if remaining && sheet}
-    <p class="m-0">{remaining.name} remaining <span class="money">{formatMinor(remaining.remainingMinor ?? 0, sheet.baseCurrency, sheet.exponent)}</span></p>
-  {/if}
-  {#if saved}
-    <p class="banner m-0" aria-live="polite">
-      {saved.accountName} {formatMinor(saved.balanceMinor, saved.currency, saved.exponent)}
-      · {saved.categoryName} remaining {formatMinor(saved.remainingMinor, saved.currency, saved.exponent)}
-    </p>
-  {/if}
-  <label class="field">
-    <span>Amount</span>
-    <input name="amount" inputmode="decimal" autocomplete="off" bind:value={amount} />
-    {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
-  </label>
+  <h1 class="text-3xl m-0">New log</h1>
+  <p class="muted m-0">A log is a one-time bill already marked paid. It leaves the account balance and the envelopes as they are.</p>
+  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <div class="field">
+    <span>Kind</span>
+    <div class="flex gap-2">
+      <button class="choice" class:on={kind === 'fuel'} type="button" onclick={() => (kind = 'fuel')}>
+        <Glyph name="fuel" mini /> Fuel
+      </button>
+      <button class="choice" class:on={kind === 'want'} type="button" onclick={() => (kind = 'want')}>
+        <Glyph name="wants" mini /> Want
+      </button>
+    </div>
+  </div>
   <label class="field">
     <span>Account</span>
     <select name="accountId" bind:value={accountId}>
-      {#each accounts as item (item.id)}
+      <option value="">Choose an account</option>
+      {#each (kind === 'fuel' && fuelAccounts.length > 0 ? fuelAccounts : accounts) as item}
         <option value={String(item.id)}>{item.name}</option>
       {/each}
     </select>
+    {#if fields.accountId}<em>{fields.accountId}</em>{/if}
   </label>
-  <label class="field">
-    <span>Bucket</span>
-    <select name="categoryId" bind:value={categoryId}>
-      {#each categories as item (item.id)}
-        <option value={String(item.id)}>{item.name}</option>
-      {/each}
-    </select>
-  </label>
-  <fieldset class="field border-0 p-0 m-0">
-    <legend>Direction</legend>
-    <div class="flex flex-wrap gap-2">
-      <button class="choice" class:on={direction === 'out'} type="button" aria-pressed={direction === 'out'} onclick={() => (direction = 'out')}>Out</button>
-      <button class="choice" class:on={direction === 'in'} type="button" aria-pressed={direction === 'in'} onclick={() => (direction = 'in')}>In</button>
-    </div>
-  </fieldset>
-  {#if fuelOn}
+  {#if kind === 'fuel'}
     <label class="field">
       <span>Vehicle</span>
       <select name="vehicleId" bind:value={vehicleId}>
         <option value="">Choose a vehicle</option>
-        {#each vehicles as item (item.id)}
-          <option value={String(item.id)}>{item.starred ? '★ ' : ''}{item.name}</option>
+        {#each vehicles as item}
+          <option value={String(item.id)}>{item.name}</option>
         {/each}
       </select>
       {#if fields.vehicleId}<em>{fields.vehicleId}</em>{/if}
     </label>
     <label class="field">
-      <span>Odometer, miles</span>
-      <input name="odometer" inputmode="numeric" autocomplete="off" min={floorMiles ?? undefined} bind:value={odometer} />
+      <span>Odometer</span>
+      <input name="odometer" inputmode="numeric" bind:value={odometer} />
+      {#if miles !== null}<span class="muted" data-miles={miles}>{miles} miles traveled</span>{/if}
       {#if fields.odometerMiles}<em>{fields.odometerMiles}</em>{/if}
     </label>
     <label class="field">
       <span>Price per gallon</span>
-      <input name="price" inputmode="decimal" autocomplete="off" bind:value={price} />
+      <input name="price" inputmode="decimal" bind:value={price} />
       {#if fields.pricePerGallonMinor}<em>{fields.pricePerGallonMinor}</em>{/if}
+    </label>
+  {:else}
+    <div class="field">
+      <span>Type</span>
+      <div class="flex flex-wrap gap-2">
+        {#each wantTypes as option}
+          <button class="choice" class:on={wantType === option} type="button" onclick={() => (wantType = option)}>{option}</button>
+        {/each}
+      </div>
+    </div>
+    <p class="m-0">Bucket <strong>{bucketName()}</strong></p>
+    <label class="field">
+      <span>Name</span>
+      <input name="name" bind:value={name} />
+      {#if fields.name}<em>{fields.name}</em>{/if}
     </label>
   {/if}
   <label class="field">
+    <span>Amount</span>
+    <input name="amount" inputmode="decimal" bind:value={amount} />
+    {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
+  </label>
+  <label class="field">
     <span>Date</span>
-    <DateField name="postedOn" bind:value={postedOn} oninput={onDate} />
-    {#if fields.postedOn}<em>{fields.postedOn}</em>{/if}
+    <DateField name="date" bind:value={postedOn} />
+    {#if fields.date}<em>{fields.date}</em>{/if}
   </label>
   <label class="field">
-    <span>Payee</span>
-    <input name="payee" autocomplete="off" bind:value={payee} />
+    <span>Notes</span>
+    <textarea name="notes" bind:value={notes}></textarea>
   </label>
-  <label class="field">
-    <span>Memo</span>
-    <textarea name="memo" autocomplete="off" bind:value={memo}></textarea>
-  </label>
-  <label class="field">
-    <span>Stay</span>
-    <select name="tripId" bind:value={tripId}>
-      <option value="">None</option>
-      {#each trips as trip (trip.id)}
-        <option value={String(trip.id)}>{trip.placeName}</option>
-      {/each}
-    </select>
-  </label>
-  <div class="flex flex-wrap gap-2">
-    <button class="btn primary" type="submit" disabled={quoting} aria-busy={quoting}>{quoting ? 'Saving…' : 'Save'}</button>
-  </div>
+  <button class="btn primary w-fit" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save log'}</button>
 </form>
-
-<section class="grid gap-2 mt-8">
-  <h2 class="m-0 text-2xl">Recent</h2>
-  {#each postings as posting (posting.id)}
-    <p class="m-0">
-      {formatDate(posting.postedOn)}
-      {#if posting.payee}· {posting.payee}{/if}
-      · {posting.direction === 'out' ? 'Out' : 'In'}
-      {formatMinor(posting.amountMinor, posting.currency, posting.exponent)}
-      {#if posting.lines.length > 1}
-        {#each posting.lines as line (`${posting.id}-${line.categoryId}`)}
-          · {line.categoryName} {formatMinor(line.amountMinor, posting.currency, posting.exponent)}
-        {/each}
-      {:else}
-        · {posting.categoryName}
-      {/if}
-      {#if posting.placeName}· {posting.placeName}{/if}
-      {#if posting.stretch?.milesPerGallon}
-        · {posting.stretch.miles} mi · {posting.stretch.gallons} gal · {posting.stretch.milesPerGallon} mpg
-      {:else if posting.stretch?.note}
-        · {posting.stretch.note}
-      {/if}
-    </p>
-  {/each}
-</section>
-
-<dialog class="modal" bind:this={dialog} aria-labelledby="move-balance">
-  {#if quote}
-    <h2 id="move-balance" class="m-0 text-2xl">Move this balance?</h2>
-    <p>{quote.accountName}</p>
-    <p class="money">{formatMinor(quote.oldBalanceMinor, quote.currency, quote.exponent)} → {formatMinor(quote.newBalanceMinor, quote.currency, quote.exponent)}</p>
-    {#if quote.overLimit}<p>This would put the card over its limit.</p>{/if}
-    {#if quote.refused}<p>{quote.refused}</p>{/if}
-    <div class="flex flex-wrap gap-2">
-      {#if !quote.refused}
-        <button class="btn primary" type="button" onclick={apply}>Apply</button>
-      {/if}
-      <button class="btn" type="button" onclick={cancel}>Cancel</button>
-    </div>
-  {/if}
-</dialog>

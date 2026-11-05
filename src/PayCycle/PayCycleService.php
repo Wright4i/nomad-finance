@@ -17,6 +17,9 @@ final class PayCycleService
 
     private const KINDS = ['salary', 'fixed', 'hourly'];
 
+    /** @var array<int, array<string, array{amount:int,hours:?int}>> */
+    private array $entryCache = [];
+
     public function __construct(
         private readonly PDO $pdo,
         private readonly Actor $actor,
@@ -78,8 +81,16 @@ final class PayCycleService
             $cycle = $this->present($this->roll($row, $today), $today);
             $second = is_int($cycle['secondDay']) ? $cycle['secondDay'] : null;
             $next = is_string($cycle['nextPayday']) ? $cycle['nextPayday'] : null;
-            foreach (MonthPaydays::dates((string) $cycle['payday'], (string) $cycle['length'], $second, $next, $month) as $date) {
-                $amount = $this->paycheckOnDate($cycle, $date);
+            $dates = MonthPaydays::dates((string) $cycle['payday'], (string) $cycle['length'], $second, $next, $month);
+            foreach ($this->keyedDates((int) $cycle['id']) as $keyed) {
+                if (str_starts_with($keyed, $month)) {
+                    $dates[] = $keyed;
+                }
+            }
+            $dates = array_values(array_unique($dates));
+            sort($dates);
+            foreach ($dates as $date) {
+                $amount = $this->projected($cycle, $date);
                 if ($amount === null) {
                     continue;
                 }
@@ -117,7 +128,7 @@ final class PayCycleService
         $this->pdo->prepare(
             'INSERT INTO pay_cycles (
                 user_id, payor, payday, length, second_day, next_payday,
-                pay_kind, rate_minor, hours_hundredths, hours_mode, average_months, created_at, updated_at
+                pay_kind, rate_minor, hours_hundredths, hours_mode, average_on, created_at, updated_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $this->actor->id(),
@@ -130,7 +141,7 @@ final class PayCycleService
             $data['rateMinor'],
             $data['hoursHundredths'],
             $data['hoursMode'],
-            $data['averageMonths'],
+            $data['averageOn'],
             $now,
             $now,
         ]);
@@ -157,7 +168,7 @@ final class PayCycleService
         $this->pdo->prepare(
             'UPDATE pay_cycles
              SET payor = ?, payday = ?, length = ?, second_day = ?, next_payday = ?,
-                 pay_kind = ?, rate_minor = ?, hours_hundredths = ?, hours_mode = ?, average_months = ?,
+                 pay_kind = ?, rate_minor = ?, hours_hundredths = ?, hours_mode = ?, average_on = ?,
                  updated_at = ?
              WHERE id = ? AND user_id = ?'
         )->execute([
@@ -170,7 +181,7 @@ final class PayCycleService
             $data['rateMinor'],
             $data['hoursHundredths'],
             $data['hoursMode'],
-            $data['averageMonths'],
+            $data['averageOn'],
             gmdate('c'),
             $id,
             $this->actor->id(),
@@ -206,7 +217,7 @@ final class PayCycleService
 
     /**
      * @param array<string, mixed> $input
-     * @return array{payor:string,payday:string,length:string,secondDay:?int,nextPayday:?string,payKind:string,rateMinor:int,hoursHundredths:?int,hoursMode:string,averageMonths:?int}
+     * @return array{payor:string,payday:string,length:string,secondDay:?int,nextPayday:?string,payKind:string,rateMinor:int,hoursHundredths:?int,hoursMode:string,averageOn:int}
      */
     private function validate(array $input): array
     {
@@ -280,13 +291,7 @@ final class PayCycleService
             }
         }
 
-        $average = $this->averageMonths($input['averageMonths'] ?? null);
-        if ($average === false) {
-            $errors['averageMonths'] = 'Use 3 to 6 months, or leave the average off.';
-            $average = null;
-        } elseif ($average !== null && $kind !== 'hourly') {
-            $errors['averageMonths'] = 'An average is only for an hourly cycle.';
-        }
+        $averageOn = !empty($input['averageOn']) ? 1 : 0;
 
         if ($errors !== []) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
@@ -302,7 +307,7 @@ final class PayCycleService
             'rateMinor' => $rate,
             'hoursHundredths' => $hours,
             'hoursMode' => $mode,
-            'averageMonths' => is_int($average) ? $average : null,
+            'averageOn' => $averageOn,
         ];
     }
 
@@ -400,7 +405,7 @@ final class PayCycleService
             }
         }
 
-        return [
+        $presented = [
             'id' => (int) $row['id'],
             'payor' => $row['payor'],
             'payday' => $row['payday'],
@@ -410,7 +415,7 @@ final class PayCycleService
             'payKind' => $kind,
             'rateMinor' => $rate,
             'hoursMode' => $mode,
-            'averageMonths' => $row['average_months'] === null ? null : (int) $row['average_months'],
+            'averageOn' => (int) ($row['average_on'] ?? 0) === 1,
             'hours' => self::hoursText($hours),
             'paycheckMinor' => $paycheck,
             'weekdayPay' => $weekdayPay,
@@ -420,12 +425,173 @@ final class PayCycleService
             'rollsOn' => $open['next'],
             'archivedAt' => $row['archived_at'],
         ];
+        $presented['paycheckMinor'] = $this->projected($presented, (string) $open['start']);
+
+        return $presented;
+    }
+
+    /**
+     * Keyed amount wins. Average of earlier keys when average is on. Otherwise the base paycheck.
+     *
+     * @param array<string, mixed> $cycle
+     */
+    public function projected(array $cycle, string $date): ?int
+    {
+        $keyed = $this->entries((int) $cycle['id']);
+        $earlier = [];
+        foreach ($keyed as $day => $entry) {
+            if ($day < $date) {
+                $earlier[] = $entry['amount'];
+            }
+        }
+
+        return Payroll::amount(
+            $keyed[$date]['amount'] ?? null,
+            ($cycle['averageOn'] ?? false) === true,
+            $earlier,
+            $this->baseOnDate($cycle, $date),
+        );
+    }
+
+    /** @return list<string> */
+    public function keyedDates(int $id): array
+    {
+        return array_keys($this->entries($id));
+    }
+
+    /**
+     * @return array{averageOn:bool,rows:list<array<string, mixed>>}
+     */
+    public function payroll(int $id, string $today): array
+    {
+        $cycle = $this->get($id, $today);
+        $dates = $this->sheetDates($cycle, $today);
+        $keyed = $this->entries($id);
+        $rows = [];
+        foreach ($dates as $date) {
+            $entry = $keyed[$date] ?? null;
+            $rows[] = [
+                'payday' => $date,
+                'amountMinor' => $entry['amount'] ?? null,
+                'hours' => self::hoursText($entry['hours'] ?? null),
+                'keyed' => $entry !== null,
+                'projectedMinor' => $this->projected($cycle, $date),
+            ];
+        }
+
+        return [
+            'averageOn' => $cycle['averageOn'] === true,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * One amount per date. An empty amount removes the key. Next payday is left as stored.
+     *
+     * @param array<string, mixed> $input
+     * @return array{averageOn:bool,rows:list<array<string, mixed>>}
+     */
+    public function savePayroll(int $id, array $input, string $today): array
+    {
+        $this->must($id);
+        $entries = is_array($input['entries'] ?? null) ? $input['entries'] : null;
+        if ($entries === null) {
+            throw new ApiException(422, 'Check the highlighted fields.', ['entries' => 'Send the pay dates.']);
+        }
+        $upsert = $this->pdo->prepare(
+            'INSERT INTO payroll_entries (pay_cycle_id, payday, amount_minor, hours_hundredths)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(pay_cycle_id, payday) DO UPDATE SET
+                amount_minor = excluded.amount_minor,
+                hours_hundredths = excluded.hours_hundredths'
+        );
+        $delete = $this->pdo->prepare('DELETE FROM payroll_entries WHERE pay_cycle_id = ? AND payday = ?');
+        foreach ($entries as $entry) {
+            if (!is_array($entry)) {
+                throw new ApiException(422, 'Check the highlighted fields.', ['entries' => 'Send one amount per date.']);
+            }
+            $payday = $this->date($entry['payday'] ?? null);
+            if ($payday === null) {
+                throw new ApiException(422, 'Check the highlighted fields.', ['payday' => 'Use a YYYY-MM-DD date.']);
+            }
+            $amount = $entry['amountMinor'] ?? null;
+            if ($amount === null || $amount === '' || $amount === 0 || $amount === '0') {
+                $delete->execute([$id, $payday]);
+                continue;
+            }
+            $minor = $this->asInt($amount);
+            if ($minor === null || $minor < 1) {
+                throw new ApiException(422, 'Check the highlighted fields.', ['amountMinor' => 'Enter an amount greater than zero, or leave it blank.']);
+            }
+            $hours = null;
+            if (array_key_exists('hours', $entry) && $entry['hours'] !== null && $entry['hours'] !== '') {
+                $hours = $this->hours($entry['hours']);
+                if ($hours === null) {
+                    throw new ApiException(422, 'Check the highlighted fields.', ['hours' => 'Enter the hours.']);
+                }
+            }
+            $upsert->execute([$id, $payday, $minor, $hours]);
+        }
+        $this->entryCache = [];
+
+        return $this->payroll($id, $today);
+    }
+
+    /**
+     * @param array<string, mixed> $cycle
+     * @return list<string>
+     */
+    private function sheetDates(array $cycle, string $today): array
+    {
+        $second = is_int($cycle['secondDay']) ? $cycle['secondDay'] : null;
+        if ($cycle['length'] === 'irregular') {
+            $dates = [];
+            if (is_string($cycle['nextPayday'])) {
+                $dates[] = $cycle['nextPayday'];
+            }
+        } else {
+            $dates = Payroll::window((string) $cycle['payday'], (string) $cycle['length'], $second, $today);
+        }
+        foreach ($this->keyedDates((int) $cycle['id']) as $keyed) {
+            $dates[] = $keyed;
+        }
+        $dates = array_values(array_unique($dates));
+        sort($dates);
+
+        return $dates;
+    }
+
+    /**
+     * @return array<string, array{amount:int,hours:?int}>
+     */
+    private function entries(int $id): array
+    {
+        if (isset($this->entryCache[$id])) {
+            return $this->entryCache[$id];
+        }
+        $stmt = $this->pdo->prepare(
+            'SELECT payday, amount_minor, hours_hundredths FROM payroll_entries WHERE pay_cycle_id = ? ORDER BY payday'
+        );
+        $stmt->execute([$id]);
+        $listed = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                break;
+            }
+            $listed[(string) $row['payday']] = [
+                'amount' => (int) $row['amount_minor'],
+                'hours' => $row['hours_hundredths'] === null ? null : (int) $row['hours_hundredths'],
+            ];
+        }
+        $this->entryCache[$id] = $listed;
+
+        return $listed;
     }
 
     /**
      * @param array<string, mixed> $cycle
      */
-    private function paycheckOnDate(array $cycle, string $date): ?int
+    private function baseOnDate(array $cycle, string $date): ?int
     {
         if (($cycle['hoursMode'] ?? '') === 'weekdays' && ($cycle['length'] ?? '') === 'monthly') {
             $hundredths = Paycheck::hoursHundredths(is_string($cycle['hours'] ?? null) ? $cycle['hours'] : '');
@@ -437,7 +603,13 @@ final class PayCycleService
             }
         }
 
-        $amount = is_int($cycle['paycheckMinor']) ? $cycle['paycheckMinor'] : null;
+        $hours = Paycheck::hoursHundredths(is_string($cycle['hours'] ?? null) ? $cycle['hours'] : '');
+        $amount = Paycheck::amount(
+            (string) ($cycle['payKind'] ?? 'fixed'),
+            (string) ($cycle['length'] ?? 'monthly'),
+            (int) ($cycle['rateMinor'] ?? 0),
+            $hours,
+        );
         $second = $cycle['secondDay'];
         if (($cycle['hoursMode'] ?? '') === 'weekdays' && is_int($second)) {
             $anchorDay = (int) substr((string) $cycle['payday'], 8, 2);
@@ -460,19 +632,6 @@ final class PayCycleService
         }
 
         return $amount;
-    }
-
-    private function averageMonths(mixed $value): int|null|false
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-        $months = $this->asInt($value);
-        if ($months === null || !in_array($months, [3, 4, 5, 6], true)) {
-            return false;
-        }
-
-        return $months;
     }
 
     private static function hoursText(?int $hundredths): ?string

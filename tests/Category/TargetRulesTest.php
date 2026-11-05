@@ -172,10 +172,10 @@ final class TargetRulesTest extends TestCase
             self::assertSame(422, $e->status);
             self::assertArrayHasKey('target', $e->fields);
         }
-        self::assertSame(
-            ['Needs Default', 'Fuel Bucket', 'Wants Default', 'Savings Default'],
-            array_column($this->categories->list(true), 'name'),
-        );
+        $names = array_column($this->categories->list(true), 'name');
+        self::assertContains('Rent', $names);
+        self::assertContains('Fuel', $names);
+        self::assertNotContains('Needs Default', $names);
     }
 
     public function testAnOmittedTargetStaysAndANullTargetClearsIt(): void

@@ -13,7 +13,6 @@
             <directory>tests/Dashboard</directory>
             <directory>tests/Demo</directory>
             <directory>tests/Envelope</directory>
-            <directory>tests/ExchangeRate</directory>
             <directory>tests/Http</directory>
             <directory>tests/Money</directory>
             <directory>tests/PayCycle</directory>

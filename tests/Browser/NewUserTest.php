@@ -90,6 +90,7 @@ final class NewUserTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
@@ -108,9 +109,10 @@ final class NewUserTest extends TestCase
 
         self::click('New user');
         self::waitForText('Your name');
-        self::waitForText('Base currency');
+        self::waitForText('Current odometer');
         self::type('name', 'Bea');
         self::type('password', 'bea keeps her own books');
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::waitForText('Bea');

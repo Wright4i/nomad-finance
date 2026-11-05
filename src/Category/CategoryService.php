@@ -32,7 +32,7 @@ final class CategoryService
         if (!$includeArchived) {
             $sql .= ' AND archived_at IS NULL';
         }
-        $sql .= " ORDER BY CASE category_group WHEN 'needs' THEN 0 WHEN 'wants' THEN 1 ELSE 2 END, CASE role WHEN 'default' THEN 0 WHEN 'fuel' THEN 1 ELSE 2 END, name COLLATE NOCASE, id";
+        $sql .= " ORDER BY CASE category_group WHEN 'needs' THEN 0 WHEN 'wants' THEN 1 ELSE 2 END, CASE role WHEN 'goal' THEN 0 ELSE 1 END, name COLLATE NOCASE, id";
         SystemBuckets::ensure($this->pdo, $this->actor->id());
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$this->actor->id()]);
@@ -80,20 +80,7 @@ final class CategoryService
     {
         $existing = $this->present($this->row($id));
         if ($existing['role'] !== 'goal') {
-            if ($this->lockedChange($input, $existing)) {
-                throw new ApiException(409, 'This bucket only takes a target amount.');
-            }
-            if (array_key_exists('target', $input)) {
-                $kind = is_array($input['target']) ? ($input['target']['kind'] ?? null) : null;
-                if ($input['target'] !== null && $kind !== 'balance') {
-                    throw new ApiException(422, 'Check the highlighted fields.', [
-                        'target' => 'This bucket holds one amount.',
-                    ]);
-                }
-                $this->targets->replace($id, $input['target']);
-            }
-
-            return $this->get($id, $today);
+            throw new ApiException(409, 'This bucket stays as it is.');
         }
         $data = $this->validate($input, (string) $existing['overspend']);
         $now = gmdate('c');
@@ -126,13 +113,17 @@ final class CategoryService
         if ($existing['amountMinor'] !== 0) {
             throw new ApiException(409, 'This bucket still holds an amount. Bring it to zero before archiving it.');
         }
-        $home = $this->pdo->prepare(
-            "SELECT id FROM categories WHERE user_id = ? AND role = 'default' AND category_group = ?"
-        );
-        $home->execute([$this->actor->id(), $existing['group']]);
-        $defaultId = (int) $home->fetchColumn();
-        $this->pdo->prepare('UPDATE bills SET category_id = ?, updated_at = ? WHERE category_id = ?')
-            ->execute([$defaultId, gmdate('c'), $id]);
+        $bills = $this->pdo->prepare('SELECT id, type FROM bills WHERE category_id = ?');
+        $bills->execute([$id]);
+        $move = $this->pdo->prepare('UPDATE bills SET category_id = ?, updated_at = ? WHERE id = ?');
+        $now = gmdate('c');
+        while ($bill = $bills->fetch()) {
+            if (!is_array($bill)) {
+                break;
+            }
+            $home = SystemBuckets::idForType($this->pdo, $this->actor->id(), (string) $bill['type']);
+            $move->execute([$home, $now, (int) $bill['id']]);
+        }
         $now = gmdate('c');
         $this->pdo->prepare(
             'UPDATE categories SET archived_at = COALESCE(archived_at, ?), updated_at = ? WHERE id = ? AND user_id = ?'
@@ -235,8 +226,10 @@ final class CategoryService
             'name' => $row['name'],
             'group' => $row['category_group'],
             'overspend' => (string) ($row['overspend'] ?? 'cover'),
-            'role' => (string) ($row['role'] ?? 'goal'),
-            'fuel' => (string) ($row['role'] ?? '') === 'fuel',
+            'role' => (string) ($row['role'] ?? 'goal') === 'locked' ? 'locked' : 'goal',
+            'billType' => $row['bill_type'] ?? null,
+            'locked' => (string) ($row['role'] ?? '') === 'locked',
+            'fuel' => (string) ($row['bill_type'] ?? '') === 'fuel',
             'amountMinor' => (int) $row['amount_minor'],
             'archivedAt' => $row['archived_at'],
             'createdAt' => $row['created_at'],

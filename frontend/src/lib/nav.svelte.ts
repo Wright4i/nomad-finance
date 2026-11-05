@@ -28,7 +28,6 @@ export type View =
   | { name: 'account-form'; id: string | null }
   | { name: 'bills' }
   | { name: 'bill-form'; id: string | null }
-  | { name: 'rates' }
   | { name: 'categories' }
   | { name: 'category-form'; id: string | null }
   | { name: 'pay-cycles' }
@@ -53,7 +52,6 @@ export function match(path: string): View {
   if (path === '/bills/new') return { name: 'bill-form', id: null };
   const bill = path.match(/^\/bills\/(\d+)$/);
   if (bill) return { name: 'bill-form', id: bill[1] };
-  if (path === '/settings/rates' || path === '/rates') return { name: 'rates' };
   if (path === '/categories') return { name: 'categories' };
   if (path === '/categories/new') return { name: 'category-form', id: null };
   const category = path.match(/^\/categories\/(\d+)$/);

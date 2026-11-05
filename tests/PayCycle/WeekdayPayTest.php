@@ -60,7 +60,6 @@ final class WeekdayPayTest extends TestCase
 
     public function testAWeekdayPreviewDoesNotPost(): void
     {
-        $postings = $this->rows('postings');
         $assignments = $this->rows('assignments');
         $cycle = $this->cycles->create([
             'payor' => 'Weekday Payor',
@@ -74,16 +73,14 @@ final class WeekdayPayTest extends TestCase
 
         self::assertSame('weekdays', $cycle['hoursMode']);
         self::assertNull($cycle['hours']);
-        self::assertNull($cycle['averageMonths']);
+        self::assertFalse($cycle['averageOn']);
         self::assertSame(220000, $cycle['paycheckMinor']);
         self::assertSame(440000, $cycle['weekdayPay']['grossMinor']);
         self::assertSame(440000, $cycle['weekdayPay']['earlierMinor'] + $cycle['weekdayPay']['laterMinor']);
-        self::assertSame($postings, $this->rows('postings'));
         self::assertSame($assignments, $this->rows('assignments'));
 
         $again = $this->cycles->get((int) $cycle['id'], '2026-11-04');
         self::assertSame($cycle['weekdayPay'], $again['weekdayPay']);
-        self::assertSame($postings, $this->rows('postings'));
         self::assertSame($assignments, $this->rows('assignments'));
     }
 

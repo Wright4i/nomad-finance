@@ -2,19 +2,17 @@
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import CurrencySelect from '../components/CurrencySelect.svelte';
-  import { exponentOf, formatBps, minorToInput, parseMajor, parsePercent } from '../lib/money';
+  import { formatBps, minorToInput, parseMajor, parsePercent } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import type { Account } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
 
-  const types = ['checking', 'savings', 'cash', 'credit', 'loan', 'other'] as const;
+  const types = ['checking', 'savings', 'cash', 'credit', 'loan', 'fuel', 'other'] as const;
 
   let name = $state('');
   let type = $state<string>('checking');
   let side = $state('');
-  let currency = $state('USD');
   let balance = $state('');
   let interest = $state('');
   let minimumDue = $state('');
@@ -22,15 +20,16 @@
   let creditLimit = $state('');
   let institution = $state('');
   let notes = $state('');
+  let autopayChoice = $state<'none' | 'minimum' | 'balance'>('none');
   let archivedAt = $state<string | null>(null);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
 
-  let showLiability = $derived(type === 'credit' || type === 'loan');
-  let showLimit = $derived(type === 'credit');
+  let showLiability = $derived(type === 'credit' || type === 'loan' || type === 'fuel');
+  let showLimit = $derived(type === 'credit' || type === 'fuel');
   let showSide = $derived(type === 'other');
-  let exponent = $derived(exponentOf(currency));
+  const exponent = 2;
 
   onMount(async () => {
     if (!id) return;
@@ -40,15 +39,15 @@
       name = account.name;
       type = account.type;
       side = account.side;
-      currency = account.currency;
-      balance = minorToInput(account.balanceMinor, account.exponent);
+      balance = minorToInput(account.balanceMinor, 2);
       interest = account.interestBps === null ? '' : formatBps(account.interestBps);
-      minimumDue = account.minimumDueMinor === null ? '' : minorToInput(account.minimumDueMinor, account.exponent);
+      minimumDue = account.minimumDueMinor === null ? '' : minorToInput(account.minimumDueMinor, 2);
       dueDay = account.dueDay === null ? '' : String(account.dueDay);
-      creditLimit = account.creditLimitMinor === null ? '' : minorToInput(account.creditLimitMinor, account.exponent);
+      creditLimit = account.creditLimitMinor === null ? '' : minorToInput(account.creditLimitMinor, 2);
       institution = account.institution ?? '';
       notes = account.notes ?? '';
       archivedAt = account.archivedAt;
+      autopayChoice = account.autopayChoice ?? 'none';
     } catch (err) {
       message = explain(err).message;
     }
@@ -85,12 +84,12 @@
       name,
       type,
       side: showSide ? side : undefined,
-      currency,
       balanceMinor,
       interestBps,
       minimumDueMinor,
       dueDay: showLiability && dueDay !== '' ? Number(dueDay) : null,
       creditLimitMinor,
+      autopayChoice: showLiability ? autopayChoice : 'none',
       institution,
       notes,
     };
@@ -170,12 +169,7 @@
     </div>
   {/if}
   <label class="field">
-    <span>Currency</span>
-    <CurrencySelect name="currency" bind:value={currency} />
-    {#if fields.currency}<em>{fields.currency}</em>{/if}
-  </label>
-  <label class="field">
-    <span>Balance ({currency.toUpperCase() || 'currency'})</span>
+    <span>Balance</span>
     <input name="balance" inputmode="decimal" bind:value={balance} />
     {#if fields.balanceMinor}<em>{fields.balanceMinor}</em>{/if}
   </label>
@@ -194,6 +188,17 @@
       <span>Due day</span>
       <input name="dueDay" inputmode="numeric" placeholder="1–31" bind:value={dueDay} />
       {#if fields.dueDay}<em>{fields.dueDay}</em>{/if}
+    </label>
+  {/if}
+  {#if showLiability}
+    <label class="field">
+      <span>Autopay</span>
+      <select name="autopayChoice" bind:value={autopayChoice}>
+        <option value="none">None</option>
+        <option value="minimum">Minimum</option>
+        <option value="balance">Current balance</option>
+      </select>
+      {#if fields.autopayChoice}<em>{fields.autopayChoice}</em>{/if}
     </label>
   {/if}
   {#if showLimit}

@@ -1,12 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
-  import DateField from '../components/DateField.svelte';
   import { api, explain } from '../lib/api';
-  import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
-  import { exponentOf, formatDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { formatDate, formatMinor } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
-  import type { Account, ChargeQuote, Vehicle, VehicleReading } from '../lib/types';
+  import type { Vehicle } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
 
@@ -29,28 +27,14 @@
   let mpgMin = $state('6.0');
   let mpgMax = $state('12.0');
   let starred = $state(false);
+  let currentOdometer = $state('');
   let vehicle = $state<Vehicle | null>(null);
-  let accounts = $state<Account[]>([]);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
-  let editing = $state<VehicleReading | null>(null);
-  let editAmount = $state('');
-  let editAccountId = $state('');
-  let editOdometer = $state('');
-  let editPrice = $state('');
-  let editDate = $state('');
-  let quote = $state<ChargeQuote | null>(null);
-  let pendingEdit = $state<Record<string, unknown> | null>(null);
-  let pendingDelete = $state<number | null>(null);
-  let dialog: HTMLDialogElement | undefined = $state();
   let rangeHelp: HTMLDialogElement | undefined = $state();
 
-  let account = $derived(accounts.find((item) => String(item.id) === editAccountId) ?? null);
-
   async function load(): Promise<void> {
-    const accountData = await api<{ accounts: Account[] }>('/api/accounts');
-    accounts = accountData.accounts;
     if (!id) return;
     const data = await api<{ vehicle: Vehicle }>(`/api/vehicles/${id}`);
     vehicle = data.vehicle;
@@ -59,6 +43,7 @@
     mpgMin = tenthsToInput(data.vehicle.mpgMinTenths);
     mpgMax = tenthsToInput(data.vehicle.mpgMaxTenths);
     starred = data.vehicle.starred;
+    currentOdometer = String(data.vehicle.currentOdometerMiles);
   }
 
   onMount(() => {
@@ -76,12 +61,15 @@
     if (min === null) problems.mpgMinTenths = 'Enter a minimum miles per gallon greater than zero.';
     if (max === null) problems.mpgMaxTenths = 'Enter a maximum miles per gallon greater than zero.';
     if (min !== null && max !== null && min >= max) problems.mpgMaxTenths = 'The maximum is above the minimum.';
+    if (currentOdometer.trim() === '' || !/^\d+$/.test(currentOdometer.trim())) {
+      problems.currentOdometerMiles = 'Enter the current odometer. Zero is only the reading you type.';
+    }
     fields = problems;
     if (Object.keys(problems).length > 0) return;
     saving = true;
     message = '';
     try {
-      const body = { name, kind, mpgMinTenths: min, mpgMaxTenths: max, starred };
+      const body = { name, kind, mpgMinTenths: min, mpgMaxTenths: max, starred, currentOdometerMiles: Number(currentOdometer) };
       const data = await api<{ vehicle: Vehicle }>(id ? `/api/vehicles/${id}` : '/api/vehicles', {
         method: id ? 'PATCH' : 'POST',
         body,
@@ -100,96 +88,6 @@
     } finally {
       saving = false;
     }
-  }
-
-  function openEdit(reading: VehicleReading): void {
-    editing = reading;
-    editAmount = minorToInput(reading.amountMinor, exponentOf(reading.currency));
-    editAccountId = String(reading.accountId);
-    editOdometer = reading.odometerMiles === null ? '' : String(reading.odometerMiles);
-    editPrice = reading.pricePerGallonMinor === null ? '' : minorToInput(reading.pricePerGallonMinor, exponentOf(reading.currency));
-    editDate = reading.postedOn;
-    quote = null;
-    pendingEdit = null;
-    pendingDelete = null;
-    dialog?.showModal();
-  }
-
-  async function saveReading(): Promise<void> {
-    if (!editing || !vehicle) return;
-    const exponent = exponentOf(editing.currency);
-    const amountMinor = parseMajor(editAmount, account?.exponent ?? exponent);
-    const priceMinor = editPrice.trim() === '' ? null : parseMajor(editPrice, account?.exponent ?? exponent);
-    const posted = readDateInput('postedOn');
-    const problems: Record<string, string> = {};
-    if (amountMinor === null || amountMinor <= 0) {
-      problems.amountMinor = 'Enter an amount greater than zero.';
-    }
-    if (!posted) problems.postedOn = DATE_INPUT_ERROR;
-    else if (posted > todayISO()) problems.postedOn = 'Use today or an earlier date.';
-    if (Object.keys(problems).length > 0 || amountMinor === null || amountMinor <= 0 || !posted) {
-      fields = problems;
-      return;
-    }
-    editDate = posted;
-    const body: Record<string, unknown> = {
-      accountId: Number(editAccountId),
-      categoryId: editing.categoryId,
-      amountMinor,
-      direction: editing.direction,
-      postedOn: posted,
-      today: todayISO(),
-      payee: editing.payee ?? '',
-      memo: editing.memo ?? '',
-      tripId: editing.tripId,
-      vehicleId: vehicle.id,
-    };
-    if (editOdometer.trim() !== '') body.odometerMiles = Number(editOdometer);
-    if (priceMinor !== null) body.pricePerGallonMinor = priceMinor;
-    const amountChanged = amountMinor !== editing.amountMinor;
-    const accountChanged = Number(editAccountId) !== editing.accountId;
-    if (amountChanged || accountChanged) {
-      const data = await api<{ quote: ChargeQuote }>(`/api/postings/${editing.id}/quote`, { method: 'POST', body });
-      quote = data.quote;
-      pendingEdit = body;
-      pendingDelete = null;
-      return;
-    }
-    await api(`/api/postings/${editing.id}`, { method: 'PATCH', body });
-    dialog?.close();
-    await load();
-  }
-
-  async function askDelete(reading: VehicleReading): Promise<void> {
-    editing = null;
-    pendingEdit = null;
-    pendingDelete = reading.id;
-    const data = await api<{ quote: ChargeQuote }>(`/api/postings/${reading.id}/delete-quote`, { method: 'POST', body: {} });
-    quote = data.quote;
-    dialog?.showModal();
-  }
-
-  async function confirm(): Promise<void> {
-    if (quote?.refused) return;
-    if (pendingDelete !== null) {
-      await api(`/api/postings/${pendingDelete}/delete`, { method: 'POST', body: {} });
-    } else if (editing && pendingEdit) {
-      await api(`/api/postings/${editing.id}`, { method: 'PATCH', body: pendingEdit });
-    }
-    dialog?.close();
-    quote = null;
-    pendingEdit = null;
-    pendingDelete = null;
-    editing = null;
-    await load();
-  }
-
-  function closeDialog(): void {
-    dialog?.close();
-    quote = null;
-    pendingEdit = null;
-    pendingDelete = null;
-    editing = null;
   }
 </script>
 
@@ -212,6 +110,11 @@
       {/each}
     </div>
   </div>
+  <label class="field">
+    <span>Current odometer</span>
+    <input name="currentOdometer" inputmode="numeric" bind:value={currentOdometer} />
+    {#if fields.currentOdometerMiles}<em>{fields.currentOdometerMiles}</em>{/if}
+  </label>
   <div class="grid grid-cols-2 gap-3">
     <label class="field">
       <span class="inline-flex items-center gap-2">
@@ -245,8 +148,8 @@
           <th class="text-right">Odometer</th>
           <th class="text-right">Price per gallon</th>
           <th class="text-right">Gallons</th>
+          <th class="text-right">Miles</th>
           <th class="text-right">Stretch mpg</th>
-          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -254,13 +157,10 @@
           <tr>
             <td>{formatDate(reading.postedOn)}</td>
             <td class="text-right">{reading.odometerMiles ?? '—'}</td>
-            <td class="text-right money">{reading.pricePerGallonMinor === null ? '—' : formatMinor(reading.pricePerGallonMinor, reading.currency, exponentOf(reading.currency))}</td>
+            <td class="text-right money">{reading.pricePerGallonMinor === null ? '—' : formatMinor(reading.pricePerGallonMinor)}</td>
             <td class="text-right">{reading.gallons ?? '—'}</td>
+            <td class="text-right">{reading.miles ?? '—'}</td>
             <td class="text-right">{reading.milesPerGallon ?? reading.note ?? '—'}</td>
-            <td class="text-right">
-              <button class="btn" type="button" onclick={() => openEdit(reading)}>Edit</button>
-              <button class="btn" type="button" onclick={() => askDelete(reading)}>Delete</button>
-            </td>
           </tr>
         {/each}
       </tbody>
@@ -268,55 +168,12 @@
   </section>
 {/if}
 
-<dialog class="modal" bind:this={dialog} aria-labelledby="reading-title">
-  {#if quote}
-    <h2 id="reading-title" class="m-0 text-2xl">Move this balance?</h2>
-    <p>{quote.accountName}</p>
-    <p class="money">{formatMinor(quote.oldBalanceMinor, quote.currency, quote.exponent)} → {formatMinor(quote.newBalanceMinor, quote.currency, quote.exponent)}</p>
-    {#if quote.refused}<p>{quote.refused}</p>{/if}
-    <div class="flex flex-wrap gap-2">
-      {#if !quote.refused}
-        <button class="btn primary" type="button" onclick={confirm}>{pendingDelete !== null ? 'Delete' : 'Apply'}</button>
-      {/if}
-      <button class="btn" type="button" onclick={closeDialog}>Cancel</button>
-    </div>
-  {:else if editing}
-    <h2 id="reading-title" class="m-0 text-2xl">Edit reading</h2>
-    <label class="field">
-      <span>Date</span>
-      <DateField name="postedOn" bind:value={editDate} />
-      {#if fields.postedOn}<em>{fields.postedOn}</em>{/if}
-    </label>
-    <label class="field">
-      <span>Account</span>
-      <select name="accountId" bind:value={editAccountId}>
-        {#each accounts as item (item.id)}
-          <option value={String(item.id)}>{item.name}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="field">
-      <span>Amount</span>
-      <input name="amount" inputmode="decimal" autocomplete="off" bind:value={editAmount} />
-      {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
-    </label>
-    <label class="field">
-      <span>Odometer, miles</span>
-      <input name="odometer" inputmode="numeric" autocomplete="off" bind:value={editOdometer} />
-    </label>
-    <label class="field">
-      <span>Price per gallon</span>
-      <input name="price" inputmode="decimal" autocomplete="off" bind:value={editPrice} />
-    </label>
-    <div class="flex flex-wrap gap-2 mt-3">
-      <button class="btn primary" type="button" onclick={saveReading}>Save</button>
-      <button class="btn" type="button" onclick={closeDialog}>Cancel</button>
-    </div>
-  {/if}
-</dialog>
-
 <dialog class="modal" bind:this={rangeHelp} aria-labelledby="range-help-title">
-  <h2 id="range-help-title" class="m-0 text-2xl">How the range is used</h2>
-  <p>The min/max range is to throw out outlier mpg readings from missed odometer entries and fill-ups while not towing</p>
-  <button class="btn mt-3" type="button" onclick={() => rangeHelp?.close()}>Close</button>
+  <div class="modal-body">
+    <h2 id="range-help-title" class="m-0 text-2xl">How the range is used</h2>
+    <p class="m-0">The min/max range is to throw out outlier mpg readings from missed odometer entries and fill-ups while not towing</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => rangeHelp?.close()}>Close</button>
+  </div>
 </dialog>

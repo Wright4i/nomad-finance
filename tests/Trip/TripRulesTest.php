@@ -10,7 +10,6 @@ use App\Category\CategoryService;
 use App\Database\Database;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
-use App\Posting\PostingService;
 use App\Target\TargetService;
 use App\Tests\Support\DemoSession;
 use App\Trip\Drive;
@@ -42,8 +41,7 @@ final class TripRulesTest extends TestCase
         $catalog = new CurrencyCatalog();
         $this->accounts = new AccountService($this->pdo, $catalog, $actor);
         $categories = new CategoryService($this->pdo, $actor, new TargetService($this->pdo, $actor));
-        $postings = new PostingService($this->pdo, $actor, $catalog);
-        $this->trips = new TripService($this->pdo, $actor, $catalog, $postings, new Drive(false));
+        $this->trips = new TripService($this->pdo, $actor, $catalog, new Drive(false));
         $account = $this->accounts->create([
             'name' => 'Checking 1',
             'type' => 'checking',
@@ -65,7 +63,6 @@ final class TripRulesTest extends TestCase
 
     public function testABalanceDueDateDoesNotPost(): void
     {
-        $postings = (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn();
         $trip = $this->trips->create([
             'placeName' => 'Stay 1',
             'note' => 'Site 34',
@@ -83,7 +80,6 @@ final class TripRulesTest extends TestCase
         self::assertSame(12000, $trip['amountDueMinor']);
         self::assertSame(12000, $trip['totalMinor']);
         self::assertSame(0, $trip['depositMinor']);
-        self::assertSame($postings, (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn());
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
 
         $updated = $this->trips->update((int) $trip['id'], [
@@ -100,7 +96,6 @@ final class TripRulesTest extends TestCase
             'today' => '2026-11-03',
         ]);
         self::assertSame('2026-11-25', $updated['balanceDueOn']);
-        self::assertSame($postings, (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn());
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
 
         $prefilled = $this->stay(8000, 5000, '2026-12-01', '2026-12-05', 'Stay 3');
@@ -111,7 +106,7 @@ final class TripRulesTest extends TestCase
         $free = $this->stay(0, 0, '2027-01-02', '2027-01-04', 'Stay 4');
         self::assertSame('2027-01-02', $free['balanceDueOn']);
         self::assertSame(0, $free['amountDueMinor']);
-        self::assertSame($postings, (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn());
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
     public function testSavingATripDoesNotMoveTheBalance(): void
@@ -132,24 +127,13 @@ final class TripRulesTest extends TestCase
         }
     }
 
-    public function testAQuoteDoesNotChargeAndApplyDoes(): void
+    public function testSavingLodgingDoesNotChangeTheTypedBalance(): void
     {
         $trip = $this->stay(8000, 5000, '2026-12-01', '2026-12-05');
         self::assertSame(3000, $trip['depositMinor']);
-        $quote = $this->trips->quote((int) $trip['id'], ['part' => 'deposit']);
-        self::assertSame(20000, $quote['oldBalanceMinor']);
-        self::assertSame(17000, $quote['newBalanceMinor']);
-        self::assertNull($quote['refused']);
+        self::assertFalse($trip['depositCharged']);
+        self::assertFalse($trip['dueCharged']);
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
-
-        $charged = $this->trips->apply((int) $trip['id'], [
-            'part' => 'deposit',
-            'categoryId' => $this->categoryId,
-            'today' => '2026-11-03',
-        ]);
-        self::assertTrue($charged['depositCharged']);
-        self::assertFalse($charged['dueCharged']);
-        self::assertSame(17000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
     public function testArrivalDoesNotChargeTheAmountDue(): void
@@ -160,61 +144,18 @@ final class TripRulesTest extends TestCase
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
-    public function testApplyIsRefusedWhenTheAssetWouldGoBelowZero(): void
-    {
-        $trip = $this->stay(25000, 0, '2026-12-01', '2026-12-02');
-        $quote = $this->trips->quote((int) $trip['id'], ['part' => 'deposit']);
-        self::assertSame('That would take the balance below zero.', $quote['refused']);
-        try {
-            $this->trips->apply((int) $trip['id'], [
-                'part' => 'deposit',
-                'categoryId' => $this->categoryId,
-                'today' => '2026-11-03',
-            ]);
-            self::fail('A deposit larger than the balance was applied.');
-        } catch (ApiException $e) {
-            self::assertSame(422, $e->status);
-        }
-        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
-    }
-
-    public function testDeleteWithoutConfirmationLeavesTheCharge(): void
+    public function testDeleteWithoutConfirmationLeavesTheStayAndTheBalance(): void
     {
         $trip = $this->stay(8000, 5000, '2026-12-01', '2026-12-05');
-        $this->trips->apply((int) $trip['id'], [
-            'part' => 'deposit',
-            'categoryId' => $this->categoryId,
-            'today' => '2026-11-03',
-        ]);
         try {
             $this->trips->delete((int) $trip['id'], false);
             self::fail('The stay was deleted without confirmation.');
         } catch (ApiException $e) {
             self::assertSame(409, $e->status);
         }
-        self::assertSame(17000, $this->accounts->get($this->accountId)['balanceMinor']);
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
         $this->trips->delete((int) $trip['id'], true);
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
-    }
-
-    public function testASecondChargeIsRefused(): void
-    {
-        $trip = $this->stay(8000, 5000, '2026-12-01', '2026-12-05');
-        $this->trips->apply((int) $trip['id'], [
-            'part' => 'deposit',
-            'categoryId' => $this->categoryId,
-            'today' => '2026-11-03',
-        ]);
-        try {
-            $this->trips->apply((int) $trip['id'], [
-                'part' => 'deposit',
-                'categoryId' => $this->categoryId,
-                'today' => '2026-11-03',
-            ]);
-            self::fail('The deposit was charged twice.');
-        } catch (ApiException $e) {
-            self::assertSame(409, $e->status);
-        }
     }
 
     public function testRouteOrderFollowsArrival(): void
@@ -230,21 +171,6 @@ final class TripRulesTest extends TestCase
     public function testALaterStayCarriesAFuelLabelAndTheFirstDoesNot(): void
     {
         $this->pdo->prepare('UPDATE user SET fuel_price_minor = 400 WHERE id = ?')->execute([$_SESSION['user_id']]);
-        $now = gmdate('c');
-        \App\Category\SystemBuckets::ensure($this->pdo, (int) $_SESSION['user_id']);
-        $fuelRow = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'fuel'");
-        $fuelRow->execute([$_SESSION['user_id']]);
-        $fuel = (int) $fuelRow->fetchColumn();
-        $insert = $this->pdo->prepare(
-            'INSERT INTO postings (
-                user_id, account_id, category_id, amount_minor, direction, payee, posted_on,
-                odometer_miles, price_per_gallon_minor, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, \'out\', \'Fuel 1\', ?, ?, 400, ?, ?)'
-        );
-        $insert->execute([$_SESSION['user_id'], $this->accountId, $fuel, 1000, '2026-10-01', 10000, $now, $now]);
-        $insert->execute([$_SESSION['user_id'], $this->accountId, $fuel, 2000, '2026-11-01', 10100, $now, $now]);
-        $insert->execute([$_SESSION['user_id'], $this->accountId, $fuel, 1000, '2026-11-08', 10300, $now, $now]);
-        $insert->execute([$_SESSION['user_id'], $this->accountId, $fuel, 1000, '2026-11-18', 10500, $now, $now]);
 
         $first = $this->trips->create([
             'placeName' => 'Stay 1',
@@ -268,7 +194,6 @@ final class TripRulesTest extends TestCase
             'amountDueMinor' => 1000,
             'today' => '2026-11-03',
         ]);
-        $postings = (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn();
         $legs = (new Drive(false))->legs([
             ['id' => (int) $first['id'], 'latitude' => '36.1699', 'longitude' => '-115.1398'],
             ['id' => (int) $second['id'], 'latitude' => '34.0522', 'longitude' => '-118.2437'],
@@ -287,7 +212,6 @@ final class TripRulesTest extends TestCase
         self::assertSame($legs[0]['miles'], $again['fuel']['miles']);
         self::assertGreaterThan(0, $again['fuel']['miles']);
         self::assertNull($again['fuel']['costMinor']);
-        self::assertSame($postings, (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn());
 
         $this->pdo->prepare('UPDATE user SET fuel_price_minor = NULL WHERE id = ?')->execute([$_SESSION['user_id']]);
         $priced = $this->trips->get((int) $second['id'], '2026-11-03');
@@ -327,7 +251,6 @@ final class TripRulesTest extends TestCase
 
     public function testARatingIsStoredAsHalfStarsAndDoesNotPost(): void
     {
-        $postings = (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn();
         $balance = $this->accounts->get($this->accountId)['balanceMinor'];
         $trip = $this->trips->create($this->fields([
             'ratingHalfStars' => 7,
@@ -386,7 +309,6 @@ final class TripRulesTest extends TestCase
         ]));
         self::assertSame(0, $zero['ratingHalfStars']);
         self::assertNull($zero['ratingComment']);
-        self::assertSame($postings, (int) $this->pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn());
         self::assertSame($balance, $this->accounts->get($this->accountId)['balanceMinor']);
 
         $plain = $this->stay(0, 0, '2026-12-01', '2026-12-02', 'Stay 2');
@@ -461,15 +383,12 @@ final class TripRulesTest extends TestCase
         self::assertSame('Comment 1', $still['ratingComment']);
     }
 
-    public function testAnUnchargedStayBlocksArchive(): void
+    public function testLodgingDueDoesNotBlockArchiveOrChangeTheBalance(): void
     {
         $this->stay(8000, 8000, '2026-12-01', '2026-12-05');
-        try {
-            $this->accounts->archive($this->accountId);
-            self::fail('An account with lodging still due was archived.');
-        } catch (ApiException $e) {
-            self::assertSame(409, $e->status);
-        }
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+        self::assertNotNull($this->accounts->archive($this->accountId)['archivedAt']);
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
     /** @param array<string, mixed> $extra

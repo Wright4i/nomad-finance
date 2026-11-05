@@ -90,19 +90,17 @@ final class NewUserTest extends TestCase
         self::assertSame($demoRow, $this->userWhere("role = 'demo'"));
         self::assertSame($ownerBooks, $this->books($ownerId));
         self::assertSame($demoBooks, $this->books($demoId));
-        self::assertNotSame([], $ownerBooks['rates']);
         self::assertNotSame([], $demoBooks['accounts']);
         $beaBooks = $this->books($beaId);
         self::assertSame([], $beaBooks['accounts']);
         self::assertSame([], $beaBooks['bills']);
-        self::assertSame([], $beaBooks['rates']);
         self::assertSame([], $beaBooks['trips']);
-        self::assertSame([
-            ['name' => 'Fuel Bucket'],
-            ['name' => 'Needs Default'],
-            ['name' => 'Savings Default'],
-            ['name' => 'Wants Default'],
-        ], $beaBooks['categories']);
+        $lockedNames = array_map(
+            static fn (string $type): array => ['name' => \App\Bill\BillTypes::label($type)],
+            \App\Bill\BillTypes::all(),
+        );
+        usort($lockedNames, static fn (array $left, array $right): int => $left['name'] <=> $right['name']);
+        self::assertSame($lockedNames, $beaBooks['categories']);
         self::assertSame([], $beaBooks['payCycles']);
         self::assertCount(1, $beaBooks['vehicles']);
         self::assertSame('Vehicle 1', $beaBooks['vehicles'][0]['name']);
@@ -171,7 +169,7 @@ final class NewUserTest extends TestCase
         return $row;
     }
 
-    /** @return array{accounts:list<array<string,mixed>>,bills:list<array<string,mixed>>,rates:list<array<string,mixed>>,vehicles:list<array<string,mixed>>,trips:list<array<string,mixed>>,categories:list<array<string,mixed>>,payCycles:list<array<string,mixed>>} */
+    /** @return array{accounts:list<array<string,mixed>>,bills:list<array<string,mixed>>,vehicles:list<array<string,mixed>>,trips:list<array<string,mixed>>,categories:list<array<string,mixed>>,payCycles:list<array<string,mixed>>} */
     private function books(int $userId): array
     {
         return [
@@ -180,7 +178,6 @@ final class NewUserTest extends TestCase
                 'SELECT b.name, b.amount_minor, b.status FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? ORDER BY b.name',
                 $userId,
             ),
-            'rates' => $this->rows('SELECT currency, rate FROM exchange_rates WHERE user_id = ? ORDER BY currency', $userId),
             'vehicles' => $this->rows('SELECT name, kind FROM vehicles WHERE user_id = ? ORDER BY name', $userId),
             'trips' => $this->rows('SELECT place_name, arrive_on FROM trips WHERE user_id = ? ORDER BY place_name', $userId),
             'categories' => $this->rows('SELECT name FROM categories WHERE user_id = ? ORDER BY name', $userId),

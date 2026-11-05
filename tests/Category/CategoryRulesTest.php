@@ -43,12 +43,12 @@ final class CategoryRulesTest extends TestCase
     public function testNameIsTrimmedAndTheGroupIsOneOfThree(): void
     {
         $category = $this->categories->create([
-            'name' => '  Rent  ',
+            'name' => '  Shelter  ',
             'group' => 'Needs',
             'amountMinor' => 900,
         ]);
 
-        self::assertSame('Rent', $category['name']);
+        self::assertSame('Shelter', $category['name']);
         self::assertSame('needs', $category['group']);
         self::assertSame(0, $category['amountMinor']);
         self::assertNull($category['archivedAt']);
@@ -92,16 +92,16 @@ final class CategoryRulesTest extends TestCase
         $save = $this->categories->create(['name' => 'Save', 'group' => 'savings']);
 
         self::assertSame(
-            ['Needs Default', 'Fuel Bucket', 'Alpha', 'Zulu', 'Wants Default', 'Middle', 'Savings Default', 'Save'],
-            array_column($this->categories->list(false), 'name'),
+            ['Alpha', 'Zulu', 'Middle', 'Save'],
+            $this->goalNames(false),
         );
 
         $moved = $this->categories->update($save['id'], [
-            'name' => '  Emergency  ',
+            'name' => '  Nest Egg  ',
             'group' => 'Needs',
             'amountMinor' => 50,
         ]);
-        self::assertSame('Emergency', $moved['name']);
+        self::assertSame('Nest Egg', $moved['name']);
         self::assertSame('needs', $moved['group']);
         self::assertSame(0, $moved['amountMinor']);
 
@@ -109,8 +109,8 @@ final class CategoryRulesTest extends TestCase
         self::assertNotNull($archived['archivedAt']);
         self::assertNotContains('Alpha', array_column($this->categories->list(false), 'name'));
         self::assertSame(
-            ['Needs Default', 'Fuel Bucket', 'Alpha', 'Emergency', 'Zulu', 'Wants Default', 'Middle', 'Savings Default'],
-            array_column($this->categories->list(true), 'name'),
+            ['Alpha', 'Nest Egg', 'Zulu', 'Middle'],
+            $this->goalNames(true),
         );
 
         $restored = $this->categories->unarchive($alpha['id']);
@@ -120,7 +120,7 @@ final class CategoryRulesTest extends TestCase
 
     public function testArchiveIsRefusedWhileTheAmountIsNotZero(): void
     {
-        $held = $this->categories->create(['name' => 'Rent', 'group' => 'needs']);
+        $held = $this->categories->create(['name' => 'Shelter', 'group' => 'needs']);
         $this->pdo->prepare('UPDATE categories SET amount_minor = 40 WHERE id = ?')->execute([$held['id']]);
 
         try {
@@ -147,7 +147,7 @@ final class CategoryRulesTest extends TestCase
 
     public function testAnotherPersonCannotSeeOrChangeTheseCategories(): void
     {
-        $rent = $this->categories->create(['name' => 'Rent', 'group' => 'needs']);
+        $rent = $this->categories->create(['name' => 'Shelter', 'group' => 'needs']);
         $now = gmdate('c');
         $this->pdo->prepare(
             'INSERT INTO user (name, password_hash, base_currency, theme, role, created_at)
@@ -157,10 +157,8 @@ final class CategoryRulesTest extends TestCase
         $this->pdo->prepare('INSERT INTO login_guard (user_id, failed_count) VALUES (?, 0)')->execute([$ownerId]);
 
         $_SESSION['user_id'] = $ownerId;
-        self::assertSame(
-            ['Needs Default', 'Fuel Bucket', 'Wants Default', 'Savings Default'],
-            array_column($this->categories->list(true), 'name'),
-        );
+        self::assertNotContains('Shelter', array_column($this->categories->list(true), 'name'));
+        self::assertContains('Rent', array_column($this->categories->list(true), 'name'));
         try {
             $this->categories->get($rent['id']);
             self::fail('Another person cannot open this category.');
@@ -181,7 +179,20 @@ final class CategoryRulesTest extends TestCase
         }
 
         $_SESSION['user_id'] = $this->demoId;
-        self::assertSame('Rent', $this->categories->get($rent['id'])['name']);
+        self::assertSame('Shelter', $this->categories->get($rent['id'])['name']);
         self::assertNull($this->categories->get($rent['id'])['archivedAt']);
+    }
+
+    /** @return list<string> */
+    private function goalNames(bool $archived): array
+    {
+        $names = [];
+        foreach ($this->categories->list($archived) as $category) {
+            if (($category['role'] ?? '') === 'goal') {
+                $names[] = (string) $category['name'];
+            }
+        }
+
+        return $names;
     }
 }

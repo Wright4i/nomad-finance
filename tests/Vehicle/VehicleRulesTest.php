@@ -9,7 +9,6 @@ use App\Auth\Actor;
 use App\Category\CategoryService;
 use App\Database\Database;
 use App\Money\CurrencyCatalog;
-use App\Posting\PostingService;
 use App\Target\TargetService;
 use App\Tests\Support\DemoSession;
 use App\Trip\Drive;
@@ -26,8 +25,6 @@ final class VehicleRulesTest extends TestCase
 
     private VehicleService $vehicles;
 
-    private PostingService $postings;
-
     private TripService $trips;
 
     private int $accountId;
@@ -43,8 +40,7 @@ final class VehicleRulesTest extends TestCase
         $catalog = new CurrencyCatalog();
         $accounts = new AccountService($this->pdo, $catalog, $actor);
         $categories = new CategoryService($this->pdo, $actor, new TargetService($this->pdo, $actor));
-        $this->postings = new PostingService($this->pdo, $actor, $catalog);
-        $this->trips = new TripService($this->pdo, $actor, $catalog, $this->postings, new Drive(false));
+        $this->trips = new TripService($this->pdo, $actor, $catalog, new Drive(false));
         $this->vehicles = new VehicleService($this->pdo, $actor);
         $this->accountId = (int) $accounts->create([
             'name' => 'Cash 1',
@@ -53,7 +49,7 @@ final class VehicleRulesTest extends TestCase
             'balanceMinor' => 50000,
         ])['id'];
         $categories->list(false);
-        $fuel = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'fuel'");
+        $fuel = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'locked' AND bill_type = 'fuel'");
         $fuel->execute([$_SESSION['user_id']]);
         $this->fuelId = (int) $fuel->fetchColumn();
         $this->pdo->prepare('UPDATE user SET fuel_price_minor = 400 WHERE id = ?')->execute([$_SESSION['user_id']]);
@@ -133,6 +129,7 @@ final class VehicleRulesTest extends TestCase
             'mpgMinTenths' => 60,
             'mpgMaxTenths' => 120,
             'starred' => $starred,
+            'currentOdometerMiles' => 0,
         ];
     }
 
@@ -153,16 +150,15 @@ final class VehicleRulesTest extends TestCase
 
     private function fill(int $odometer, int $amount, int $vehicleId, string $day): void
     {
-        $this->postings->create([
-            'accountId' => $this->accountId,
-            'categoryId' => $this->fuelId,
-            'amountMinor' => $amount,
-            'direction' => 'out',
-            'postedOn' => $day,
-            'today' => '2026-11-04',
-            'odometerMiles' => $odometer,
-            'pricePerGallonMinor' => 400,
-            'vehicleId' => $vehicleId,
+        $now = gmdate('c');
+        $this->pdo->prepare(
+            'INSERT INTO bills (
+                name, type, account_id, category_id, amount_minor, currency,
+                recurrence, anchor_date, next_due_date, last_paid_on, autopay, status,
+                created_at, updated_at, vehicle_id, odometer_miles, price_per_gallon_minor
+             ) VALUES (\'Fuel 1\', \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, \'paid\', ?, ?, ?, ?, 400)'
+        )->execute([
+            $this->accountId, $this->fuelId, $amount, $day, $day, $day, $now, $now, $vehicleId, $odometer,
         ]);
     }
 }

@@ -36,18 +36,12 @@ export function minorToInput(minor: number, exponent: number): string {
   return `${sign}${whole}.${frac}`;
 }
 
-export function formatMinor(minor: number, currency: string, exponent = exponentOf(currency)): string {
-  const major = minor / 10 ** exponent;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: exponent,
-      maximumFractionDigits: exponent,
-    }).format(major);
-  } catch {
-    return `${minorToInput(minor, exponent)} ${currency}`;
-  }
+export function formatMinor(minor: number, _currency = '', _exponent = 2): string {
+  const sign = minor < 0 ? '-' : '';
+  const abs = Math.abs(Math.trunc(minor));
+  const whole = Math.trunc(abs / 100).toLocaleString('en-US');
+  const frac = String(abs % 100).padStart(2, '0');
+  return `${sign}$${whole}.${frac}`;
 }
 
 export function parseSignedMajor(input: string, exponent: number): number | null {

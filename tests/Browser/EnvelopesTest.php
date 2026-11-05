@@ -91,13 +91,14 @@ final class EnvelopesTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
         self::waitForText('Use demo');
         self::click('Use demo');
         self::waitForText('Available to assign');
-        self::waitForText('$12,850.18');
+        self::waitForText('$13,295.00');
         self::waitForText('Needs');
         self::waitForText('50%');
         self::waitForText('$500.00 · 100%');
@@ -163,15 +164,15 @@ final class EnvelopesTest extends TestCase
         self::assertStringNotContainsString('Next period', $planner['envelopeText']);
         self::assertStringNotContainsString('Open period', $planner['envelopeText']);
         self::assertStringNotContainsString('Cash 3', $planner['envelopeText']);
-        self::assertStringContainsString('$12,850.18', $planner['envelopeText']);
+        self::assertStringContainsString('$13,295.00', $planner['envelopeText']);
         self::assertStringContainsString('assigned of', $planner['envelopeText']);
         self::assertSame(1, $planner['pies']);
         self::assertStringContainsString('rent', $planner['rentText']);
-        self::assertStringContainsString('$80.00', $planner['rentText']);
-        self::assertStringContainsString('$49.68', $planner['billText']);
+        self::assertStringContainsString('$380.00', $planner['rentText']);
+        self::assertStringContainsString('$174.04', $planner['billText']);
         self::assertStringNotContainsString('$65.00', $planner['billText']);
         self::assertStringContainsString('$1,275.00', $planner['billText']);
-        self::assertStringNotContainsString('debt', $planner['billText']);
+        self::assertStringContainsString('debt', $planner['billText']);
         self::assertStringNotContainsString('entertainment', $planner['billText']);
         self::assertStringNotContainsString('One-Time Bill', $planner['billText']);
         self::assertStringNotContainsString('Paid', $planner['billText']);
@@ -206,81 +207,90 @@ final class EnvelopesTest extends TestCase
 
             return is_string($legend)
                 && str_contains($legend, 'debt')
-                && str_contains($legend, '$450.00')
                 && str_contains($legend, 'entertainment')
                 && str_contains($legend, '$500.00')
-                && !str_contains($legend, 'rent');
+                && str_contains($legend, 'rent');
         });
         self::click('Current Month');
-        self::waitForText('$80.00');
+        self::waitForText('$380.00');
         self::clickLink('Envelopes');
         self::waitForText('Available to assign');
-        self::waitForText('$12,850.18');
+        self::waitForText('$13,295.00');
         self::waitForText('Needs 1');
         self::waitForText('$500.00');
         $bars = self::driver()->executeScript(<<<'JS'
-            const label = (name) => [...document.querySelectorAll('label')].find((node) => node.innerText.includes(name));
+            const tile = (name) => [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes(name));
             const read = (name) => {
-                const row = label(name);
-                const meter = row ? row.querySelector('.remain-meter') : null;
-                const fill = meter ? meter.querySelector('.gauge-fill, .gauge-over') : null;
+                const row = tile(name);
                 return {
-                    over: meter ? meter.classList.contains('over') : false,
-                    scale: fill ? fill.style.transform : '',
-                    coral: fill ? fill.classList.contains('gauge-over') : false,
+                    found: Boolean(row),
+                    input: row ? row.querySelector('input') !== null : false,
+                    water: row ? row.style.getPropertyValue('--level') : '',
                 };
             };
-            return { needs: read('Needs 1'), wants: read('Wants 1') };
+            return { needs: read('Needs 1'), wants: read('Wants 1'), rent: read('Rent') };
         JS);
         self::assertIsArray($bars);
-        self::assertFalse($bars['needs']['over']);
-        self::assertSame('scaleX(0.97)', $bars['needs']['scale']);
-        self::assertTrue($bars['wants']['over']);
-        self::assertTrue($bars['wants']['coral']);
-        self::assertSame('scaleX(1)', $bars['wants']['scale']);
-        self::waitForText('Set aside $300.00 a month · 4 months until Feb 1, 2027');
-        self::waitForText('Cash 3');
-        self::waitForText('No USD rate for KPW');
+        self::assertTrue($bars['needs']['found']);
+        self::assertTrue($bars['needs']['input']);
+        self::assertTrue($bars['wants']['found']);
+        self::assertTrue($bars['rent']['found']);
+        self::assertFalse($bars['rent']['input']);
         self::waitForText('Nov 2026');
         self::click('Next month');
         self::waitForText('Dec 2026');
         self::waitForText('when this month opens');
-        self::waitForText('Save assignments');
         self::driver()->executeScript(<<<'JS'
-            const label = [...document.querySelectorAll('label')].find((node) => node.innerText.includes('Needs 1'));
-            const input = label.querySelector('input');
+            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+            const input = tile.querySelector('input');
             input.value = '700.00';
             input.dispatchEvent(new Event('input', { bubbles: true }));
         JS);
-        self::click('Save assignments');
-        self::waitForText('$700.00');
+        $started = microtime(true);
+        self::wait()->until(function () use ($started): bool {
+            if (microtime(true) - $started < 1.3) {
+                return false;
+            }
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+                const input = tile ? tile.querySelector('input') : null;
+                return input ? input.value : '';
+            JS);
+
+            return $value === '700.00';
+        });
         self::click('Previous month');
         self::waitForText('Nov 2026');
         self::waitForText('$500.00');
         self::click('Previous month');
-        self::waitForText('$200.00');
-        self::waitForText('-$150.00');
         self::waitForText('Carry');
         self::waitForText('A closed month can be read.');
-        self::waitForTextGone('Save assignments');
+        $closed = self::driver()->executeScript(<<<'JS'
+            const value = (name) => {
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes(name));
+                const input = tile ? tile.querySelector('input') : null;
+                return input ? input.value : '';
+            };
+            return { needs: value('Needs 1'), wants: value('Wants 1') };
+        JS);
+        self::assertSame('200.00', $closed['needs']);
+        self::assertSame('-150.00', $closed['wants']);
         $disabled = self::driver()->executeScript(<<<'JS'
-            const label = [...document.querySelectorAll('label')].find((node) => node.innerText.includes('Needs 1'));
-            const input = label ? label.querySelector('input') : null;
+            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+            const input = tile ? tile.querySelector('input') : null;
             return input ? input.disabled : false;
         JS);
         self::assertTrue($disabled);
         self::click('Next month');
-        self::waitForText('Save assignments');
         self::waitForText('$500.00');
         self::driver()->executeScript(<<<'JS'
-            const label = [...document.querySelectorAll('label')].find((node) => node.innerText.includes('Needs 1'));
-            const input = label.querySelector('input');
+            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+            const input = tile.querySelector('input');
             input.value = '600.00';
             input.dispatchEvent(new Event('input', { bubbles: true }));
         JS);
-        self::click('Save assignments');
         self::waitForText('$600.00');
-        self::waitForText('$12,750.18');
+        self::waitForText('$13,195.00');
         self::clickLink('Planner');
         self::clickLink('Bills');
         self::clickLinkContaining('One-Time Bill');

@@ -843,10 +843,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 
 .stay-toolbar-nav {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  flex: none;
+  min-width: 0;
 }
 
 .stay-rating {
@@ -1101,9 +1101,22 @@ dialog.modal {
   border-radius: 1.15rem;
   background: var(--bg-raise);
   color: var(--text);
-  padding: 1.25rem 1.35rem;
+  padding: 1.25rem 1.35rem 1.25rem;
   box-shadow: var(--shadow);
   overscroll-behavior: contain;
+}
+
+dialog.modal .modal-body {
+  display: grid;
+  gap: 0.75rem;
+  padding-bottom: 1.25rem;
+}
+
+dialog.modal .modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 dialog.modal.wide { width: min(40rem, calc(100vw - 2rem)); }
@@ -1532,9 +1545,47 @@ a.row:hover {
 }
 
 .month-income { color: var(--teal); }
+.month-debt { color: var(--coral); }
 .month-bills { color: var(--coral); }
-.month-paid { color: var(--lilac); }
+.month-paid { color: var(--lilac); font-style: italic; }
+.month-rule { align-self: stretch; width: 1px; background: #111; }
 .month-net { color: #111; }
+
+.bucket-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.bucket-tile {
+  position: relative;
+  display: grid;
+  align-content: end;
+  gap: 0.2rem;
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--bg-raise);
+}
+
+.bucket-tile.over {
+  border-color: #c9842a;
+  background: color-mix(in oklab, #c9842a 18%, var(--bg-raise));
+}
+
+.bucket-water {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--level, 0) * 100%);
+  background: color-mix(in oklab, var(--tone, var(--teal)) 35%, transparent);
+  pointer-events: none;
+}
+
+.bucket-tile > * { position: relative; }
 
 @media (prefers-reduced-motion: reduce) {
   .drawer { transition: none; }

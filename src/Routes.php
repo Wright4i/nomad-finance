@@ -12,11 +12,9 @@ use App\Category\CategoryService;
 use App\Dashboard\DashboardService;
 use App\Demo\DemoLibrary;
 use App\Envelope\EnvelopeService;
-use App\Posting\PostingService;
 use App\Trip\PlaceSearch;
 use App\Trip\TripService;
 use App\Vehicle\VehicleService;
-use App\ExchangeRate\RateService;
 use App\PayCycle\PayCycleService;
 use App\Http\AuthMiddleware;
 use App\Http\Csrf;
@@ -36,11 +34,9 @@ final class Routes
         private readonly CategoryService $categories,
         private readonly PayCycleService $payCycle,
         private readonly EnvelopeService $envelopes,
-        private readonly RateService $rates,
         private readonly DashboardService $dashboard,
         private readonly TripService $trips,
         private readonly PlaceSearch $places,
-        private readonly PostingService $postings,
         private readonly VehicleService $vehicles,
         private readonly Actor $actor,
         private readonly DemoLibrary $demo,
@@ -55,16 +51,14 @@ final class Routes
         $categories = $this->categories;
         $payCycle = $this->payCycle;
         $envelopes = $this->envelopes;
-        $rates = $this->rates;
         $dashboard = $this->dashboard;
         $trips = $this->trips;
         $places = $this->places;
-        $postings = $this->postings;
         $vehicles = $this->vehicles;
         $actor = $this->actor;
         $demo = $this->demo;
 
-        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $rates, $dashboard, $trips, $places, $postings, $vehicles, $actor, $demo): void {
+        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $actor, $demo): void {
             $group->get('/session', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                 return Json::write($response, [
                     'needsSetup' => $auth->needsSetup(),
@@ -94,7 +88,7 @@ final class Routes
                 });
             })->add(CsrfMiddleware::class);
 
-            $group->group('', function (RouteCollectorProxy $secure) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $rates, $dashboard, $trips, $places, $postings, $vehicles, $actor, $demo): void {
+            $group->group('', function (RouteCollectorProxy $secure) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $actor, $demo): void {
                 $secure->post('/logout', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                     $auth->logout();
 
@@ -167,40 +161,10 @@ final class Routes
                         'trip' => $trips->rememberLocality((int) $args['id'], $found['city'], $found['region'], $found['address'], $today),
                     ]);
                 });
-                $secure->post('/trips/{id:[0-9]+}/quote', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($trips) {
-                    return Json::write($response, ['quote' => $trips->quote((int) $args['id'], self::body($request))]);
-                });
-                $secure->post('/trips/{id:[0-9]+}/apply', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($trips) {
-                    return Json::write($response, ['trip' => $trips->apply((int) $args['id'], self::body($request))]);
-                });
                 $secure->post('/trips/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($trips) {
                     $body = self::body($request);
                     $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
                     $trips->delete((int) $args['id'], $confirm);
-
-                    return Json::write($response, ['ok' => true]);
-                });
-
-                $secure->get('/postings', function (ServerRequestInterface $request, ResponseInterface $response) use ($postings) {
-                    return Json::write($response, ['postings' => $postings->list()]);
-                });
-                $secure->post('/postings/quote', function (ServerRequestInterface $request, ResponseInterface $response) use ($postings) {
-                    return Json::write($response, ['quote' => $postings->quote(self::body($request))]);
-                });
-                $secure->post('/postings', function (ServerRequestInterface $request, ResponseInterface $response) use ($postings) {
-                    return Json::write($response, ['posting' => $postings->create(self::body($request))], 201);
-                });
-                $secure->patch('/postings/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($postings) {
-                    return Json::write($response, ['posting' => $postings->update((int) $args['id'], self::body($request))]);
-                });
-                $secure->post('/postings/{id:[0-9]+}/quote', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($postings) {
-                    return Json::write($response, ['quote' => $postings->quoteEdit((int) $args['id'], self::body($request))]);
-                });
-                $secure->post('/postings/{id:[0-9]+}/delete-quote', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($postings) {
-                    return Json::write($response, ['quote' => $postings->quoteDelete((int) $args['id'])]);
-                });
-                $secure->post('/postings/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($postings) {
-                    $postings->delete((int) $args['id']);
 
                     return Json::write($response, ['ok' => true]);
                 });
@@ -268,17 +232,14 @@ final class Routes
                 $secure->post('/bills/{id:[0-9]+}/unpay', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
                     return Json::write($response, ['bill' => $bills->unpay((int) $args['id'])]);
                 });
-
-                $secure->get('/rates', function (ServerRequestInterface $request, ResponseInterface $response) use ($rates) {
-                    return Json::write($response, ['rates' => $rates->list()]);
+                $secure->post('/bills/{id:[0-9]+}/archive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
+                    return Json::write($response, ['bill' => $bills->archiveBill((int) $args['id'], self::body($request))]);
                 });
-                $secure->post('/rates', function (ServerRequestInterface $request, ResponseInterface $response) use ($rates) {
-                    return Json::write($response, ['rate' => $rates->save(self::body($request))], 201);
+                $secure->post('/bills/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
+                    return Json::write($response, ['bill' => $bills->unarchiveBill((int) $args['id'], self::body($request))]);
                 });
-                $secure->delete('/rates/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($rates) {
-                    $rates->delete((int) $args['id']);
-
-                    return Json::write($response, ['ok' => true]);
+                $secure->post('/logs', function (ServerRequestInterface $request, ResponseInterface $response) use ($bills) {
+                    return Json::write($response, ['bill' => $bills->log(self::body($request))], 201);
                 });
 
                 $secure->get('/categories', function (ServerRequestInterface $request, ResponseInterface $response) use ($categories) {
@@ -353,6 +314,18 @@ final class Routes
 
                     return Json::write($response, [
                         'payCycle' => $payCycle->archive((int) $args['id'], (string) ($body['today'] ?? '')),
+                    ]);
+                });
+                $secure->get('/pay-cycles/{id:[0-9]+}/payroll', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($payCycle) {
+                    $today = (string) ($request->getQueryParams()['today'] ?? '');
+
+                    return Json::write($response, ['payroll' => $payCycle->payroll((int) $args['id'], $today)]);
+                });
+                $secure->put('/pay-cycles/{id:[0-9]+}/payroll', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($payCycle) {
+                    $body = self::body($request);
+
+                    return Json::write($response, [
+                        'payroll' => $payCycle->savePayroll((int) $args['id'], $body, (string) ($body['today'] ?? '')),
                     ]);
                 });
                 $secure->post('/pay-cycles/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($payCycle) {

@@ -23,7 +23,7 @@ final class DuePieTest extends TestCase
             $this->bill('water', 'active', '2026-11-09', 2800, 'EUR', 2, 'Water Bill'),
             $this->bill('rent', 'active', '2026-11-11', 1000, 'EUR', 2, 'Rent Abroad'),
             $this->bill('fuel', 'active', '2026-11-02', 500, 'JPY', 0, 'Fuel Abroad'),
-        ], '2026-11', 'USD', 2, []);
+        ], '2026-11', 'USD', 2);
 
         self::assertSame([
             [
@@ -31,10 +31,12 @@ final class DuePieTest extends TestCase
                 'exponent' => 2,
                 'slices' => [
                     ['type' => 'lodging', 'amountMinor' => 6400],
-                    ['type' => 'rent', 'amountMinor' => 8000],
+                    ['type' => 'rent', 'amountMinor' => 9000],
+                    ['type' => 'water', 'amountMinor' => 2800],
+                    ['type' => 'fuel', 'amountMinor' => 500],
                     ['type' => 'healthcare', 'amountMinor' => 127500],
                 ],
-                'leftOut' => ['Fuel Abroad', 'Rent Abroad', 'Water Bill'],
+                'leftOut' => [],
             ],
         ], $pies);
     }
@@ -43,7 +45,7 @@ final class DuePieTest extends TestCase
     {
         $pies = DuePie::month([
             $this->bill('debt', 'active', '2026-12-01', 45000, 'USD'),
-        ], '2026-11', 'USD', 2, []);
+        ], '2026-11', 'USD', 2);
 
         self::assertSame([], $pies);
     }

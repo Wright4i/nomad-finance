@@ -7,6 +7,43 @@ namespace App\Bill;
 final class BillTypes
 {
     /** @var array<string, string> */
+    public const LABEL = [
+        'lodging' => 'Lodging',
+        'rent' => 'Rent',
+        'electricity' => 'Electricity',
+        'water' => 'Water',
+        'fuel' => 'Fuel',
+        'propane' => 'Propane',
+        'groceries' => 'Groceries',
+        'internet' => 'Internet',
+        'cellular' => 'Cellular',
+        'vehicle' => 'Vehicle',
+        'maintenance' => 'Maintenance',
+        'insurance' => 'Insurance',
+        'roadside' => 'Roadside',
+        'healthcare' => 'Healthcare',
+        'mailbox' => 'Mailbox',
+        'laundry' => 'Laundry',
+        'mortgage' => 'Mortgage',
+        'storage' => 'Storage',
+        'other' => 'Other',
+        'restaurants' => 'Restaurants',
+        'entertainment' => 'Entertainment',
+        'subscriptions' => 'Subscriptions',
+        'shopping' => 'Shopping',
+        'travel' => 'Travel',
+        'memberships' => 'Memberships',
+        'software' => 'Software',
+        'pets' => 'Pets',
+        'misc' => 'Misc',
+        'debt' => 'Debt',
+        'emergency' => 'Emergency',
+        'repairs' => 'Repairs',
+        'investments' => 'Investments',
+        'liquidities' => 'Liquidities',
+    ];
+
+    /** @var array<string, string> */
     public const GROUP = [
         'lodging' => 'needs',
         'rent' => 'needs',
@@ -52,6 +89,11 @@ final class BillTypes
     public static function group(string $type): string
     {
         return self::GROUP[$type] ?? '';
+    }
+
+    public static function label(string $type): string
+    {
+        return self::LABEL[$type] ?? $type;
     }
 
     public static function namesItself(string $type): bool

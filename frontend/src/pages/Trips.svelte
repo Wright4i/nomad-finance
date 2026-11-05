@@ -6,18 +6,13 @@
   import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
-  import type { Category, ChargeQuote, DriveLeg, Trip } from '../lib/types';
+  import type { DriveLeg, Trip } from '../lib/types';
 
   let trips = $state<Trip[]>([]);
   let legs = $state<DriveLeg[]>([]);
-  let categories = $state<Category[]>([]);
   let index = $state(0);
   let message = $state('');
   let month = $state(todayISO().slice(0, 7));
-  let quote = $state<ChargeQuote | null>(null);
-  let part = $state<'deposit' | 'due'>('deposit');
-  let categoryId = $state('');
-  let dialog: HTMLDialogElement | undefined = $state();
   let baseCurrency = $derived(session.user?.baseCurrency ?? 'USD');
   let baseExponent = $derived(exponentOf(baseCurrency));
 
@@ -77,23 +72,26 @@
     return covering.find((trip) => trip.arriveOn === date) ?? covering[0];
   }
 
-  function pickInitial(rows: Trip[]): number {
+  function pickInitial(rows: Trip[]): { index: number; month: string } {
     const today = todayISO();
-    const open = rows.findIndex((trip) => trip.arriveOn <= today && trip.departOn >= today);
-    if (open >= 0) return open;
-    const upcoming = rows.findIndex((trip) => trip.arriveOn > today);
-    return upcoming >= 0 ? upcoming : Math.max(0, rows.length - 1);
+    const thisMonth = today.slice(0, 7);
+    const covering = rows.filter((trip) => trip.arriveOn <= today && trip.departOn >= today);
+    const arriving = covering.find((trip) => trip.arriveOn === today);
+    const open = arriving ?? covering[0];
+    if (open) return { index: rows.indexOf(open), month: thisMonth };
+    const upcoming = rows
+      .filter((trip) => trip.departOn >= today)
+      .sort((left, right) => left.arriveOn.localeCompare(right.arriveOn))[0];
+    if (!upcoming) return { index: 0, month: thisMonth };
+    return { index: rows.indexOf(upcoming), month: upcoming.arriveOn.slice(0, 7) };
   }
 
   async function load(): Promise<void> {
-    const [tripData, categoryData] = await Promise.all([
-      api<{ trips: Trip[] }>(`/api/trips?today=${todayISO()}`),
-      api<{ categories: Category[] }>('/api/categories'),
-    ]);
+    const tripData = await api<{ trips: Trip[] }>(`/api/trips?today=${todayISO()}`);
     trips = tripData.trips;
-    categories = categoryData.categories;
-    if (categoryId === '' && categories[0]) categoryId = String(categories[0].id);
-    index = pickInitial(trips);
+    const picked = pickInitial(trips);
+    index = picked.index;
+    month = picked.month;
     await Promise.all([fillPlaces(), loadRoute()]);
   }
 
@@ -131,7 +129,9 @@
 
   function step(direction: number): void {
     if (trips.length === 0) return;
-    index = (index + direction + trips.length) % trips.length;
+    const next = index + direction;
+    if (next < 0 || next >= trips.length) return;
+    index = next;
     const arrival = trips[index]?.arriveOn.slice(0, 7);
     if (arrival && arrival !== month) month = arrival;
   }
@@ -154,41 +154,6 @@
 
   function overlaps(trip: Trip): boolean {
     return trip.arriveOn.slice(0, 7) <= month && trip.departOn.slice(0, 7) >= month;
-  }
-
-  async function ask(next: 'deposit' | 'due'): Promise<void> {
-    if (!selected) return;
-    part = next;
-    try {
-      const data = await api<{ quote: ChargeQuote }>(`/api/trips/${selected.id}/quote`, {
-        method: 'POST',
-        body: { part: next },
-      });
-      quote = data.quote;
-      dialog?.showModal();
-    } catch (err) {
-      message = explain(err).message;
-    }
-  }
-
-  async function apply(): Promise<void> {
-    if (!selected) return;
-    try {
-      await api(`/api/trips/${selected.id}/apply`, {
-        method: 'POST',
-        body: { part, categoryId: Number(categoryId), today: todayISO() },
-      });
-      dialog?.close();
-      quote = null;
-      await load();
-    } catch (err) {
-      message = explain(err).message;
-    }
-  }
-
-  function skip(): void {
-    dialog?.close();
-    quote = null;
   }
 
   let commentDraft = $state('');
@@ -379,8 +344,8 @@
 
   <div class="stay-toolbar">
     <div class="stay-toolbar-nav">
-      <button class="btn" type="button" onclick={() => step(-1)} disabled={trips.length < 2}>Previous</button>
-      <button class="btn" type="button" onclick={() => step(1)} disabled={trips.length < 2}>Next</button>
+      <button class="btn" type="button" onclick={() => step(-1)} disabled={index <= 0}>Previous</button>
+      <button class="btn" type="button" onclick={() => step(1)} disabled={index >= trips.length - 1}>Next</button>
       {#if selected}
         {@const rating = shownRating(selected)}
         <a class="btn" href={`/trips/${selected.id}`} onclick={(event) => follow(event, `/trips/${selected.id}`)}>Edit</a>
@@ -460,25 +425,14 @@
     onSelect={choose}
   />
 
-  {#if selected && selected.currency}
+  {#if selected}
     <section class="grid gap-2">
       <h2 class="m-0 text-2xl">Lodging</h2>
       <p class="m-0">
-        Total {formatMinor(selected.totalMinor, selected.currency, selected.exponent)}
-        · Deposit {formatMinor(selected.depositMinor, selected.currency, selected.exponent)}
-        {selected.depositCharged ? 'charged' : 'planned'}
-        · Due {formatMinor(selected.amountDueMinor, selected.currency, selected.exponent)}
-        {selected.dueCharged ? 'charged' : 'planned'}
+        Total {formatMinor(selected.totalMinor, selected.currency ?? baseCurrency, selected.exponent)}
+        · Deposit {formatMinor(selected.depositMinor, selected.currency ?? baseCurrency, selected.exponent)}
+        · Due {formatMinor(selected.amountDueMinor, selected.currency ?? baseCurrency, selected.exponent)}
       </p>
-      <p class="muted m-0">Other money on this stay {formatMinor(selected.otherSpentMinor, selected.currency, selected.exponent)}</p>
-      <div class="flex flex-wrap gap-2">
-        {#if selected.depositMinor > 0 && !selected.depositCharged}
-          <button class="btn primary" type="button" onclick={() => ask('deposit')}>Charge deposit</button>
-        {/if}
-        {#if selected.amountDueMinor > 0 && !selected.dueCharged}
-          <button class="btn primary" type="button" onclick={() => ask('due')}>Charge amount due</button>
-        {/if}
-      </div>
     </section>
   {/if}
 
@@ -538,27 +492,3 @@
     {/each}
   </section>
 </section>
-
-<dialog class="modal" bind:this={dialog}>
-  {#if quote}
-    <h2 class="m-0 text-2xl">Charge {part === 'deposit' ? 'the deposit' : 'the amount due'}?</h2>
-    <p>{quote.accountName}</p>
-    <p>{formatMinor(quote.oldBalanceMinor, quote.currency, quote.exponent)} → {formatMinor(quote.newBalanceMinor, quote.currency, quote.exponent)}</p>
-    {#if quote.overLimit}<p>This would put the card over its limit.</p>{/if}
-    {#if quote.refused}<p>{quote.refused}</p>{/if}
-    <label class="field">
-      <span>Bucket</span>
-      <select name="categoryId" bind:value={categoryId}>
-        {#each categories as category (category.id)}
-          <option value={String(category.id)}>{category.name}</option>
-        {/each}
-      </select>
-    </label>
-    <div class="flex flex-wrap gap-2">
-      {#if !quote.refused}
-        <button class="btn primary" type="button" onclick={apply}>Apply</button>
-      {/if}
-      <button class="btn" type="button" onclick={skip}>Skip</button>
-    </div>
-  {/if}
-</dialog>

@@ -34,7 +34,7 @@
   let rate = $state('');
   let hours = $state('');
   let hoursMode = $state<HoursMode>('typed');
-  let averageMonths = $state('');
+  let averageOn = $state(false);
   let cycle = $state<PayCycle | null>(null);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
@@ -53,7 +53,7 @@
     rate = minorToInput(next.rateMinor, exponentOf(session.user?.baseCurrency ?? 'USD'));
     hours = next.hours ?? '';
     hoursMode = next.hoursMode ?? 'typed';
-    averageMonths = next.averageMonths === null || next.averageMonths === undefined ? '' : String(next.averageMonths);
+    averageOn = next.averageOn === true;
   }
 
   let currency = $derived(session.user?.baseCurrency ?? 'USD');
@@ -144,7 +144,7 @@
         rateMinor: parseMajor(rate, exponent),
         hoursMode: semimonthlyWeekdays || monthlyWeekday ? 'weekdays' : 'typed',
         hours: payKind === 'hourly' && !semimonthlyWeekdays ? hours.trim() : null,
-        averageMonths: payKind === 'hourly' && averageMonths !== '' ? Number(averageMonths) : null,
+        averageOn,
         today: todayISO(),
       };
       const path = id ? `/api/pay-cycles/${id}` : '/api/pay-cycles';
@@ -287,7 +287,7 @@
   </div>
   <label class="field">
     <span>
-      {#if payKind === 'salary'}Annual salary ({currency}){:else if payKind === 'hourly'}Hourly rate ({currency}){:else}Paycheck ({currency}){/if}
+      {#if payKind === 'salary'}Annual salary{:else if payKind === 'hourly'}Hourly rate{:else}Paycheck{/if}
     </span>
     <input name="rate" inputmode="decimal" bind:value={rate} />
     {#if fields.rateMinor}<em>{fields.rateMinor}</em>{/if}
@@ -315,18 +315,11 @@
         {#if fields.hours}<em>{fields.hours}</em>{/if}
       </label>
     {/if}
-    <label class="field">
-      <span>Average</span>
-      <select name="averageMonths" bind:value={averageMonths}>
-        <option value="">Off</option>
-        <option value="3">3 months</option>
-        <option value="4">4 months</option>
-        <option value="5">5 months</option>
-        <option value="6">6 months</option>
-      </select>
-      {#if fields.averageMonths}<em>{fields.averageMonths}</em>{/if}
-    </label>
   {/if}
+  <label class="flex items-center gap-2">
+    <input class="w-auto" name="averageOn" type="checkbox" bind:checked={averageOn} />
+    <span>Average payroll</span>
+  </label>
   {#if payKind === 'hourly' && length === 'semimonthly' && hoursMode === 'weekdays' && cycle?.weekdayPay}
     <p class="m-0">
       Weekday paycheck {formatMinor(cycle.weekdayPay.earlierMinor, currency, exponent)} on day {cycle.weekdayPay.earlierDay}
@@ -355,12 +348,12 @@
 </form>
 
 <dialog class="modal" bind:this={dialog} aria-labelledby="archive-title">
-  <div class="grid gap-3">
+  <div class="modal-body">
     <h2 id="archive-title" class="text-xl m-0">Archive this pay cycle?</h2>
     <p class="m-0">Archiving hides this payor. The cycle stays in the books.</p>
-    <div class="flex flex-wrap gap-2">
-      <button class="btn" type="button" onclick={closeArchive}>Cancel</button>
-      <button class="btn danger" type="button" disabled={saving} onclick={archive}>Archive pay cycle</button>
-    </div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={closeArchive}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={archive}>Archive pay cycle</button>
   </div>
 </dialog>

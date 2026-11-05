@@ -94,6 +94,7 @@ final class LifeTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
@@ -169,48 +170,18 @@ final class LifeTest extends TestCase
         self::type('total', '20');
         self::type('amountDue', '10');
         self::click('Save stay');
-        self::waitForText('Charge the deposit?');
-        self::waitForText('$2,490.00');
-        self::waitForText('$2,480.00');
-        self::click('Skip');
         self::waitForText('Park 1');
         self::waitForText('SITE #34');
-        self::waitForTextGone('$2,480.00');
+        self::assertStringNotContainsString('Charge the deposit?', self::driver()->findElement(\Facebook\WebDriver\WebDriverBy::cssSelector('body'))->getText());
     }
 
     #[Depends('testAStayKeepsItsNoteAndTheNextPinIsTheOtherStay')]
     public function testLogShowsTheBalanceBeforeItMovesAndAFuelStretch(): void
     {
         self::clickLink('New Log');
-        self::waitForText('Recent');
-        self::wait()->until(function (): bool {
-            $pressed = self::driver()->executeScript(<<<'JS'
-                const button = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Out');
-                return button ? button.getAttribute('aria-pressed') : '';
-            JS);
-
-            return $pressed === 'true';
-        });
-        self::waitForText('20.0 mpg');
-        self::waitForText('Cash 1');
-        self::choose('accountId', 'Checking 1');
-        self::waitForText('$2,490.00');
-        self::choose('categoryId', 'Needs 1');
-        self::waitForText('Needs 1 remaining');
-        self::type('amount', '1');
-        self::click('Save');
-        self::waitForText('$2,490.00 → $2,489.00');
-        self::click('Cancel');
-        self::waitForTextGone('$2,489.00');
-        self::click('Save');
-        self::waitForText('$2,490.00 → $2,489.00');
-        self::click('Apply');
-        self::waitForText('$2,489.00');
-        self::choose('accountId', 'Cash 1');
-        self::choose('categoryId', 'Fuel Bucket');
-        self::waitForText('Odometer, miles');
-        self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="More"]')));
-        self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="Add a line"]')));
+        self::waitForText('Fuel');
+        self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//*[normalize-space()="Recent"]')));
+        self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="Out"]')));
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const select = document.querySelector('select[name="vehicleId"]');
@@ -220,66 +191,26 @@ final class LifeTest extends TestCase
 
             return $ready === true;
         });
-        self::wait()->until(function (): bool {
-            $ready = self::driver()->executeScript(<<<'JS'
-                const select = document.querySelector('select[name="tripId"]');
-                const label = select && select.selectedOptions[0] ? select.selectedOptions[0].textContent.trim() : '';
-                return label === 'Park 1';
-            JS);
-
-            return $ready === true;
-        });
         self::type('amount', '4');
-        self::wait()->until(function (): bool {
-            $value = self::driver()->executeScript(<<<'JS'
-                const input = document.querySelector('input[name="odometer"]');
-                return input ? input.value : '';
-            JS);
-
-            return $value === '10500';
-        });
         self::replace('odometer', '10400');
-        self::type('price', '4');
-        self::wait()->until(WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::name('payee')));
-        self::choose('tripId', 'Stay 2');
-        self::click('Save');
-        self::waitForText('Enter an odometer at or above 10500.');
+        self::click('Save log');
+        self::waitForText('That reading is below the current odometer.');
         self::replace('odometer', '10600');
-        self::click('Save');
-        self::waitForText('$5.00 → $1.00');
-        self::click('Apply');
-        self::wait()->until(function (): bool {
-            $found = self::driver()->executeScript(<<<'JS'
-                return [...document.querySelectorAll('p')].some((node) =>
-                    node.innerText.includes('Stay 2') && node.innerText.includes('500.0 mpg')
-                );
-            JS);
-
-            return $found === true;
-        });
-        self::wait()->until(function (): bool {
-            $found = self::driver()->executeScript(<<<'JS'
-                return [...document.querySelectorAll('p')].some((node) =>
-                    node.innerText.includes('Payee 1')
-                    && node.innerText.includes('Needs 1')
-                    && node.innerText.includes('Wants 1')
-                );
-            JS);
-
-            return $found === true;
-        });
+        self::waitForText('100 miles traveled');
+        self::click('Save log');
+        self::waitForText('Calendar');
+        self::clickLink('Accounts');
+        self::waitForText('$2,490.00');
+        self::clickLink('New Log');
         self::driver()->executeScript(<<<'JS'
-            const input = document.querySelector('input[name="postedOn"]');
-            input.removeAttribute('max');
+            const input = document.querySelector('input[name="date"]');
             input.value = '01 / 01 / 2099';
             input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
         JS);
-        self::choose('accountId', 'Checking 1');
-        self::choose('categoryId', 'Needs 1');
         self::type('amount', '1');
-        self::click('Save');
-        self::waitForText('Use today or an earlier date.');
+        self::replace('odometer', '10600');
+        self::click('Save log');
+        self::waitForText('The date cannot be after today.');
     }
 
     #[Depends('testLogShowsTheBalanceBeforeItMovesAndAFuelStretch')]

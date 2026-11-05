@@ -146,6 +146,9 @@
       <path d="M6 6.5h12V19H6V6.5zM6 10.5h12M9 4.5v3M15 4.5v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'irregular'}
       <path d="M5 15.5 9 9l4 6 3-3 3 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'lock'}
+      <rect x="6" y="10.5" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8" />
+      <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {:else if mark === 'log'}
       <path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {:else if mark === 'envelope'}

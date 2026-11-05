@@ -143,16 +143,17 @@
         leftOut.push(mark.name);
         continue;
       }
-      billMinor -= mark.baseAmountMinor;
       if (mark.status && calendarBillSide(mark.status, mark.kind) === 'paid') {
         paidMinor += mark.baseAmountMinor;
+      } else {
+        billMinor += mark.baseAmountMinor;
       }
     }
     return {
       income,
-      bills: billMinor,
+      debt: billMinor,
       paid: paidMinor,
-      net: income + billMinor,
+      net: income - billMinor,
       leftOut,
     };
   });
@@ -300,9 +301,10 @@
       <p class="kicker m-0">Month total</p>
       <p class="month-total-figures m-0">
         <span class="month-income">Income <strong class="money">{formatMinor(totals.income, baseCurrency, baseExponent)}</strong></span>
-        <span class="month-bills">Bills <strong class="money">{formatMinor(totals.bills, baseCurrency, baseExponent)}</strong></span>
-        <span class="month-paid">Paid <strong class="money">{formatMinor(totals.paid, baseCurrency, baseExponent)}</strong></span>
+        <span class="month-debt">Debt <strong class="money">{formatMinor(totals.debt, baseCurrency, baseExponent)}</strong></span>
         <span class="month-net">Net <strong class="money">{formatMinor(totals.net, baseCurrency, baseExponent)}</strong></span>
+        <span class="month-rule" aria-hidden="true"></span>
+        <span class="month-paid">Paid <strong class="money">{formatMinor(totals.paid, baseCurrency, baseExponent)}</strong></span>
         {#if totals.leftOut.length > 0}
           <span class="month-bills">Left out {totals.leftOut.join(', ')}</span>
         {/if}
@@ -313,6 +315,7 @@
 
 <dialog class="modal" bind:this={dialog} aria-labelledby="day-title" onclose={() => (day = null)}>
   {#if day}
+    <div class="modal-body">
     <h2 id="day-title" class="m-0 text-2xl">{formatDate(day)}</h2>
     <section class="day-section">
       <h3 class="m-0 text-lg">Stay</h3>
@@ -369,6 +372,9 @@
         </a>
       {/each}
     </section>
-    <button class="btn mt-3" type="button" onclick={() => dialog?.close()}>Close</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" type="button" onclick={() => dialog?.close()}>Close</button>
+    </div>
   {/if}
 </dialog>

@@ -10,7 +10,6 @@
   import AccountForm from './pages/AccountForm.svelte';
   import Bills from './pages/Bills.svelte';
   import BillForm from './pages/BillForm.svelte';
-  import Rates from './pages/Rates.svelte';
   import Categories from './pages/Categories.svelte';
   import CategoryForm from './pages/CategoryForm.svelte';
   import PayCycles from './pages/PayCycles.svelte';
@@ -59,8 +58,6 @@
         <Bills />
       {:else if view.name === 'bill-form'}
         <BillForm id={view.id} />
-      {:else if view.name === 'rates'}
-        <Rates />
       {:else if view.name === 'categories'}
         <Categories />
       {:else if view.name === 'category-form'}

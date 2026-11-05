@@ -8,7 +8,6 @@ use App\Category\SystemBuckets;
 use App\Demo\DemoLibrary;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
-use App\Money\RateBaseline;
 use App\Money\UnknownCurrency;
 use PDO;
 
@@ -75,13 +74,12 @@ final class AuthService
             )->execute([
                 $books['name'],
                 password_hash($books['password'], PASSWORD_DEFAULT),
-                $books['currency'],
+                'USD',
                 $books['fuelPrice'],
                 $now,
             ]);
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->prepare('INSERT INTO login_guard (user_id, failed_count) VALUES (?, 0)')->execute([$id]);
-            RateBaseline::seed($this->pdo, $id, $books['currency'], [], $now);
             SystemBuckets::ensure($this->pdo, $id);
             $this->insertStarredVehicle($id, $books['vehicle'], $now);
             $this->demo->ensure();
@@ -121,7 +119,7 @@ final class AuthService
             )->execute([
                 $books['name'],
                 password_hash($books['password'], PASSWORD_DEFAULT),
-                $books['currency'],
+                'USD',
                 $books['fuelPrice'],
                 $now,
             ]);
@@ -227,9 +225,7 @@ final class AuthService
         }
 
         $name = array_key_exists('name', $input) ? $this->name($input['name'], 'name') : $current['name'];
-        $currency = array_key_exists('baseCurrency', $input)
-            ? $this->currency($input['baseCurrency'], 'baseCurrency')
-            : $current['baseCurrency'];
+        $currency = 'USD';
         if (array_key_exists('theme', $input)) {
             $theme = $input['theme'];
             if (!is_string($theme) || !in_array($theme, ['dark', 'light'], true)) {
@@ -249,9 +245,8 @@ final class AuthService
         $changingPassword = is_string($password) && $password !== '';
         if ($current['role'] === 'demo') {
             $sameName = mb_strtolower($name) === mb_strtolower($current['name']);
-            $sameCurrency = $currency === $current['baseCurrency'];
-            if (!$sameName || !$sameCurrency || $changingPassword) {
-                throw new ApiException(403, 'Demo keeps the sample name, password, and base currency.');
+            if (!$sameName || $changingPassword) {
+                throw new ApiException(403, 'Demo keeps the sample name and password.');
             }
         } else {
             $this->reserveDemoName($name);
@@ -427,7 +422,7 @@ final class AuthService
      * Callers that omit the vehicle still get the vehicle the setup screen starts with.
      *
      * @param array<string, mixed> $input
-     * @return array{name:string,password:string,currency:string,fuelPrice:?int,vehicle:array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int}}
+     * @return array{name:string,password:string,currency:string,fuelPrice:?int,vehicle:array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,currentOdometerMiles:int}}
      */
     private function openBooks(array $input, bool $taken): array
     {
@@ -448,17 +443,16 @@ final class AuthService
             }
         }
         $password = $this->readField(fn () => $this->password($input['password'] ?? null), $errors);
-        $currency = $this->readField(fn () => $this->currency($input['baseCurrency'] ?? null, 'baseCurrency'), $errors);
         $fuelPrice = $this->readField(fn () => $this->fuelPrice($input['fuelPriceMinor'] ?? null), $errors);
         $vehicle = $this->setupVehicle($input, $errors);
-        if ($errors !== [] || !is_string($name) || !is_string($password) || !is_string($currency) || $vehicle === null) {
+        if ($errors !== [] || !is_string($name) || !is_string($password) || $vehicle === null) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
 
         return [
             'name' => $name,
             'password' => $password,
-            'currency' => $currency,
+            'currency' => 'USD',
             'fuelPrice' => $fuelPrice,
             'vehicle' => $vehicle,
         ];
@@ -467,20 +461,22 @@ final class AuthService
     /**
      * @param array<string, mixed> $input
      * @param array<string, string> $errors
-     * @return ?array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int}
+     * @return ?array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,currentOdometerMiles:int}
      */
     private function setupVehicle(array $input, array &$errors): ?array
     {
         $mentioned = array_key_exists('vehicleName', $input)
             || array_key_exists('kind', $input)
             || array_key_exists('mpgMinTenths', $input)
-            || array_key_exists('mpgMaxTenths', $input);
+            || array_key_exists('mpgMaxTenths', $input)
+            || array_key_exists('currentOdometerMiles', $input);
         if (!$mentioned) {
             return [
                 'name' => 'Vehicle 1',
                 'kind' => 'rv',
                 'mpgMinTenths' => 60,
                 'mpgMaxTenths' => 120,
+                'currentOdometerMiles' => 0,
             ];
         }
 
@@ -506,6 +502,11 @@ final class AuthService
         if ($min > 0 && $max > 0 && $min >= $max) {
             $problems['mpgMaxTenths'] = 'The maximum is above the minimum.';
         }
+        $odometer = $this->wholeNumber($input['currentOdometerMiles'] ?? null);
+        if ($odometer === null || $odometer < 0) {
+            $problems['currentOdometerMiles'] = 'Enter the current odometer. Zero is only the reading you type.';
+            $odometer = 0;
+        }
         if ($problems !== []) {
             foreach ($problems as $field => $message) {
                 $errors[$field] = $message;
@@ -519,22 +520,25 @@ final class AuthService
             'kind' => $kind,
             'mpgMinTenths' => $min,
             'mpgMaxTenths' => $max,
+            'currentOdometerMiles' => $odometer,
         ];
     }
 
-    /** @param array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int} $vehicle */
+    /** @param array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,currentOdometerMiles:int} $vehicle */
     private function insertStarredVehicle(int $userId, array $vehicle, string $now): void
     {
         $this->pdo->prepare(
             'INSERT INTO vehicles (
-                user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
+                user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
+                current_odometer_miles, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)'
         )->execute([
             $userId,
             $vehicle['name'],
             $vehicle['kind'],
             $vehicle['mpgMinTenths'],
             $vehicle['mpgMaxTenths'],
+            $vehicle['currentOdometerMiles'],
             $now,
             $now,
         ]);

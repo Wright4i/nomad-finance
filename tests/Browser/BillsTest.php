@@ -91,6 +91,7 @@ final class BillsTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
@@ -105,6 +106,22 @@ final class BillsTest extends TestCase
         self::waitForText('Education Bill');
         self::waitForText('Childcare Bill');
         self::waitForText('Custom 1');
+        self::waitForText('Archived Bill');
+        $actions = self::driver()->executeScript(<<<'JS'
+            const article = (name) => [...document.querySelectorAll('article')].find((node) => {
+                const link = node.querySelector('a');
+                return link ? link.innerText.trim().startsWith(name) : false;
+            });
+            const has = (node, label) => node ? [...node.querySelectorAll('button')].some((button) => button.textContent.trim() === label) : false;
+            return {
+                pausedArchive: has(article('Paused Weekly Bill'), 'Archive'),
+                cardPause: has(article('Card 1'), 'Pause'),
+                archivedRestore: has(article('Archived Bill'), 'Unarchive'),
+            };
+        JS);
+        self::assertTrue($actions['pausedArchive']);
+        self::assertFalse($actions['cardPause']);
+        self::assertTrue($actions['archivedRestore']);
         self::clickLinkContaining('Other Bill');
         $kept = self::wait()->until(function (): string|false {
             $value = self::driver()->executeScript(<<<'JS'
@@ -150,6 +167,12 @@ final class BillsTest extends TestCase
     public function testTheBucketPickerFollowsTheTypeAndFuelIsLocked(): void
     {
         self::clickLink('New bill');
+        $heads = self::driver()->executeScript(<<<'JS'
+            return [...document.querySelectorAll('.group-title')].map((node) => node.textContent.trim());
+        JS);
+        self::assertContains('Needs', $heads);
+        self::assertContains('Wants', $heads);
+        self::assertContains('Savings', $heads);
         self::click('rent');
         $options = self::wait()->until(function (): array|false {
             $names = self::driver()->executeScript(<<<'JS'
@@ -160,10 +183,11 @@ final class BillsTest extends TestCase
 
             return is_array($names) && $names !== [] ? $names : false;
         });
-        self::assertContains('Needs Default', $options);
-        self::assertNotContains('Wants Default', $options);
+        self::assertContains('Rent', $options);
+        self::assertContains('Needs 1', $options);
+        self::assertNotContains('Restaurants', $options);
         self::click('fuel');
-        self::waitForText('Fuel Bucket');
+        self::waitForText('Fuel');
         $locked = self::driver()->executeScript(
             'return document.querySelector(\'select[name="categoryId"]\') === null;',
         );

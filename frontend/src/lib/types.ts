@@ -19,6 +19,7 @@ export type Account = {
   minimumDueMinor: number | null;
   dueDay: number | null;
   creditLimitMinor: number | null;
+  autopayChoice: 'none' | 'minimum' | 'balance';
   institution: string | null;
   notes: string | null;
   archivedAt: string | null;
@@ -39,10 +40,15 @@ export type Bill = {
   lastPaidOn: string | null;
   autopay: boolean;
   notes: string | null;
-  status: 'active' | 'paused' | 'paid';
+  status: 'active' | 'paused' | 'paid' | 'archived' | 'hidden';
   otherLabel: string | null;
   categoryId: number | null;
   categoryName: string | null;
+  locked: boolean;
+  sourceAccountId: number | null;
+  vehicleId?: number | null;
+  odometerMiles?: number | null;
+  pricePerGallonMinor?: number | null;
 };
 
 export type Overspend = 'cover' | 'carry';
@@ -78,7 +84,7 @@ export type EnvelopeCategory = {
   id: number;
   name: string;
   group: 'needs' | 'wants' | 'savings';
-  role?: 'default' | 'fuel' | 'goal';
+  role?: 'goal' | 'locked';
   overspend: Overspend;
   amountMinor: number;
   remainingMinor?: number;
@@ -138,7 +144,7 @@ export type PayCycle = {
   payKind: PayKind;
   rateMinor: number;
   hoursMode: HoursMode;
-  averageMonths: number | null;
+  averageOn: boolean;
   hours: string | null;
   paycheckMinor: number | null;
   weekdayPay: WeekdayPay | null;
@@ -160,7 +166,9 @@ export type Category = {
   id: number;
   name: string;
   group: 'needs' | 'wants' | 'savings';
-  role: 'default' | 'fuel' | 'goal';
+  role: 'goal' | 'locked';
+  billType: string | null;
+  locked: boolean;
   overspend: Overspend;
   fuel: boolean;
   amountMinor: number;
@@ -291,6 +299,7 @@ export type Vehicle = {
   mpgMinTenths: number;
   mpgMaxTenths: number;
   starred: boolean;
+  currentOdometerMiles: number;
   milesPerGallon: string | null;
   readings: VehicleReading[];
 };

@@ -11,11 +11,8 @@ use App\Dashboard\PlannerHeading;
 use App\Database\Database;
 use App\Demo\DemoLibrary;
 use App\Envelope\EnvelopeService;
-use App\ExchangeRate\FailingRateFeed;
-use App\ExchangeRate\RateService;
 use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
-use App\Posting\PostingService;
 use App\Target\TargetService;
 use App\Trip\Drive;
 use App\Trip\TripService;
@@ -109,14 +106,12 @@ final class PlannerHeadingTest extends TestCase
                 'baseCurrency' => 'USD',
             ]);
             $auth->enterDemo();
-            $rates = new RateService($pdo, $catalog, $actor, new FailingRateFeed());
-            $trips = new TripService($pdo, $actor, $catalog, new PostingService($pdo, $actor, $catalog), new Drive(false));
+            $trips = new TripService($pdo, $actor, $catalog, new Drive(false));
             $dashboard = new DashboardService(
                 $pdo,
                 $catalog,
-                $rates,
                 $actor,
-                new EnvelopeService($pdo, $actor, $rates, $catalog, new TargetService($pdo, $actor)),
+                new EnvelopeService($pdo, $actor, $catalog, new TargetService($pdo, $actor)),
                 new PayCycleService($pdo, $actor),
                 $trips,
             );
@@ -188,14 +183,13 @@ final class PlannerHeadingTest extends TestCase
         }
     }
 
-    /** @return array{accounts:list<array<string, mixed>>,postings:int} */
+    /** @return array{accounts:list<array<string, mixed>>} */
     private function books(PDO $pdo): array
     {
         $accounts = $pdo->query('SELECT id, balance_minor FROM accounts ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
 
         return [
             'accounts' => is_array($accounts) ? $accounts : [],
-            'postings' => (int) $pdo->query('SELECT COUNT(*) FROM postings')->fetchColumn(),
         ];
     }
 

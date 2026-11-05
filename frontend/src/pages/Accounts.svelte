@@ -37,7 +37,7 @@
   <button class="btn w-fit" type="button" onclick={toggle}>{includeArchived ? 'Hide archived' : 'Show archived'}</button>
   {#if message}<p class="banner">{message}</p>{/if}
   {#if ready && accounts.length === 0}
-    <p class="muted">No accounts yet. A balance is a number you type, in one currency.</p>
+    <p class="muted">No accounts yet. A balance is a number you type.</p>
   {/if}
   <div class="grid gap-3">
     {#each accounts as account (account.id)}
@@ -52,7 +52,7 @@
           <span>
             <strong>{account.name}</strong>
             <span class="block muted text-sm">
-              <span class="type-label">{account.type}</span> · {account.currency}
+              <span class="type-label">{account.type}</span>
             {#if account.interestBps !== null} · {formatBps(account.interestBps)}%{/if}
             {#if account.archivedAt} · archived{/if}
             </span>

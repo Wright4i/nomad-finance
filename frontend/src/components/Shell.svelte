@@ -33,9 +33,7 @@
     }
     if (href === '/settings') {
       return route.path === '/settings'
-        || route.path.startsWith('/settings/')
-        || route.path === '/rates'
-        || route.path.startsWith('/rates/');
+        || route.path.startsWith('/settings/');
     }
     return route.path === href || route.path.startsWith(`${href}/`);
   }
@@ -140,9 +138,11 @@
 </div>
 
 <dialog class="modal" bind:this={resetDialog} aria-labelledby="reset-title">
-  <h2 id="reset-title" class="m-0 text-2xl">Reset the sample books?</h2>
-  <p>This puts Demo's sample accounts, bills, rates, and buckets back.</p>
-  <div class="flex flex-wrap gap-2">
+  <div class="modal-body">
+    <h2 id="reset-title" class="m-0 text-2xl">Reset the sample books?</h2>
+    <p class="m-0">This puts Demo's sample accounts, bills, and buckets back.</p>
+  </div>
+  <div class="modal-actions">
     <button class="btn danger" type="button" disabled={resetting} aria-busy={resetting} onclick={resetDemo}>Reset the sample books</button>
     <button class="btn" type="button" onclick={() => resetDialog?.close()}>Cancel</button>
   </div>

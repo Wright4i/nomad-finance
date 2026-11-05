@@ -7,11 +7,9 @@ namespace App\Trip;
 use App\Auth\Actor;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
-use App\Posting\Ledger;
-use App\Posting\PostingService;
+use App\Posting\Stretch;
 use App\Support\Dates;
 use PDO;
-use Throwable;
 
 final class TripService
 {
@@ -22,7 +20,6 @@ final class TripService
         private readonly PDO $pdo,
         private readonly Actor $actor,
         private readonly CurrencyCatalog $currencies,
-        private readonly PostingService $postings,
         private readonly ?Drive $drive = null,
     ) {
     }
@@ -125,18 +122,8 @@ final class TripService
         $data = $this->validate($input, $id, $existing);
         $place = $this->locality($input, $existing, $data);
         $today = $this->dayOrToday(is_string($input['today'] ?? null) ? $input['today'] : '');
-        $apply = ($input['applyCharge'] ?? false) === true || ($input['applyCharge'] ?? null) === 1 || ($input['applyCharge'] ?? null) === '1';
-        $shift = $this->shift($existing, $data);
-        if ($shift !== null && !$apply) {
-            throw new ApiException(409, 'Confirm the new balance before changing this charge.', $this->quoteFields($shift));
-        }
-        $this->pdo->beginTransaction();
-        try {
-            if ($shift !== null) {
-                $this->runShift($existing, $data, $shift, $today);
-            }
-            $now = gmdate('c');
-            $this->pdo->prepare(
+        $now = gmdate('c');
+        $this->pdo->prepare(
                 'UPDATE trips SET
                     place_name = ?, note = ?, arrive_on = ?, depart_on = ?, latitude = ?, longitude = ?,
                     city = ?, region = ?, address = ?, account_id = ?, total_minor = ?, amount_due_minor = ?,
@@ -162,74 +149,6 @@ final class TripService
                 $id,
                 $this->actor->id(),
             ]);
-            $this->pdo->prepare(
-                'UPDATE postings SET payee = ?, updated_at = ? WHERE user_id = ? AND trip_id = ? AND lodging_part IS NOT NULL'
-            )->execute([$data['placeName'], $now, $this->actor->id(), $id]);
-            $this->pdo->commit();
-        } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
-            }
-            throw $e;
-        }
-
-        return $this->get($id, $today);
-    }
-
-    /** @param array<string, mixed> $input */
-    public function quote(int $id, array $input): array
-    {
-        $trip = $this->row($id);
-        $part = is_string($input['part'] ?? null) ? $input['part'] : '';
-        if (!in_array($part, ['deposit', 'due'], true)) {
-            throw new ApiException(422, 'Choose the deposit or the amount due.', ['part' => 'Choose the deposit or the amount due.']);
-        }
-        $amount = $this->partAmount($trip, $part);
-        if ($amount <= 0) {
-            throw new ApiException(422, 'There is nothing to charge.');
-        }
-        if ($this->partPosting($id, $part) !== null) {
-            throw new ApiException(409, 'That part is already charged.');
-        }
-        if ($trip['account_id'] === null) {
-            throw new ApiException(422, 'Choose an account.');
-        }
-
-        return $this->postings->quoteOut((int) $trip['account_id'], $amount);
-    }
-
-    /** @param array<string, mixed> $input */
-    public function apply(int $id, array $input): array
-    {
-        $trip = $this->row($id);
-        $part = is_string($input['part'] ?? null) ? $input['part'] : '';
-        if (!in_array($part, ['deposit', 'due'], true)) {
-            throw new ApiException(422, 'Choose the deposit or the amount due.', ['part' => 'Choose the deposit or the amount due.']);
-        }
-        $categoryId = $this->asInt($input['categoryId'] ?? null) ?? 0;
-        $today = $this->dayOrToday(is_string($input['today'] ?? null) ? $input['today'] : '');
-        $amount = $this->partAmount($trip, $part);
-        if ($amount <= 0 || $trip['account_id'] === null) {
-            throw new ApiException(422, 'There is nothing to charge.');
-        }
-        $this->pdo->beginTransaction();
-        try {
-            $this->postings->chargeLodging(
-                $id,
-                $part,
-                (int) $trip['account_id'],
-                $categoryId,
-                $amount,
-                (string) $trip['place_name'],
-                $today,
-            );
-            $this->pdo->commit();
-        } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
-            }
-            throw $e;
-        }
 
         return $this->get($id, $today);
     }
@@ -240,19 +159,7 @@ final class TripService
         if (!$confirm) {
             throw new ApiException(409, 'Confirm before deleting this stay.');
         }
-        $this->pdo->beginTransaction();
-        try {
-            $this->postings->reverseLodging($id, 'deposit');
-            $this->postings->reverseLodging($id, 'due');
-            $this->postings->detachStay($id);
-            $this->pdo->prepare('DELETE FROM trips WHERE id = ? AND user_id = ?')->execute([$id, $this->actor->id()]);
-            $this->pdo->commit();
-        } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
-            }
-            throw $e;
-        }
+        $this->pdo->prepare('DELETE FROM trips WHERE id = ? AND user_id = ?')->execute([$id, $this->actor->id()]);
     }
 
     public static function status(string $arrive, string $depart, string $today): string
@@ -410,123 +317,6 @@ final class TripService
         ];
     }
 
-    /**
-     * @param array<string, mixed> $existing
-     * @param array<string, mixed> $data
-     * @return array<string, mixed>|null
-     */
-    private function shift(array $existing, array $data): ?array
-    {
-        $parts = [];
-        foreach (['deposit', 'due'] as $part) {
-            $posting = $this->partPosting((int) $existing['id'], $part);
-            if ($posting === null) {
-                continue;
-            }
-            $nextAmount = $part === 'deposit'
-                ? (int) $data['totalMinor'] - (int) $data['amountDueMinor']
-                : (int) $data['amountDueMinor'];
-            $accountChanged = (int) $posting['account_id'] !== (int) ($data['accountId'] ?? 0);
-            if ($nextAmount !== (int) $posting['amount_minor'] || $accountChanged) {
-                $parts[$part] = [
-                    'posting' => $posting,
-                    'nextAmount' => $nextAmount,
-                    'accountId' => $data['accountId'],
-                ];
-            }
-        }
-
-        return $parts === [] ? null : $parts;
-    }
-
-    /**
-     * @param array<string, mixed> $existing
-     * @param array<string, mixed> $data
-     * @param array<string, mixed> $shift
-     */
-    private function runShift(array $existing, array $data, array $shift, string $today): void
-    {
-        $categoryId = 0;
-        foreach ($shift as $part => $change) {
-            $posting = $change['posting'];
-            $categoryId = (int) $posting['category_id'];
-            $this->postings->reverseLodging((int) $existing['id'], (string) $part);
-            $amount = (int) $change['nextAmount'];
-            if ($amount > 0 && $data['accountId'] !== null) {
-                $this->postings->chargeLodging(
-                    (int) $existing['id'],
-                    (string) $part,
-                    (int) $data['accountId'],
-                    $categoryId,
-                    $amount,
-                    (string) $data['placeName'],
-                    $today,
-                );
-            }
-        }
-    }
-
-    /** @param array<string, mixed> $shift
-     *  @return array<string, string>
-     */
-    private function quoteFields(array $shift): array
-    {
-        $fields = [];
-        $index = 0;
-        foreach ($shift as $part => $change) {
-            $posting = $change['posting'];
-            $accountId = (int) ($change['accountId'] ?? $posting['account_id']);
-            $next = (int) $change['nextAmount'];
-            $old = (int) $posting['amount_minor'];
-            $stmt = $this->pdo->prepare('SELECT name, side, balance_minor, currency FROM accounts WHERE id = ? AND user_id = ?');
-            $stmt->execute([$accountId, $this->actor->id()]);
-            $account = $stmt->fetch();
-            if (!is_array($account)) {
-                continue;
-            }
-            $delta = 0;
-            if ((int) $posting['account_id'] === $accountId) {
-                $delta = Ledger::delta((string) $account['side'], 'out', $next) - Ledger::delta((string) $account['side'], 'out', $old);
-            } else {
-                $delta = $next > 0 ? Ledger::delta((string) $account['side'], 'out', $next) : 0;
-            }
-            $preview = Ledger::preview((int) $account['balance_minor'], $delta, null);
-            $prefix = $index === 0 ? '' : 'next';
-            $fields[$prefix . 'accountName'] = (string) $account['name'];
-            $fields[$prefix . 'oldBalanceMinor'] = (string) $account['balance_minor'];
-            $fields[$prefix . 'newBalanceMinor'] = (string) $preview['next'];
-            $fields[$prefix . 'part'] = (string) $part;
-            if ($preview['refused'] !== null) {
-                $fields['refused'] = $preview['refused'];
-            }
-            $index++;
-        }
-
-        return $fields;
-    }
-
-    /** @param array<string, mixed> $trip */
-    private function partAmount(array $trip, string $part): int
-    {
-        if ($part === 'deposit') {
-            return (int) $trip['total_minor'] - (int) $trip['amount_due_minor'];
-        }
-
-        return (int) $trip['amount_due_minor'];
-    }
-
-    /** @return array<string, mixed>|null */
-    private function partPosting(int $tripId, string $part): ?array
-    {
-        $stmt = $this->pdo->prepare(
-            'SELECT * FROM postings WHERE user_id = ? AND trip_id = ? AND lodging_part = ?'
-        );
-        $stmt->execute([$this->actor->id(), $tripId, $part]);
-        $row = $stmt->fetch();
-
-        return is_array($row) ? $row : null;
-    }
-
     /** @return array<string, mixed> */
     private function row(int $id): array
     {
@@ -551,14 +341,7 @@ final class TripService
     private function present(array $row, string $today, ?int $index = null): array
     {
         $deposit = (int) $row['total_minor'] - (int) $row['amount_due_minor'];
-        $depositPosting = $this->partPosting((int) $row['id'], 'deposit');
-        $duePosting = $this->partPosting((int) $row['id'], 'due');
-        $currency = $row['currency'] === null ? null : (string) $row['currency'];
-        $spent = $this->pdo->prepare(
-            'SELECT COALESCE(SUM(amount_minor), 0) FROM postings
-             WHERE user_id = ? AND trip_id = ? AND lodging_part IS NULL AND direction = \'out\''
-        );
-        $spent->execute([$this->actor->id(), $row['id']]);
+        $currency = $row['currency'] === null ? null : 'USD';
 
         return [
             'id' => (int) $row['id'],
@@ -584,13 +367,13 @@ final class TripService
             'accountId' => $row['account_id'] === null ? null : (int) $row['account_id'],
             'accountName' => $row['account_name'],
             'currency' => $currency,
-            'exponent' => $currency === null ? 2 : $this->currencies->exponent($currency),
+            'exponent' => 2,
             'totalMinor' => (int) $row['total_minor'],
             'amountDueMinor' => (int) $row['amount_due_minor'],
             'depositMinor' => $deposit,
-            'depositCharged' => $depositPosting !== null,
-            'dueCharged' => $duePosting !== null,
-            'otherSpentMinor' => (int) $spent->fetchColumn(),
+            'depositCharged' => false,
+            'dueCharged' => false,
+            'otherSpentMinor' => 0,
             'fuel' => $this->fuelFor((int) $row['id']),
             'color' => StayTone::name($index ?? $this->colorIndex((int) $row['id'])),
         ];
@@ -701,12 +484,43 @@ final class TripService
             return null;
         }
         $pooled = Fuel::pooled(
-            $this->postings->fuelStretches((int) $row['id']),
+            $this->fuelFillUps((int) $row['id']),
             (int) $row['mpg_min_tenths'],
             (int) $row['mpg_max_tenths'],
         );
 
         return $pooled ?? Fuel::midpoint((int) $row['mpg_min_tenths'], (int) $row['mpg_max_tenths']);
+    }
+
+    /** @return list<array{miles:?int,gallons:?string,milesPerGallon:?string}> */
+    private function fuelFillUps(int $vehicleId): array
+    {
+        $origin = $this->pdo->prepare('SELECT origin_odometer_miles FROM vehicles WHERE id = ? AND user_id = ?');
+        $origin->execute([$vehicleId, $this->actor->id()]);
+        $originMiles = $origin->fetchColumn();
+        $stmt = $this->pdo->prepare(
+            'SELECT b.id, b.amount_minor, b.odometer_miles, b.price_per_gallon_minor, b.vehicle_id
+             FROM bills b
+             JOIN accounts a ON a.id = b.account_id
+             WHERE a.user_id = ? AND b.vehicle_id = ? AND b.type = \'fuel\' AND b.status = \'paid\'
+             ORDER BY b.anchor_date, b.id'
+        );
+        $stmt->execute([$this->actor->id(), $vehicleId]);
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                break;
+            }
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'amountMinor' => (int) $row['amount_minor'],
+                'odometerMiles' => $row['odometer_miles'] === null ? null : (int) $row['odometer_miles'],
+                'pricePerGallonMinor' => $row['price_per_gallon_minor'] === null ? null : (int) $row['price_per_gallon_minor'],
+                'vehicleId' => (int) $row['vehicle_id'],
+            ];
+        }
+
+        return Stretch::fillUps($rows, $originMiles === false || $originMiles === null ? null : (int) $originMiles);
     }
 
     private function overlappingStay(string $arrive, string $depart, ?int $exceptId): ?string

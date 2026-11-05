@@ -72,7 +72,7 @@ final class MigrationTest extends TestCase
         $demoId = $pdo->query("SELECT id FROM user WHERE role = 'demo'")->fetchColumn();
         self::assertNotFalse($demoId);
         $_SESSION['user_id'] = (int) $demoId;
-        self::assertCount(10, $accounts->list(false));
+        self::assertCount(11, $accounts->list(false));
         self::assertSame(0, (int) $pdo->query(
             "SELECT COUNT(*) FROM accounts a JOIN user u ON u.id = a.user_id WHERE u.role = 'owner' AND a.name != 'Harbor'"
         )->fetchColumn());

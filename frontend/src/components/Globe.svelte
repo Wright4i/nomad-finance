@@ -100,7 +100,7 @@
       const lat = Number(item.latitude);
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
       const where = [item.city, item.region].filter((part) => part).join(', ');
-      const title = `Stay ${item.stayNumber ?? ''}`;
+      const title = item.placeName || 'Stay';
       const button = document.createElement('button');
       button.type = 'button';
       button.className = item.id === selectedId ? 'map-pin selected' : 'map-pin';

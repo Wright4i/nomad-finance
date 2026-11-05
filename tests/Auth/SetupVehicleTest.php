@@ -47,6 +47,7 @@ final class SetupVehicleTest extends TestCase
             'kind' => 'truck',
             'mpgMinTenths' => 80,
             'mpgMaxTenths' => 160,
+            'currentOdometerMiles' => 12000,
         ]));
 
         self::assertSame('Ada', $user['name']);
@@ -57,6 +58,7 @@ final class SetupVehicleTest extends TestCase
         self::assertSame(1, (int) $vehicle['starred']);
         self::assertSame(80, (int) $vehicle['mpg_min_tenths']);
         self::assertSame(160, (int) $vehicle['mpg_max_tenths']);
+        self::assertSame(12000, (int) $vehicle['current_odometer_miles']);
         self::assertSame(1, (int) $this->pdo->query("SELECT COUNT(*) FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'owner'")->fetchColumn());
         self::assertSame('Vehicle 1', $this->pdo->query("SELECT v.name FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo'")->fetchColumn());
     }
@@ -158,18 +160,23 @@ final class SetupVehicleTest extends TestCase
      */
     private function books(string $name, array $vehicle): array
     {
-        return [
+        $base = [
             'name' => $name,
             'password' => 'correct horse battery',
             'baseCurrency' => 'USD',
         ] + $vehicle;
+        if (!array_key_exists('currentOdometerMiles', $base)) {
+            $base['currentOdometerMiles'] = 0;
+        }
+
+        return $base;
     }
 
     /** @return array<string, mixed> */
     private function ownerVehicle(): array
     {
         $row = $this->pdo->query(
-            "SELECT v.name, v.kind, v.starred, v.mpg_min_tenths, v.mpg_max_tenths
+            "SELECT v.name, v.kind, v.starred, v.mpg_min_tenths, v.mpg_max_tenths, v.current_odometer_miles
              FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'owner'"
         )->fetch();
         self::assertIsArray($row);

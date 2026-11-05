@@ -7,12 +7,11 @@ namespace App\Account;
 use App\Auth\Actor;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
-use App\Money\UnknownCurrency;
 use PDO;
 
 final class AccountService
 {
-    private const TYPES = ['checking', 'savings', 'cash', 'credit', 'loan', 'other'];
+    private const TYPES = ['checking', 'savings', 'cash', 'credit', 'loan', 'fuel', 'other'];
 
     private const FIXED_SIDE = [
         'checking' => 'asset',
@@ -20,7 +19,10 @@ final class AccountService
         'cash' => 'asset',
         'credit' => 'liability',
         'loan' => 'liability',
+        'fuel' => 'liability',
     ];
+
+    private const LIABILITY = ['credit', 'loan', 'fuel'];
 
     public function __construct(
         private readonly PDO $pdo,
@@ -65,41 +67,38 @@ final class AccountService
         $this->pdo->prepare(
             'INSERT INTO accounts (
                 user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
-                due_day, credit_limit_minor, institution, notes, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                due_day, credit_limit_minor, autopay_choice, institution, notes, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $this->actor->id(),
             $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
             $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
-            $data['institution'], $data['notes'], $now, $now,
+            $data['autopayChoice'], $data['institution'], $data['notes'], $now, $now,
         ]);
+        $id = (int) $this->pdo->lastInsertId();
+        $this->syncBill($id);
 
-        return $this->get((int) $this->pdo->lastInsertId());
+        return $this->get($id);
     }
 
     /** @param array<string, mixed> $input */
     public function update(int $id, array $input): array
     {
-        $existing = $this->get($id);
+        $this->get($id);
         $data = $this->validate($input);
-        if ($data['currency'] !== $existing['currency'] && $this->openBillCount($id) > 0) {
-            throw new ApiException(422, 'Check the highlighted fields.', [
-                'currency' => 'This account has bills. Keep its currency.',
-            ]);
-        }
-
         $now = gmdate('c');
         $this->pdo->prepare(
             'UPDATE accounts SET
                 name = ?, type = ?, side = ?, currency = ?, balance_minor = ?, interest_bps = ?,
-                minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, institution = ?, notes = ?,
-                updated_at = ?
+                minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, autopay_choice = ?,
+                institution = ?, notes = ?, updated_at = ?
              WHERE id = ? AND user_id = ?'
         )->execute([
             $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
             $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
-            $data['institution'], $data['notes'], $now, $id, $this->actor->id(),
+            $data['autopayChoice'], $data['institution'], $data['notes'], $now, $id, $this->actor->id(),
         ]);
+        $this->syncBill($id);
 
         return $this->get($id);
     }
@@ -108,11 +107,9 @@ final class AccountService
     public function archive(int $id): array
     {
         $this->get($id);
+        (new LiabilityBill($this->pdo, $this->actor))->hide($id);
         if ($this->openBillCount($id) > 0) {
             throw new ApiException(409, 'Stop the bills that draw from this account before archiving it.');
-        }
-        if ($this->unchargedTripCount($id) > 0) {
-            throw new ApiException(409, 'Charge or remove the lodging still open on this account before archiving it.');
         }
         $now = gmdate('c');
         $this->pdo->prepare(
@@ -130,6 +127,7 @@ final class AccountService
         $this->pdo->prepare(
             'UPDATE accounts SET archived_at = NULL, updated_at = ? WHERE id = ? AND user_id = ?'
         )->execute([$now, $id, $this->actor->id()]);
+        $this->syncBill($id);
 
         return $this->get($id);
     }
@@ -138,7 +136,7 @@ final class AccountService
      *  @return array{
      *    name:string,type:string,side:string,currency:string,balanceMinor:int,
      *    interestBps:?int,minimumDueMinor:?int,dueDay:?int,creditLimitMinor:?int,
-     *    institution:?string,notes:?string
+     *    autopayChoice:string,institution:?string,notes:?string
      *  }
      */
     private function validate(array $input): array
@@ -163,13 +161,6 @@ final class AccountService
             $side = self::FIXED_SIDE[$type];
         }
 
-        try {
-            $currency = $this->currencies->assert(is_string($input['currency'] ?? null) ? $input['currency'] : '');
-        } catch (UnknownCurrency) {
-            $currency = '';
-            $errors['currency'] = 'Use a three-letter ISO currency code.';
-        }
-
         $balance = $this->minor($input['balanceMinor'] ?? null, true);
         if (!is_int($balance)) {
             $errors['balanceMinor'] = 'Enter a balance of zero or more.';
@@ -185,7 +176,15 @@ final class AccountService
         $minimum = null;
         $dueDay = null;
         $limit = null;
-        if ($type === 'credit' || $type === 'loan') {
+        $autopay = 'none';
+        $liability = in_array($type, self::LIABILITY, true);
+        if ($liability) {
+            $choice = is_string($input['autopayChoice'] ?? null) ? $input['autopayChoice'] : 'none';
+            if (!in_array($choice, ['none', 'minimum', 'balance'], true)) {
+                $errors['autopayChoice'] = 'Choose none, minimum, or current balance.';
+            } else {
+                $autopay = $choice;
+            }
             $minimum = $this->optionalMinor($input['minimumDueMinor'] ?? null);
             if ($minimum === false) {
                 $errors['minimumDueMinor'] = 'Enter a minimum due of zero or more, or leave it blank.';
@@ -196,8 +195,16 @@ final class AccountService
                 $errors['dueDay'] = 'Use a day from 1 to 31, or leave it blank.';
                 $dueDay = null;
             }
+            if ($autopay === 'minimum' || $autopay === 'balance') {
+                if (!is_int($dueDay)) {
+                    $errors['dueDay'] = 'Enter the due day.';
+                }
+            }
+            if ($autopay === 'minimum' && !is_int($minimum)) {
+                $errors['minimumDueMinor'] = 'Enter the minimum due.';
+            }
         }
-        if ($type === 'credit') {
+        if ($type === 'credit' || $type === 'fuel') {
             $limit = $this->optionalMinor($input['creditLimitMinor'] ?? null);
             if ($limit === false) {
                 $errors['creditLimitMinor'] = 'Enter a credit limit of zero or more, or leave it blank.';
@@ -224,34 +231,27 @@ final class AccountService
             'name' => $name,
             'type' => $type,
             'side' => $side,
-            'currency' => $currency,
+            'currency' => 'USD',
             'balanceMinor' => (int) $balance,
             'interestBps' => is_int($interest) ? $interest : null,
             'minimumDueMinor' => is_int($minimum) ? $minimum : null,
             'dueDay' => is_int($dueDay) ? $dueDay : null,
             'creditLimitMinor' => is_int($limit) ? $limit : null,
+            'autopayChoice' => $autopay,
             'institution' => is_string($institution) ? $institution : null,
             'notes' => is_string($notes) ? $notes : null,
         ];
     }
 
-    private function unchargedTripCount(int $accountId): int
+    private function syncBill(int $id): void
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT COUNT(*) FROM trips t
-             WHERE t.account_id = ? AND t.user_id = ?
-               AND (
-                    (t.total_minor > t.amount_due_minor AND NOT EXISTS (
-                        SELECT 1 FROM postings p WHERE p.trip_id = t.id AND p.lodging_part = \'deposit\'
-                    ))
-                    OR (t.amount_due_minor > 0 AND NOT EXISTS (
-                        SELECT 1 FROM postings p WHERE p.trip_id = t.id AND p.lodging_part = \'due\'
-                    ))
-               )'
-        );
-        $stmt->execute([$accountId, $this->actor->id()]);
-
-        return (int) $stmt->fetchColumn();
+        $stmt = $this->pdo->prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $this->actor->id()]);
+        $row = $stmt->fetch();
+        if (!is_array($row)) {
+            return;
+        }
+        (new LiabilityBill($this->pdo, $this->actor))->sync($row);
     }
 
     private function openBillCount(int $accountId): int
@@ -350,13 +350,14 @@ final class AccountService
             'name' => $row['name'],
             'type' => $row['type'],
             'side' => $row['side'],
-            'currency' => $row['currency'],
-            'exponent' => $this->currencies->exponent((string) $row['currency']),
+            'currency' => 'USD',
+            'exponent' => 2,
             'balanceMinor' => (int) $row['balance_minor'],
             'interestBps' => $row['interest_bps'] === null ? null : (int) $row['interest_bps'],
             'minimumDueMinor' => $row['minimum_due_minor'] === null ? null : (int) $row['minimum_due_minor'],
             'dueDay' => $row['due_day'] === null ? null : (int) $row['due_day'],
             'creditLimitMinor' => $row['credit_limit_minor'] === null ? null : (int) $row['credit_limit_minor'],
+            'autopayChoice' => (string) ($row['autopay_choice'] ?? 'none'),
             'institution' => $row['institution'],
             'notes' => $row['notes'],
             'archivedAt' => $row['archived_at'],

@@ -14,7 +14,6 @@ use App\Database\Database;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
-use App\Posting\PostingService;
 use App\Target\TargetService;
 use App\Tests\Support\DemoSession;
 use App\Vehicle\VehicleService;
@@ -31,8 +30,6 @@ final class BillFillTest extends TestCase
 
     private PayCycleService $cycles;
 
-    private PostingService $postings;
-
     private int $accountId;
 
     private string $path;
@@ -47,7 +44,6 @@ final class BillFillTest extends TestCase
         $this->bills = new BillService($this->pdo, $catalog, $actor);
         $this->categories = new CategoryService($this->pdo, $actor, new TargetService($this->pdo, $actor));
         $this->cycles = new PayCycleService($this->pdo, $actor);
-        $this->postings = new PostingService($this->pdo, $actor, $catalog);
         $this->accountId = (int) (new AccountService($this->pdo, $catalog, $actor))->create([
             'name' => 'Checking',
             'type' => 'checking',
@@ -84,8 +80,8 @@ final class BillFillTest extends TestCase
     {
         $first = $this->bills->create($this->bill('Rent A', 'rent', 1000, '2026-11-03'));
         $second = $this->bills->create($this->bill('Rent B', 'rent', 2500, '2026-11-04'));
-        $weekly = $this->bills->create($this->bill('Power', 'electricity', 100, '2026-11-08', 'weekly'));
-        $needs = SystemBuckets::id($this->pdo, $this->userId(), 'default', 'needs');
+        $weekly = $this->bills->create($this->bill('Power', 'rent', 100, '2026-11-08', 'weekly'));
+        $needs = SystemBuckets::idForType($this->pdo, $this->userId(), 'rent');
         self::assertSame($needs, $first['categoryId']);
         self::assertSame($needs, $second['categoryId']);
         $open = $this->assignment($needs, $this->homeId());
@@ -122,7 +118,7 @@ final class BillFillTest extends TestCase
         $bill = $this->bills->create($this->bill('Abroad', 'rent', 2000, '2026-11-10', 'once', 'EUR'));
         $needs = (int) $bill['categoryId'];
         $home = $this->assignment($needs, $this->homeId());
-        self::assertSame(0, $home['filled_minor']);
+        self::assertSame(2000, $home['filled_minor']);
         $other = $this->pdo->prepare(
             'SELECT COUNT(*) FROM assignments a
              JOIN pay_periods p ON p.id = a.pay_period_id
@@ -139,7 +135,7 @@ final class BillFillTest extends TestCase
         $fuel = $this->bills->create($this->bill('Fuel', 'fuel', 500, '2026-11-04') + [
             'categoryId' => $goal['id'],
         ]);
-        self::assertSame('Fuel Bucket', $fuel['categoryName']);
+        self::assertSame('Fuel', $fuel['categoryName']);
         $kept = $this->bills->create($this->bill('Rent', 'rent', 500, '2026-11-04') + [
             'categoryId' => $goal['id'],
         ]);
@@ -147,36 +143,30 @@ final class BillFillTest extends TestCase
         $snapped = $this->bills->create($this->bill('Rent 2', 'rent', 500, '2026-11-04') + [
             'categoryId' => $wants['id'],
         ]);
-        self::assertSame('Needs Default', $snapped['categoryName']);
-        try {
-            $this->postings->create([
-                'accountId' => $this->accountId,
-                'categoryId' => $goal['id'],
-                'amountMinor' => 100,
-                'direction' => 'out',
-                'postedOn' => '2026-11-04',
-                'odometerMiles' => 10,
-            ]);
-            self::fail('A fuel reading was stored on a goal.');
-        } catch (ApiException $e) {
-            self::assertSame(422, $e->status);
-        }
+        self::assertSame('Rent', $snapped['categoryName']);
         $vehicle = (new VehicleService($this->pdo, new Actor($this->pdo)))->create([
             'name' => 'Vehicle 1',
             'kind' => 'car',
             'mpgMinTenths' => 60,
             'mpgMaxTenths' => 120,
+            'currentOdometerMiles' => 0,
         ]);
-        $logged = $this->postings->create([
-            'accountId' => $this->accountId,
-            'categoryId' => $fuel['categoryId'],
-            'amountMinor' => 100,
-            'direction' => 'out',
-            'postedOn' => '2026-11-04',
-            'odometerMiles' => 100,
+        $before = $this->balance();
+        $logged = $this->bills->create($this->bill('Fuel 1', 'fuel', 100, '2026-11-04') + [
             'vehicleId' => $vehicle['id'],
+            'odometerMiles' => 100,
+            'pricePerGallonMinor' => 400,
         ]);
         self::assertSame(100, $logged['odometerMiles']);
+        self::assertSame('paid', $this->bills->markPaid($logged['id'], ['paidOn' => '2026-11-04'])['status']);
+        self::assertSame($before, $this->balance());
+        $rentReading = $this->bills->create($this->bill('Rent 3', 'rent', 100, '2026-11-04') + [
+            'odometerMiles' => 10,
+            'pricePerGallonMinor' => 400,
+            'vehicleId' => $vehicle['id'],
+        ]);
+        self::assertNull($rentReading['odometerMiles']);
+        self::assertSame($before, $this->balance());
     }
 
     public function testADefaultBucketOnlyTakesATargetAmount(): void
@@ -184,7 +174,7 @@ final class BillFillTest extends TestCase
         $needs = $this->categories->list(false, '2026-11-05');
         $default = null;
         foreach ($needs as $category) {
-            if ($category['name'] === 'Needs Default') {
+            if ($category['name'] === 'Rent' && ($category['locked'] ?? false) === true) {
                 $default = $category;
             }
         }
@@ -201,13 +191,16 @@ final class BillFillTest extends TestCase
         } catch (ApiException $e) {
             self::assertSame(409, $e->status);
         }
-        $held = $this->categories->update($default['id'], [
-            'target' => ['kind' => 'balance', 'amountMinor' => 5000],
-        ], '2026-11-05');
-        self::assertSame('balance', $held['target']['kind']);
-        self::assertSame(5000, $held['target']['amountMinor']);
         try {
-            $this->categories->create(['name' => 'Fuel Bucket', 'group' => 'needs']);
+            $this->categories->update($default['id'], [
+                'target' => ['kind' => 'balance', 'amountMinor' => 5000],
+            ], '2026-11-05');
+            self::fail('A locked bucket took a target.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        try {
+            $this->categories->create(['name' => 'Fuel', 'group' => 'needs']);
             self::fail('A reserved name was stored.');
         } catch (ApiException $e) {
             self::assertSame(422, $e->status);

@@ -6,12 +6,9 @@ namespace App\Envelope;
 
 use App\Auth\Actor;
 use App\Envelope\BillFill;
-use App\ExchangeRate\RateService;
 use App\Http\ApiException;
-use App\Money\Converter;
 use App\Money\CurrencyCatalog;
 use App\PayCycle\Period;
-use App\Posting\Remaining;
 use App\Support\Dates;
 use App\Target\TargetService;
 use PDO;
@@ -22,7 +19,6 @@ final class EnvelopeService
     public function __construct(
         private readonly PDO $pdo,
         private readonly Actor $actor,
-        private readonly RateService $rates,
         private readonly CurrencyCatalog $currencies,
         private readonly TargetService $targets,
     ) {
@@ -70,22 +66,34 @@ final class EnvelopeService
         $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
         $this->pdo->beginTransaction();
         try {
-            $kept = $this->pdo->prepare('SELECT category_id, filled_minor FROM assignments WHERE pay_period_id = ?');
+            $kept = $this->pdo->prepare('SELECT category_id, amount_minor, filled_minor FROM assignments WHERE pay_period_id = ?');
             $kept->execute([(int) $period['id']]);
-            $filled = [];
+            $prior = [];
             while ($row = $kept->fetch()) {
                 if (is_array($row)) {
-                    $filled[(int) $row['category_id']] = (int) $row['filled_minor'];
+                    $prior[(int) $row['category_id']] = [
+                        'amount' => (int) $row['amount_minor'],
+                        'filled' => (int) $row['filled_minor'],
+                    ];
+                }
+            }
+            $lockedIds = [];
+            $locked = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'locked'");
+            $locked->execute([$this->actor->id()]);
+            while ($row = $locked->fetch()) {
+                if (is_array($row)) {
+                    $lockedIds[(int) $row['id']] = true;
                 }
             }
             $this->pdo->prepare('DELETE FROM assignments WHERE pay_period_id = ?')->execute([(int) $period['id']]);
             $insert = $this->pdo->prepare(
                 'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
             );
-            $ids = array_unique([...array_keys($amounts), ...array_keys($filled)]);
+            $ids = array_unique([...array_keys($amounts), ...array_keys($prior)]);
             foreach ($ids as $categoryId) {
-                $amount = $amounts[$categoryId] ?? 0;
-                $portion = $filled[$categoryId] ?? 0;
+                $keptRow = $prior[$categoryId] ?? ['amount' => 0, 'filled' => 0];
+                $amount = isset($lockedIds[$categoryId]) ? $keptRow['amount'] : ($amounts[$categoryId] ?? 0);
+                $portion = $keptRow['filled'];
                 if ($amount === 0 && $portion === 0) {
                     continue;
                 }
@@ -364,7 +372,7 @@ final class EnvelopeService
     private function present(string $today, ?int $payCycleId, ?int $periodId, bool $upcoming, bool $observe): array
     {
         $base = $this->actor->baseCurrency();
-        $pool = $this->pool($base);
+        $pool = $this->pool();
         $assigned = $this->assignedOpen($today);
         $available = $pool['minor'] - $assigned;
         $cycles = array_values(array_filter(
@@ -471,13 +479,11 @@ final class EnvelopeService
             'leftOut' => $pool['leftOut'],
             'categories' => $this->withBills(
                 $this->targets->decorate(
-                    Remaining::attach(
-                        $this->pdo,
-                        $this->actor->id(),
-                        $categories,
-                        is_array($period) ? (string) $period['start'] : null,
-                        is_array($period) && $period['end'] !== null ? (string) $period['end'] : null,
-                    ),
+                    array_map(static function (array $category): array {
+                        $category['remainingMinor'] = (int) ($category['amountMinor'] ?? 0);
+
+                        return $category;
+                    }, $categories),
                     $today,
                     $observe,
                 ),
@@ -522,20 +528,16 @@ final class EnvelopeService
         return $best ?? $cycles[0];
     }
 
-    /** @return array{minor:int,leftOut:list<array<string,mixed>>} */
-    private function pool(string $base): array
+    /** @return array{minor:int,leftOut:list<empty>} */
+    private function pool(): array
     {
-        $rates = $this->rates->into($base);
-        $baseExponent = $this->currencies->exponent($base);
         $stmt = $this->pdo->prepare(
-            'SELECT id, name, currency, balance_minor FROM accounts
-             WHERE user_id = ? AND archived_at IS NULL AND type IN (\'checking\', \'savings\', \'cash\')
-             ORDER BY name COLLATE NOCASE, id'
+            'SELECT balance_minor FROM accounts
+             WHERE user_id = ? AND archived_at IS NULL AND type IN (\'checking\', \'savings\', \'cash\')'
         );
         $stmt->execute([$this->actor->id()]);
         $rows = $stmt->fetchAll();
         $minor = 0;
-        $leftOut = [];
         if (!is_array($rows)) {
             return ['minor' => 0, 'leftOut' => []];
         }
@@ -543,31 +545,10 @@ final class EnvelopeService
             if (!is_array($row)) {
                 continue;
             }
-            $currency = (string) $row['currency'];
-            $balance = (int) $row['balance_minor'];
-            if ($currency === $base) {
-                $minor += $balance;
-                continue;
-            }
-            if (!isset($rates[$currency])) {
-                $leftOut[] = [
-                    'accountId' => (int) $row['id'],
-                    'name' => (string) $row['name'],
-                    'currency' => $currency,
-                    'exponent' => $this->currencies->exponent($currency),
-                    'balanceMinor' => $balance,
-                ];
-                continue;
-            }
-            $minor += Converter::convert(
-                $balance,
-                $this->currencies->exponent($currency),
-                $baseExponent,
-                $rates[$currency],
-            );
+            $minor += (int) $row['balance_minor'];
         }
 
-        return ['minor' => $minor, 'leftOut' => $leftOut];
+        return ['minor' => $minor, 'leftOut' => []];
     }
 
     private function periodTotal(int $cycleId, string $start): int

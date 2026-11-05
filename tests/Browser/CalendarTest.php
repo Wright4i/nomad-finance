@@ -97,6 +97,7 @@ final class CalendarTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
@@ -136,7 +137,7 @@ final class CalendarTest extends TestCase
         self::assertSame('--lilac', self::chipFill('2026-11-04', 'Paid Weekly Bill'));
         self::assertSame(1, self::chipCount('2026-11-04', 'Paid Weekly Bill'));
         self::assertSame('--coral', self::chipFill('2026-11-11', 'Paid Weekly Bill'));
-        self::assertStringContainsString('$24.68', self::paidColumn());
+        self::assertStringContainsString('$64.68', self::paidColumn());
         self::setFilter('Show Unpaid Bills', false);
         self::assertSame('--lilac', self::chipFill('2026-11-04', 'Paid Weekly Bill'));
         self::assertSame('', self::chipFill('2026-11-11', 'Paid Weekly Bill'));
@@ -149,7 +150,8 @@ final class CalendarTest extends TestCase
 
         $total = self::monthTotal();
         self::assertStringContainsString('Income', $total);
-        self::assertStringContainsString('Bills', $total);
+        self::assertStringContainsString('Debt', $total);
+        self::assertStringContainsString('Paid', $total);
         self::assertStringContainsString('Net', $total);
         self::assertStringNotContainsString('Stay 1', $total);
 
@@ -217,7 +219,7 @@ final class CalendarTest extends TestCase
         self::click('Close');
         self::clickDay('2026-10-15');
         self::assertStringContainsString('Overdue Monthly Bill', self::dialogText());
-        self::assertSame('--coral', self::dialogAmountTone('Bills'));
+        self::assertSame('--coral', self::dialogAmountTone('Bills', 'Overdue Monthly Bill'));
         self::click('Close');
 
         self::setFilter('Show Unpaid Bills', false);
@@ -499,12 +501,16 @@ final class CalendarTest extends TestCase
         return $value;
     }
 
-    private static function dialogAmountTone(string $heading): string
+    private static function dialogAmountTone(string $heading, ?string $bill = null): string
     {
         $value = self::driver()->executeScript(
             <<<'JS'
                 const title = [...document.querySelectorAll('dialog[open] h3')].find((node) => node.textContent.trim() === arguments[0]);
-                const money = title && title.parentElement ? title.parentElement.querySelector('strong.money') : null;
+                const section = title ? title.parentElement : null;
+                const row = arguments[1] && section
+                    ? [...section.querySelectorAll('a.row')].find((node) => node.innerText.includes(arguments[1]))
+                    : null;
+                const money = row ? row.querySelector('strong.money') : (section ? section.querySelector('strong.money') : null);
                 if (!money) return '';
                 const paint = getComputedStyle(money).color;
                 const probe = document.createElement('span');
@@ -516,7 +522,7 @@ final class CalendarTest extends TestCase
                 probe.remove();
                 return named || paint;
             JS,
-            [$heading],
+            [$heading, $bill],
         );
         self::assertIsString($value);
 

@@ -56,8 +56,9 @@ final class VehicleService
             }
             $this->pdo->prepare(
                 'INSERT INTO vehicles (
-                    user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                    user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
+                    current_odometer_miles, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $this->actor->id(),
                 $data['name'],
@@ -65,6 +66,7 @@ final class VehicleService
                 $data['mpgMinTenths'],
                 $data['mpgMaxTenths'],
                 $data['starred'],
+                $data['currentOdometerMiles'],
                 $now,
                 $now,
             ]);
@@ -93,7 +95,8 @@ final class VehicleService
             }
             $this->pdo->prepare(
                 'UPDATE vehicles SET
-                    name = ?, kind = ?, mpg_min_tenths = ?, mpg_max_tenths = ?, starred = ?, updated_at = ?
+                    name = ?, kind = ?, mpg_min_tenths = ?, mpg_max_tenths = ?, starred = ?,
+                    current_odometer_miles = ?, updated_at = ?
                  WHERE id = ? AND user_id = ?'
             )->execute([
                 $data['name'],
@@ -101,6 +104,7 @@ final class VehicleService
                 $data['mpgMinTenths'],
                 $data['mpgMaxTenths'],
                 $data['starred'],
+                $data['currentOdometerMiles'],
                 $now,
                 $id,
                 $this->actor->id(),
@@ -136,7 +140,7 @@ final class VehicleService
     }
 
     /** @param array<string, mixed> $input
-     *  @return array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,starred:int}
+     *  @return array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,starred:int,currentOdometerMiles:int}
      */
     private function validate(array $input, ?int $exceptId): array
     {
@@ -164,6 +168,20 @@ final class VehicleService
         if ($min > 0 && $max > 0 && $min >= $max) {
             $errors['mpgMaxTenths'] = 'The maximum is above the minimum.';
         }
+        $current = $this->asInt($input['currentOdometerMiles'] ?? null);
+        if ($current === null || $current < 0) {
+            $errors['currentOdometerMiles'] = 'Enter the current odometer. Zero is only the reading you type.';
+            $current = 0;
+        } elseif ($exceptId !== null) {
+            $floor = $this->pdo->prepare(
+                'SELECT MAX(odometer_miles) FROM bills WHERE vehicle_id = ? AND odometer_miles IS NOT NULL'
+            );
+            $floor->execute([$exceptId]);
+            $highest = $floor->fetchColumn();
+            if ($highest !== null && $highest !== false && $current < (int) $highest) {
+                $errors['currentOdometerMiles'] = 'The current odometer cannot sit below a fuel reading.';
+            }
+        }
         if ($errors !== []) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
@@ -174,6 +192,7 @@ final class VehicleService
             'mpgMinTenths' => $min,
             'mpgMaxTenths' => $max,
             'starred' => !empty($input['starred']) ? 1 : 0,
+            'currentOdometerMiles' => $current,
         ];
     }
 
@@ -184,16 +203,11 @@ final class VehicleService
     {
         $min = (int) $row['mpg_min_tenths'];
         $max = (int) $row['mpg_max_tenths'];
-        $readings = $withReadings ? $this->readings((int) $row['id']) : [];
-        $pooled = $withReadings
-            ? Fuel::pooled(array_map(static function (array $reading): array {
-                return [
-                    'miles' => $reading['miles'],
-                    'gallons' => $reading['gallons'],
-                    'milesPerGallon' => $reading['milesPerGallon'],
-                ];
-            }, $readings), $min, $max)
-            : null;
+        $origin = $row['origin_odometer_miles'] === null ? null : (int) $row['origin_odometer_miles'];
+        $fuelRows = $withReadings ? $this->fuelRows((int) $row['id']) : [];
+        $fills = $withReadings ? Stretch::fillUps($this->stretchRows($fuelRows), $origin) : [];
+        $readings = $withReadings ? $this->readings($fuelRows, $fills) : [];
+        $pooled = $withReadings ? Fuel::pooled($fills, $min, $max) : null;
 
         return [
             'id' => (int) $row['id'],
@@ -202,28 +216,26 @@ final class VehicleService
             'mpgMinTenths' => $min,
             'mpgMaxTenths' => $max,
             'starred' => (int) $row['starred'] === 1,
+            'currentOdometerMiles' => (int) $row['current_odometer_miles'],
             'milesPerGallon' => Fuel::label($pooled),
             'readings' => $readings,
         ];
     }
 
-    /** @return list<array<string, mixed>> */
-    private function readings(int $vehicleId): array
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fuelRows(int $vehicleId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT p.id, p.posted_on, p.odometer_miles, p.price_per_gallon_minor, p.amount_minor,
-                    COALESCE((
-                        SELECT SUM(l.amount_minor) FROM posting_lines l
-                        JOIN categories fc ON fc.id = l.category_id
-                        WHERE l.posting_id = p.id AND fc.role = \'fuel\'
-                    ), p.amount_minor) AS fuel_amount,
-                    p.account_id, p.category_id, p.direction, p.payee, p.memo, p.trip_id,
-                    a.name AS account_name, a.currency
-             FROM postings p
-             JOIN accounts a ON a.id = p.account_id
-             WHERE p.user_id = ? AND p.vehicle_id = ?
-               AND (p.odometer_miles IS NOT NULL OR p.price_per_gallon_minor IS NOT NULL)
-             ORDER BY p.posted_on, p.id'
+            'SELECT b.id, b.anchor_date, b.odometer_miles, b.price_per_gallon_minor, b.amount_minor,
+                    b.account_id, b.category_id, b.name, b.notes,
+                    a.name AS account_name
+             FROM bills b
+             JOIN accounts a ON a.id = b.account_id
+             WHERE a.user_id = ? AND b.vehicle_id = ? AND b.type = \'fuel\' AND b.status = \'paid\'
+               AND (b.odometer_miles IS NOT NULL OR b.price_per_gallon_minor IS NOT NULL)
+             ORDER BY b.anchor_date, b.id'
         );
         $stmt->execute([$this->actor->id(), $vehicleId]);
         $rows = [];
@@ -233,44 +245,91 @@ final class VehicleService
             }
             $rows[] = [
                 'id' => (int) $row['id'],
-                'amountMinor' => (int) $row['fuel_amount'],
-                'postingAmount' => (int) $row['amount_minor'],
+                'amountMinor' => (int) $row['amount_minor'],
                 'odometerMiles' => $row['odometer_miles'] === null ? null : (int) $row['odometer_miles'],
                 'pricePerGallonMinor' => $row['price_per_gallon_minor'] === null ? null : (int) $row['price_per_gallon_minor'],
                 'vehicleId' => $vehicleId,
-                'postedOn' => (string) $row['posted_on'],
+                'postedOn' => (string) $row['anchor_date'],
                 'accountId' => (int) $row['account_id'],
                 'accountName' => (string) $row['account_name'],
-                'currency' => (string) $row['currency'],
+                'currency' => 'USD',
                 'categoryId' => (int) $row['category_id'],
-                'direction' => (string) $row['direction'],
-                'payee' => $row['payee'],
-                'memo' => $row['memo'],
-                'tripId' => $row['trip_id'] === null ? null : (int) $row['trip_id'],
+                'direction' => 'out',
+                'payee' => $row['name'],
+                'memo' => $row['notes'],
+                'tripId' => null,
             ];
         }
-        $stretches = Stretch::decorate($rows);
-        $listed = [];
+
+        return $rows;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @return list<array{id:int,amountMinor:int,odometerMiles:?int,pricePerGallonMinor:?int,vehicleId:?int}>
+     */
+    private function stretchRows(array $rows): array
+    {
+        $forStretch = [];
         foreach ($rows as $row) {
-            $stretch = $stretches[$row['id']] ?? null;
-            $listed[] = [
-                'id' => $row['id'],
-                'postedOn' => $row['postedOn'],
+            $forStretch[] = [
+                'id' => (int) $row['id'],
+                'amountMinor' => (int) $row['amountMinor'],
                 'odometerMiles' => $row['odometerMiles'],
                 'pricePerGallonMinor' => $row['pricePerGallonMinor'],
-                'amountMinor' => $row['postingAmount'],
-                'accountId' => $row['accountId'],
-                'accountName' => $row['accountName'],
-                'currency' => $row['currency'],
-                'categoryId' => $row['categoryId'],
-                'direction' => $row['direction'],
-                'payee' => $row['payee'],
-                'memo' => $row['memo'],
-                'tripId' => $row['tripId'],
-                'miles' => is_array($stretch) ? $stretch['miles'] : null,
-                'gallons' => is_array($stretch) ? $stretch['gallons'] : null,
-                'milesPerGallon' => is_array($stretch) ? $stretch['milesPerGallon'] : null,
-                'note' => is_array($stretch) ? $stretch['note'] : null,
+                'vehicleId' => $row['vehicleId'],
+            ];
+        }
+
+        return $forStretch;
+    }
+
+    /**
+     * One row per fill-up. Charges that share an odometer stay one reading.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @param list<array{odometerMiles:int,miles:?int,gallons:?string,milesPerGallon:?string}> $fills
+     * @return list<array<string, mixed>>
+     */
+    private function readings(array $rows, array $fills): array
+    {
+        $listed = [];
+        foreach ($fills as $fill) {
+            $charges = array_values(array_filter(
+                $rows,
+                static fn (array $row): bool => $row['odometerMiles'] === $fill['odometerMiles'],
+            ));
+            if ($charges === []) {
+                continue;
+            }
+            $first = $charges[0];
+            $amount = 0;
+            $price = $first['pricePerGallonMinor'];
+            $samePrice = true;
+            foreach ($charges as $charge) {
+                $amount += (int) $charge['amountMinor'];
+                if ($charge['pricePerGallonMinor'] !== $price) {
+                    $samePrice = false;
+                }
+            }
+            $listed[] = [
+                'id' => $first['id'],
+                'postedOn' => $first['postedOn'],
+                'odometerMiles' => $fill['odometerMiles'],
+                'pricePerGallonMinor' => $samePrice ? $price : null,
+                'amountMinor' => $amount,
+                'accountId' => $first['accountId'],
+                'accountName' => $first['accountName'],
+                'currency' => $first['currency'],
+                'categoryId' => $first['categoryId'],
+                'direction' => 'out',
+                'payee' => 'Fuel',
+                'memo' => null,
+                'tripId' => null,
+                'miles' => $fill['miles'],
+                'gallons' => $fill['gallons'],
+                'milesPerGallon' => $fill['milesPerGallon'],
+                'note' => null,
             ];
         }
 

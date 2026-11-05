@@ -91,6 +91,7 @@ final class PayCycleTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
@@ -99,6 +100,11 @@ final class PayCycleTest extends TestCase
         self::waitForText('Available to assign');
         self::clickLink('Income');
         self::waitForText('Weekly Payor');
+        self::waitForText('Averaged Payor');
+        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Averaged Payor")]//button[normalize-space()="Payroll"]'))->click();
+        self::waitForText('Payroll · Averaged Payor');
+        self::waitForText('$4,000.00');
+        self::click('Close');
         self::waitForText('Biweekly Payor');
         self::waitForText('Semimonthly Payor');
         self::waitForText('Monthly Payor');

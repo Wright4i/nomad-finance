@@ -107,6 +107,7 @@ final class RegisterTest extends TestCase
         self::setValue('mpgMin', '8.0');
         self::setValue('mpgMax', '16.0');
         self::setValue('fuelPrice', '3.99');
+        self::setValue('currentOdometer', '12000');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::waitForMoney('$0.00');
@@ -143,7 +144,7 @@ final class RegisterTest extends TestCase
         self::waitForText('Available to assign');
         self::waitForText('rent');
         self::waitForText('Reset demo data');
-        self::waitForMoney('$8,580.18');
+        self::waitForMoney('$8,945.00');
         $reset = self::driver()->findElement(WebDriverBy::xpath('//button[normalize-space()="Reset demo data"]'));
         $resting = $reset->getCSSValue('background-color');
         self::driver()->action()->moveToElement($reset)->perform();
@@ -163,30 +164,15 @@ final class RegisterTest extends TestCase
     #[Depends('testDemoOpensTheSampleBooks')]
     public function testExchangeRatesLiveUnderSettings(): void
     {
-        self::clickLink('Accounts');
         self::clickLink('Settings');
-        self::waitForText('Exchange rates');
-        $nav = self::driver()->findElement(WebDriverBy::cssSelector('nav[aria-label="Primary"]'));
-        self::assertStringNotContainsString('Exchange rates', $nav->getText());
-        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
-            WebDriverBy::partialLinkText('Exchange rates'),
-        ))->click();
-        self::waitForText('JPY (Japanese Yen)');
-        self::waitForText('Save fallback');
-        self::waitForText('Fallback 0.00631316 USD');
-        $date = self::driver()->findElements(WebDriverBy::name('effectiveDate'));
-        self::assertCount(0, $date);
-        $dot = self::wait()->until(WebDriverExpectedCondition::visibilityOfElementLocated(
-            WebDriverBy::cssSelector('article .live-dot'),
-        ));
-        self::assertStringContainsString('live-pulse', (string) $dot->getCSSValue('animation-name'));
+        self::waitForText('Fallback price per gallon');
+        $body = self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText();
+        self::assertStringNotContainsString('Exchange rates', $body);
+        self::assertStringNotContainsString('USD', $body);
         self::driver()->get(self::$base . '/accounts/new');
-        self::waitForText('USD (US Dollar)');
-        $selected = self::driver()->executeScript(<<<'JS'
-            const select = document.querySelector('select[name="currency"]');
-            return select && select.selectedOptions[0] ? select.selectedOptions[0].textContent : '';
-        JS);
-        self::assertSame('USD (US Dollar)', $selected);
+        self::waitForText('Save account');
+        $currency = self::driver()->findElements(WebDriverBy::name('currency'));
+        self::assertCount(0, $currency);
     }
 
     #[Depends('testExchangeRatesLiveUnderSettings')]

@@ -8,13 +8,11 @@ use App\Auth\Actor;
 use App\Bill\DuePie;
 use App\Bill\Schedule;
 use App\Envelope\EnvelopeService;
-use App\ExchangeRate\RateService;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
 use App\PayCycle\Paycheck;
 use App\PayCycle\Period;
-use App\PayCycle\RollingAverage;
 use App\Support\Dates;
 use App\Trip\TripService;
 use PDO;
@@ -24,7 +22,6 @@ final class DashboardService
     public function __construct(
         private readonly PDO $pdo,
         private readonly CurrencyCatalog $currencies,
-        private readonly RateService $rates,
         private readonly Actor $actor,
         private readonly EnvelopeService $envelopes,
         private readonly PayCycleService $payCycles,
@@ -64,25 +61,13 @@ final class DashboardService
             ];
         }
 
-        $summary = NetWorth::summarize($base, $accounts, $this->rates->into($base), $this->currencies);
+        $summary = NetWorth::summarize($accounts);
         $cycles = $this->payCycles->list($today, false);
-        $averages = new RollingAverage($this->pdo, $this->actor, $this->rates, $this->currencies);
         $income = [];
         $incomeMinor = 0;
         $timeline = [];
         foreach ($cycles as $cycle) {
             $paycheck = $cycle['paycheckMinor'];
-            $average = null;
-            if ($cycle['averageMonths'] !== null) {
-                $preview = $averages->preview((int) $cycle['id'], $today);
-                if ($preview !== null) {
-                    $average = [
-                        'months' => $preview['months'],
-                        'averageMinor' => $preview['averageMinor'],
-                        'excluded' => $preview['excluded'],
-                    ];
-                }
-            }
             $income[] = [
                 'id' => $cycle['id'],
                 'payor' => $cycle['payor'],
@@ -93,7 +78,8 @@ final class DashboardService
                 'hoursMode' => $cycle['hoursMode'],
                 'paycheckMinor' => $paycheck,
                 'weekdayPay' => $cycle['weekdayPay'],
-                'average' => $average,
+                'average' => null,
+                'averageOn' => $cycle['averageOn'] ?? false,
                 'periodStart' => $cycle['periodStart'],
                 'periodEnd' => $cycle['periodEnd'],
             ];
@@ -107,7 +93,7 @@ final class DashboardService
                     'on' => $date,
                     'payCycleId' => $cycle['id'],
                     'payor' => $cycle['payor'],
-                    'paycheckMinor' => $preview['paycheckMinor'],
+                    'paycheckMinor' => $this->payCycles->projected($cycle, $date),
                     'hoursMode' => $preview['hoursMode'],
                     'weekdayPay' => $preview['weekdayPay'],
                 ];
@@ -137,11 +123,7 @@ final class DashboardService
             'netWorthMinor' => $summary['netWorthMinor'],
             'assetsMinor' => $summary['assetsMinor'],
             'liabilitiesMinor' => $summary['liabilitiesMinor'],
-            'unconverted' => array_map(function (array $row): array {
-                $row['exponent'] = $this->currencies->exponent($row['currency']);
-
-                return $row;
-            }, $summary['unconverted']),
+            'unconverted' => [],
             'timeline' => $timeline,
             'envelopes' => $this->envelopes->show($today, $payCycleId, $periodId, $upcoming),
             'income' => $income,
@@ -159,8 +141,9 @@ final class DashboardService
         $start = \DateTimeImmutable::createFromFormat('!Y-m-d', $month . '-01');
         $nextMonth = $start instanceof \DateTimeImmutable ? $start->modify('+1 month')->format('Y-m') : $month;
         $stmt = $this->pdo->prepare(
-            'SELECT b.type, b.name, b.other_label, b.status, b.next_due_date AS nextDueDate,
-                    b.amount_minor AS amountMinor, b.currency
+            'SELECT b.id, b.type, b.name, b.other_label, b.status, b.recurrence,
+                    b.anchor_date AS anchorDate, b.last_paid_on AS lastPaidOn,
+                    b.next_due_date AS nextDueDate, b.amount_minor AS amountMinor, b.currency
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              WHERE a.user_id = ?'
@@ -178,9 +161,13 @@ final class DashboardService
                 $name = (string) $row['other_label'];
             }
             $bills[] = [
+                'id' => (int) $row['id'],
                 'type' => $type,
                 'name' => $name,
                 'status' => (string) $row['status'],
+                'recurrence' => (string) $row['recurrence'],
+                'anchorDate' => (string) $row['anchorDate'],
+                'lastPaidOn' => $row['lastPaidOn'],
                 'nextDueDate' => (string) $row['nextDueDate'],
                 'amountMinor' => (int) $row['amountMinor'],
                 'currency' => $currency,
@@ -188,12 +175,11 @@ final class DashboardService
             ];
         }
         $base = $this->actor->baseCurrency();
-        $rates = \App\Money\StoredRates::map($this->pdo, $this->actor->id(), $base);
         $exponent = $this->currencies->exponent($base);
 
         return [
-            $month => DuePie::month($bills, $month, $base, $exponent, $rates),
-            $nextMonth => DuePie::month($bills, $nextMonth, $base, $exponent, $rates),
+            $month => DuePie::month($bills, $month, $base, $exponent),
+            $nextMonth => DuePie::month($bills, $nextMonth, $base, $exponent),
         ];
     }
 
@@ -236,6 +222,11 @@ final class DashboardService
                 break;
             }
             $probe = $next;
+        }
+        foreach ($this->payCycles->keyedDates((int) $cycle['id']) as $keyed) {
+            if ($keyed >= $today && $keyed <= $end) {
+                $dates[$keyed] = $keyed;
+            }
         }
         $listed = array_values($dates);
         sort($listed);

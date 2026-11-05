@@ -34,6 +34,7 @@
 
   let active = $derived(bills.filter((bill) => bill.status === 'active').map((bill) => ({ ...bill, shownOn: bill.nextDueDate })));
   let paused = $derived(bills.filter((bill) => bill.status === 'paused').map((bill) => ({ ...bill, shownOn: bill.nextDueDate })));
+  let archived = $derived(bills.filter((bill) => bill.status === 'archived').map((bill) => ({ ...bill, shownOn: bill.nextDueDate })));
   let paid = $derived([
     ...bills.filter((bill) => bill.status === 'paid').map((bill) => ({ ...bill, shownOn: bill.lastPaidOn ?? bill.nextDueDate })),
     ...bills
@@ -64,6 +65,7 @@
               <Glyph name={bill.type} />
               <span>
                 <strong>{bill.name}</strong>
+                {#if bill.locked}<Glyph name="lock" mini />{/if}
                 <span class="block muted text-sm">
                   <span class="type-label">{(bill.type === 'other' || bill.type === 'misc') && bill.otherLabel ? bill.otherLabel : bill.type}</span> · {formatDate(bill.shownOn)} · {bill.accountName} · {bill.recurrence}{bill.categoryName ? ` · ${bill.categoryName}` : ''}{bill.autopay ? ' · autopay' : ''}
                 </span>
@@ -74,10 +76,16 @@
           <div class="flex flex-wrap gap-2">
             {#if !unpay && bill.status === 'active'}
               <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
-              <button class="btn" type="button" onclick={() => act(bill.id, 'pause')}>Pause</button>
+              {#if !bill.locked}
+                <button class="btn" type="button" onclick={() => act(bill.id, 'pause')}>Pause</button>
+              {/if}
             {/if}
-            {#if !unpay && bill.status === 'paused'}
+            {#if !unpay && bill.status === 'paused' && !bill.locked}
               <button class="btn" type="button" onclick={() => act(bill.id, 'resume')}>Resume</button>
+              <button class="btn" type="button" onclick={() => act(bill.id, 'archive')}>Archive</button>
+            {/if}
+            {#if bill.status === 'archived'}
+              <button class="btn" type="button" onclick={() => act(bill.id, 'unarchive')}>Unarchive</button>
             {/if}
             {#if unpay}
               <button class="btn" type="button" onclick={() => act(bill.id, 'unpay')}>Unpay</button>
@@ -91,4 +99,5 @@
   {@render group('Active', 'active', active, false)}
   {@render group('Paused', 'paused', paused, false)}
   {@render group('Paid', 'paid', paid, true)}
+  {@render group('Archived', 'archived', archived, false)}
 </div>

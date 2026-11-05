@@ -1,6 +1,6 @@
 # Nomad finance
 
-Personal finance register: typed account balances, bill reminders, and manual exchange rates. Vocabulary lives in `GLOSSARY.md`. Hard choices live in `docs/adr/`. Screen and field rules live in `docs/modules/`. Build the module marked next in `docs/modules/README.md`, and leave later and blocked modules unbuilt.
+Personal finance register: typed account balances and bill reminders. Vocabulary lives in `GLOSSARY.md`. Hard choices live in `docs/adr/`. Screen and field rules live in `docs/modules/`. Build the module marked next in `docs/modules/README.md`, and leave later and blocked modules unbuilt.
 
 ## Tests
 
@@ -8,7 +8,7 @@ A change is finished when a unit test covers the rule and, if the screen changed
 
 ## Owner books
 
-Demo is the user for tests and agent sessions. The owner is the user created at setup. Sign in as Demo. `composer demo:reset` restores Demo's sample accounts, bills, rates, and categories. Read or change the owner's accounts, bills, rates, settings, or password only when the owner explicitly permits that work in the conversation.
+Demo is the user for tests and agent sessions. The owner is the user created at setup. Sign in as Demo. `composer demo:reset` restores Demo's sample accounts, bills, and categories. Read or change the owner's accounts, bills, settings, or password only when the owner explicitly permits that work in the conversation.
 
 ## Demo seed
 

@@ -4,44 +4,46 @@ declare(strict_types=1);
 
 namespace App\Bill;
 
-use App\Money\StoredRates;
-
 final class DuePie
 {
     /**
-     * One pie in the base currency. A slice is the due amount for one bill type:
-     * active bills whose next due date falls in that month, converted at the stored rate.
-     * Paid and paused bills are left out. A bill with no rate is named and left out.
+     * One pie. A slice sums every unpaid occurrence of an active bill in that month.
+     * The step is the same one the calendar uses. Paid dates are not charted. Paused bills stay out.
      *
-     * @param list<array{type:string,status:string,nextDueDate:string,amountMinor:int,currency:string,exponent:int,name?:string}> $bills
-     * @param array<string, string> $rates
+     * @param list<array{type:string,status:string,nextDueDate:string,amountMinor:int,name?:string,recurrence?:string,anchorDate?:string,lastPaidOn?:?string,id?:int,currency?:string,exponent?:int}> $bills
      * @return list<array{currency:string,exponent:int,slices:list<array{type:string,amountMinor:int}>,leftOut:list<string>}>
      */
-    public static function month(array $bills, string $month, string $base, int $baseExponent, array $rates): array
+    public static function month(array $bills, string $month, string $base, int $baseExponent): array
     {
         /** @var array<string, int> $sums */
         $sums = [];
-        $leftOut = [];
-        foreach ($bills as $bill) {
-            if ($bill['status'] !== 'active' || $bill['amountMinor'] <= 0) {
+        $prepared = [];
+        foreach ($bills as $index => $bill) {
+            if (($bill['status'] ?? '') !== 'active' || ($bill['amountMinor'] ?? 0) <= 0) {
                 continue;
             }
-            if (!self::inMonth($bill['nextDueDate'], $month)) {
-                continue;
+            $prepared[] = [
+                'id' => (int) ($bill['id'] ?? $index),
+                'name' => (string) ($bill['name'] ?? $bill['type']),
+                'type' => (string) $bill['type'],
+                'otherLabel' => $bill['otherLabel'] ?? null,
+                'amountMinor' => (int) $bill['amountMinor'],
+                'currency' => (string) ($bill['currency'] ?? $base),
+                'exponent' => (int) ($bill['exponent'] ?? $baseExponent),
+                'status' => 'active',
+                'recurrence' => (string) ($bill['recurrence'] ?? 'once'),
+                'anchorDate' => (string) ($bill['anchorDate'] ?? $bill['nextDueDate']),
+                'nextDueDate' => (string) $bill['nextDueDate'],
+                'lastPaidOn' => $bill['lastPaidOn'] ?? null,
+            ];
+        }
+        if (preg_match('/^\d{4}-\d{2}$/', $month) === 1) {
+            foreach (Occurrences::inMonth($prepared, $month) as $mark) {
+                if ($mark['paid'] || $mark['amountMinor'] <= 0) {
+                    continue;
+                }
+                $sums[$mark['type']] = ($sums[$mark['type']] ?? 0) + $mark['amountMinor'];
             }
-            $converted = StoredRates::toBase(
-                $bill['amountMinor'],
-                $bill['currency'],
-                $bill['exponent'],
-                $base,
-                $baseExponent,
-                $rates,
-            );
-            if ($converted === null) {
-                $leftOut[] = $bill['name'] ?? $bill['type'];
-                continue;
-            }
-            $sums[$bill['type']] = ($sums[$bill['type']] ?? 0) + $converted;
         }
         $slices = [];
         foreach (BillTypes::all() as $type) {
@@ -57,8 +59,7 @@ final class DuePie
                 $slices[] = ['type' => (string) $type, 'amountMinor' => $amount];
             }
         }
-        sort($leftOut);
-        if ($slices === [] && $leftOut === []) {
+        if ($slices === []) {
             return [];
         }
 
@@ -66,12 +67,7 @@ final class DuePie
             'currency' => $base,
             'exponent' => $baseExponent,
             'slices' => $slices,
-            'leftOut' => $leftOut,
+            'leftOut' => [],
         ]];
-    }
-
-    private static function inMonth(string $date, string $month): bool
-    {
-        return strlen($month) === 7 && str_starts_with($date, $month . '-');
     }
 }

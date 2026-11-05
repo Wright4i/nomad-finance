@@ -8,7 +8,6 @@ use App\Auth\Actor;
 use App\Bill\Schedule;
 use App\Category\SystemBuckets;
 use App\Money\CurrencyCatalog;
-use App\Money\StoredRates;
 use App\PayCycle\Period;
 use App\Support\Dates;
 use PDO;
@@ -50,7 +49,7 @@ final class BillFill
     }
 
     /**
-     * Bills that make up the fill for one span, plus names left out for lack of a rate.
+     * Bills that make up the fill for one span.
      *
      * @return array{bills: array<int, list<array{id:int,name:string,amountMinor:int}>>, leftOut: list<string>}
      */
@@ -90,12 +89,8 @@ final class BillFill
     private function tally(string $today, string $start, ?string $end, bool $overdue): array
     {
         unset($today);
-        $base = $this->actor->baseCurrency();
-        $baseExponent = $this->currencies->exponent($base);
-        $rates = StoredRates::map($this->pdo, $this->actor->id(), $base);
         $filled = [];
         $bills = [];
-        $leftOut = [];
         foreach ($this->bills() as $bill) {
             if ((string) $bill['status'] !== 'active') {
                 continue;
@@ -104,21 +99,8 @@ final class BillFill
             if ($count < 1) {
                 continue;
             }
-            $currency = (string) $bill['currency'];
-            $converted = StoredRates::toBase(
-                (int) $bill['amount_minor'],
-                $currency,
-                $this->currencies->exponent($currency),
-                $base,
-                $baseExponent,
-                $rates,
-            );
             $name = $this->label($bill);
-            if ($converted === null) {
-                $leftOut[] = $name;
-                continue;
-            }
-            $portion = $converted * $count;
+            $portion = (int) $bill['amount_minor'] * $count;
             $categoryId = (int) $bill['category_id'];
             $filled[$categoryId] = ($filled[$categoryId] ?? 0) + $portion;
             $bills[$categoryId][] = [
@@ -127,9 +109,7 @@ final class BillFill
                 'amountMinor' => $portion,
             ];
         }
-        sort($leftOut);
-
-        return ['filled' => $filled, 'bills' => $bills, 'leftOut' => $leftOut];
+        return ['filled' => $filled, 'bills' => $bills, 'leftOut' => []];
     }
 
     /** @param array<string, mixed> $bill */

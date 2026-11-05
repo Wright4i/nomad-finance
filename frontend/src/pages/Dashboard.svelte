@@ -127,13 +127,8 @@
   <h1 class="m-0 text-4xl" class:display-phrase={data?.headingItalic === true}>{data?.heading ?? 'Planner'}</h1>
 
   <section class="hero">
-    <p class="kicker">Net worth{data ? ` · ${data.baseCurrency}` : ''}</p>
-    {#if data?.netWorthMinor === null}
-      <p class="figure muted">—</p>
-      <p>Add exchange rates before these accounts can share one total.</p>
-    {:else}
-      <p class="figure">{data ? formatMinor(data.netWorthMinor ?? 0, data.baseCurrency, data.exponent) : '…'}</p>
-    {/if}
+    <p class="kicker">Net worth</p>
+    <p class="figure">{data ? formatMinor(data.netWorthMinor ?? 0, data.baseCurrency, data.exponent) : '…'}</p>
     {#if data}
       <div class="grid grid-cols-2 gap-3 mt-6">
         <div class="stat">
@@ -240,9 +235,6 @@
           <div class="bill-charts">
             {#each pies as pie (pie.currency)}
               <div class="bill-pie-cell">
-                {#if pies.length > 1}
-                  <p class="kicker m-0">{pie.currency}</p>
-                {/if}
                 <svg class="bill-pie" viewBox="0 0 100 100" aria-hidden="true">
                   {#each paint(pie) as slice (slice.type)}
                     {#if slice.full}
@@ -253,7 +245,7 @@
                   {/each}
                 </svg>
               </div>
-              <ul class="bill-legend" aria-label={pies.length > 1 ? `Due in ${pie.currency}` : 'Due by bill type'}>
+              <ul class="bill-legend" aria-label="Due by bill type">
                 {#each pie.slices as slice (slice.type)}
                   <li data-type={slice.type}>
                     <span class="bill-swatch" style={`--tone: var(--tone-${slice.type})`}></span>
@@ -261,9 +253,6 @@
                     <span class="money">{formatMinor(slice.amountMinor, pie.currency, pie.exponent)}</span>
                   </li>
                 {/each}
-                {#if pie.leftOut && pie.leftOut.length > 0}
-                  <li>Left out {pie.leftOut.join(', ')}</li>
-                {/if}
               </ul>
             {/each}
           </div>
@@ -271,25 +260,11 @@
       </div>
     </section>
   {/if}
-
-  {#if data && data.unconverted.length > 0}
-    <section class="grid gap-3">
-      <h2 class="group-title text-2xl" style="--tone: var(--amber)">Left out of the total</h2>
-      {#each data.unconverted as account (account.accountId)}
-        <a class="row stripe warn" href={`/accounts/${account.accountId}`} onclick={(event) => follow(event, `/accounts/${account.accountId}`)}>
-          <span>
-            <strong>{account.name}</strong>
-            <span class="block muted text-sm">No {data.baseCurrency} rate for {account.currency}</span>
-          </span>
-          <strong class="amber money">{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
-        </a>
-      {/each}
-    </section>
-  {/if}
 </div>
 
 <dialog class="modal wide" bind:this={gaugeDialog} aria-labelledby="gauge-title" onclose={() => (gauge = null)}>
   {#if gauge && data}
+    <div class="modal-body">
     <h2 id="gauge-title" class="m-0 text-2xl">{groupLabel[gauge]}</h2>
     <p class="muted">Amounts assigned in the month on screen.</p>
     <table class="w-full">
@@ -320,6 +295,9 @@
     {#if gaugeRows.length === 0}
       <p class="muted m-0">No buckets in this group.</p>
     {/if}
-    <button class="btn mt-3" type="button" onclick={closeGauge}>Close</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" type="button" onclick={closeGauge}>Close</button>
+    </div>
   {/if}
 </dialog>

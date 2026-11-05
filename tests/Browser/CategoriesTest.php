@@ -91,6 +91,7 @@ final class CategoriesTest extends TestCase
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
         self::type('password', self::PASSWORD);
+        self::type('currentOdometer', '0');
         self::click('Create my login');
         self::waitForText('Net worth');
         self::click('Log out');
@@ -189,13 +190,13 @@ final class CategoriesTest extends TestCase
         );
         self::assertTrue($fuel);
         self::clickLink('Cancel');
-        self::clickLinkContaining('Needs Default');
+        self::clickLinkContaining('Rent');
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const name = document.querySelector('input[name="name"]');
                 const amount = document.querySelector('input[name="targetAmount"]');
                 const archive = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Archive');
-                return !name && amount && !archive;
+                return !name && !amount && !archive;
             JS);
 
             return $ready === true;
@@ -309,7 +310,7 @@ final class CategoriesTest extends TestCase
         self::assertIsArray($billColors);
         self::assertCount(6, $billColors);
         self::assertSame(6, count(array_unique($billColors)));
-        self::click('Unpay');
+        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Paid One-Time Bill")]//button[normalize-space()="Unpay"]'))->click();
         $moved = self::wait()->until(function (): bool {
             $placed = self::driver()->executeScript(<<<'JS'
                 const section = (label) => {
@@ -322,7 +323,7 @@ final class CategoriesTest extends TestCase
             return $placed === true;
         });
         self::assertTrue($moved);
-        self::click('Pause');
+        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Paid One-Time Bill")]//button[normalize-space()="Pause"]'))->click();
         $paused = self::wait()->until(function (): bool {
             $placed = self::driver()->executeScript(<<<'JS'
                 const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === 'Paused');
@@ -347,7 +348,7 @@ final class CategoriesTest extends TestCase
         self::clickLink('Envelopes');
         self::clickLink('Add Bucket');
         self::clickLink('Cancel');
-        self::waitForText('Needs Default');
+        self::waitForText('Rent');
         self::waitForTextGone('Needs 1');
         self::waitForTextGone('Trip 1');
     }

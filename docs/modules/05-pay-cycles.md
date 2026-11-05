@@ -23,7 +23,7 @@ The paycheck for one period is figured from the rate. A salary on a weekly, biwe
 
 Hours mode is typed or weekdays. Typed is the default and uses the hours on the cycle as the hours in one period. Weekdays on a semimonthly cycle counts Monday through Friday in the calendar month before the payday's month, times 8, times the hourly rate. That gross is split across the two paydays, half up, with the odd minor unit on the earlier day. Weekdays on a monthly cycle is a monthly weekday. It counts those same weekdays, times the hours per weekday on the cycle, times the hourly rate. Saturday and Sunday are left out. That amount is one paycheck. A payday in November uses October. It is a paycheck preview only. See [weekday hours and an inflow average](../adr/0018-weekday-hours-and-inflow-average.md).
 
-An hourly cycle may set an average window of 3, 4, 5, or 6 months. The default is off. The figure is the sum of that cycle's confirmed inflows in the previous N calendar months, divided by N, half up, in the base currency. A month with no inflow counts as zero. An inflow with no usable rate is left out and named. Those inflows are postings that name this cycle. An outflow cannot name a cycle. The average does not replace the paycheck preview and does not change available-to-assign.
+Average payroll is a checkbox on any pay cycle, off by default. A payroll entry is one dollar amount on one payday. A keyed amount wins. When average payroll is on and a payday has no entry, that payday shows the average of keyed amounts dated before it, half up. Otherwise the payday shows the paycheck from the rate. See [average payroll](../adr/0023-average-payroll.md).
 
 Envelopes assign into the current month. The calendar shows each paycheck as a preview on the timeline.
 

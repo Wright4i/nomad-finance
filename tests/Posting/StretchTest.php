@@ -50,4 +50,31 @@ final class StretchTest extends TestCase
         self::assertSame(60, $rows[4]['miles']);
         self::assertSame('24.0', $rows[4]['milesPerGallon']);
     }
+
+    public function testTwoChargesAtOneReadingAreOneFillUp(): void
+    {
+        $rows = [
+            ['id' => 1, 'vehicleId' => 1, 'amountMinor' => 4000, 'odometerMiles' => 9800, 'pricePerGallonMinor' => 400],
+            ['id' => 2, 'vehicleId' => 1, 'amountMinor' => 4000, 'odometerMiles' => 10000, 'pricePerGallonMinor' => 400],
+            ['id' => 3, 'vehicleId' => 1, 'amountMinor' => 2000, 'odometerMiles' => 10000, 'pricePerGallonMinor' => 400],
+        ];
+        $firstOnly = Stretch::fillUps([$rows[0], $rows[1]]);
+        self::assertNull($firstOnly[0]['miles']);
+        self::assertSame(200, $firstOnly[1]['miles']);
+        self::assertSame('10.000', $firstOnly[1]['gallons']);
+        self::assertSame('20.0', $firstOnly[1]['milesPerGallon']);
+
+        $combined = Stretch::fillUps($rows);
+        self::assertSame(200, $combined[1]['miles']);
+        self::assertSame('15.000', $combined[1]['gallons']);
+        self::assertSame('13.3', $combined[1]['milesPerGallon']);
+
+        $missingPrice = Stretch::fillUps([
+            $rows[0],
+            $rows[1],
+            ['id' => 4, 'vehicleId' => 1, 'amountMinor' => 2000, 'odometerMiles' => 10000, 'pricePerGallonMinor' => null],
+        ]);
+        self::assertNull($missingPrice[1]['gallons']);
+        self::assertNull($missingPrice[1]['milesPerGallon']);
+    }
 }
