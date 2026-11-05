@@ -1,0 +1,3 @@
+# Owner and Demo
+
+Setup creates the owner. Demo is created at the same time and seeded with one generic row for every account type and bill variant. Login asks for a name and a password, and the login screen can enter Demo directly. New user, beside Use demo, creates another user and signs that user in. That user is neither the owner nor Demo, and starts with empty books. `composer demo:reset` and the Demo session's reset action delete and reseed only Demo's rows. A Demo session cannot read or change the owner's rows, and the owner cannot reset Demo. Another user cannot reset Demo.

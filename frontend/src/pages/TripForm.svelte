@@ -1,0 +1,375 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import DateField from '../components/DateField.svelte';
+  import Globe from '../components/Globe.svelte';
+  import { api, ApiError, explain } from '../lib/api';
+  import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
+  import { exponentOf, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { go } from '../lib/nav.svelte.ts';
+  import type { Account, Category, ChargeQuote, Trip } from '../lib/types';
+
+  let { id = null }: { id?: string | null } = $props();
+
+  let placeName = $state('');
+  let note = $state('');
+  let arriveOn = $state(todayISO());
+  let departOn = $state(todayISO());
+  let balanceDueOn = $state(todayISO());
+  let balanceDueTouched = $state(false);
+  let latitude = $state('');
+  let longitude = $state('');
+  let city = $state<string | null>(null);
+  let region = $state<string | null>(null);
+  let address = $state<string | null>(null);
+  let located = $state(false);
+  let accountId = $state('');
+  let total = $state('');
+  let amountDue = $state('');
+  let accounts = $state<Account[]>([]);
+  let categories = $state<Category[]>([]);
+  let categoryId = $state('');
+  let search = $state('');
+  let places = $state<{ name: string; latitude: string; longitude: string }[]>([]);
+  let fields = $state<Record<string, string>>({});
+  let message = $state('');
+  let saving = $state(false);
+  let quote = $state<ChargeQuote | null>(null);
+  let pendingId = $state<number | null>(null);
+  let applyCharge = $state(false);
+  let dialog: HTMLDialogElement | undefined = $state();
+
+  let account = $derived(accounts.find((item) => String(item.id) === accountId) ?? null);
+  let exponent = $derived(account ? account.exponent : exponentOf('USD'));
+  let currency = $derived(account?.currency ?? 'USD');
+
+  onMount(async () => {
+    try {
+      const [accountData, categoryData] = await Promise.all([
+        api<{ accounts: Account[] }>('/api/accounts'),
+        api<{ categories: Category[] }>('/api/categories'),
+      ]);
+      accounts = accountData.accounts;
+      categories = categoryData.categories;
+      if (categories[0]) categoryId = String(categories[0].id);
+      if (!id && accounts[0]) accountId = String(accounts[0].id);
+      if (!id) return;
+      const data = await api<{ trip: Trip }>(`/api/trips/${id}?today=${todayISO()}`);
+      const trip = data.trip;
+      placeName = trip.placeName;
+      note = trip.note ?? '';
+      arriveOn = trip.arriveOn;
+      departOn = trip.departOn;
+      balanceDueOn = trip.balanceDueOn ?? trip.arriveOn;
+      balanceDueTouched = true;
+      latitude = trip.latitude;
+      longitude = trip.longitude;
+      city = trip.city;
+      region = trip.region;
+      address = trip.address;
+      if (!trip.address) {
+        const locatedTrip = await api<{ trip: Trip }>(`/api/trips/${id}/locate`, {
+          method: 'POST',
+          body: { today: todayISO() },
+        });
+        city = locatedTrip.trip.city;
+        region = locatedTrip.trip.region;
+        address = locatedTrip.trip.address;
+      }
+      accountId = trip.accountId === null ? '' : String(trip.accountId);
+      total = minorToInput(trip.totalMinor, trip.exponent);
+      amountDue = minorToInput(trip.amountDueMinor, trip.exponent);
+    } catch (err) {
+      message = explain(err).message;
+    } finally {
+      located = true;
+    }
+  });
+
+  $effect(() => {
+    if (!balanceDueTouched) balanceDueOn = arriveOn;
+  });
+
+  $effect(() => {
+    if (!located || address || !latitude || !longitude) return;
+    const lat = latitude;
+    const lng = longitude;
+    const handle = window.setTimeout(() => {
+      void lookup(lat, lng);
+    }, 350);
+    return () => window.clearTimeout(handle);
+  });
+
+  async function lookup(lat: string, lng: string): Promise<void> {
+    try {
+      const data = await api<{ place: { city: string; region: string | null; address: string } | null }>(
+        `/api/places/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`,
+      );
+      if (!data.place || latitude !== lat || longitude !== lng) return;
+      city = data.place.city;
+      region = data.place.region;
+      address = data.place.address;
+    } catch {
+      // The pin still shows the stay name when the address lookup misses.
+    }
+  }
+
+  async function findPlace(): Promise<void> {
+    places = [];
+    const data = await api<{ places: { name: string; latitude: string; longitude: string }[] }>(
+      `/api/places?q=${encodeURIComponent(search)}`,
+    );
+    places = data.places;
+  }
+
+  function usePlace(place: {
+    name: string;
+    latitude: string;
+    longitude: string;
+    city?: string | null;
+    region?: string | null;
+    address?: string | null;
+  }): void {
+    if (placeName.trim() === '') placeName = place.name.slice(0, 80);
+    latitude = place.latitude;
+    longitude = place.longitude;
+    city = place.city ?? null;
+    region = place.region ?? null;
+    address = place.address ?? null;
+    places = [];
+  }
+
+  function body(extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      placeName,
+      note,
+      arriveOn,
+      departOn,
+      balanceDueOn,
+      latitude,
+      longitude,
+      city,
+      region,
+      address,
+      accountId: accountId === '' ? null : Number(accountId),
+      totalMinor: parseMajor(total || '0', exponent),
+      amountDueMinor: parseMajor(amountDue || '0', exponent),
+      today: todayISO(),
+      ...extra,
+    };
+  }
+
+  async function submit(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    fields = {};
+    message = '';
+    const arrive = readDateInput('arriveOn');
+    const depart = readDateInput('departOn');
+    const due = readDateInput('balanceDueOn');
+    const problems: Record<string, string> = {};
+    if (parseMajor(total || '0', exponent) === null || parseMajor(amountDue || '0', exponent) === null) {
+      problems.totalMinor = 'Use an amount.';
+    }
+    if (!arrive) problems.arriveOn = DATE_INPUT_ERROR;
+    if (!depart) problems.departOn = DATE_INPUT_ERROR;
+    if (!due) problems.balanceDueOn = DATE_INPUT_ERROR;
+    if (!arrive || !depart || !due || Object.keys(problems).length > 0) {
+      fields = problems;
+      return;
+    }
+    arriveOn = arrive;
+    departOn = depart;
+    balanceDueOn = due;
+    saving = true;
+    try {
+      const path = id ? `/api/trips/${id}` : '/api/trips';
+      const method = id ? 'PATCH' : 'POST';
+      const data = await api<{ trip: Trip }>(path, { method, body: body(applyCharge ? { applyCharge: true } : {}) });
+      applyCharge = false;
+      const trip = data.trip;
+      if (!id && trip.depositMinor > 0 && !trip.depositCharged) {
+        pendingId = trip.id;
+        const quoted = await api<{ quote: ChargeQuote }>(`/api/trips/${trip.id}/quote`, {
+          method: 'POST',
+          body: { part: 'deposit' },
+        });
+        quote = quoted.quote;
+        dialog?.showModal();
+        return;
+      }
+      go('/trips');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && err.fields.oldBalanceMinor) {
+        quote = {
+          accountName: err.fields.accountName ?? account?.name ?? '',
+          currency,
+          exponent,
+          oldBalanceMinor: Number(err.fields.oldBalanceMinor),
+          newBalanceMinor: Number(err.fields.newBalanceMinor),
+          refused: err.fields.refused ?? null,
+          overLimit: false,
+          amountMinor: 0,
+        };
+        applyCharge = true;
+        dialog?.showModal();
+        return;
+      }
+      const problem = explain(err);
+      message = problem.message;
+      fields = problem.fields;
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function apply(): Promise<void> {
+    if (applyCharge && id) {
+      try {
+        await api(`/api/trips/${id}`, { method: 'PATCH', body: body({ applyCharge: true }) });
+        dialog?.close();
+        go('/trips');
+      } catch (err) {
+        message = explain(err).message;
+      }
+      return;
+    }
+    if (pendingId === null) return;
+    try {
+      await api(`/api/trips/${pendingId}/apply`, {
+        method: 'POST',
+        body: { part: 'deposit', categoryId: Number(categoryId), today: todayISO() },
+      });
+      dialog?.close();
+      go('/trips');
+    } catch (err) {
+      message = explain(err).message;
+    }
+  }
+
+  function skip(): void {
+    dialog?.close();
+    go('/trips');
+  }
+
+  async function remove(): Promise<void> {
+    if (!id) return;
+    if (!confirm('Delete this stay and reverse its lodging charges?')) return;
+    await api(`/api/trips/${id}/delete`, { method: 'POST', body: { confirm: true } });
+    go('/trips');
+  }
+</script>
+
+<form class="grid gap-4 max-w-xl" onsubmit={submit}>
+  <h1 class="m-0 text-4xl">{id ? 'Edit stay' : 'New stay'}</h1>
+  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <label class="field">
+    <span>Place</span>
+    <input name="placeName" bind:value={placeName} />
+    {#if fields.placeName}<em>{fields.placeName}</em>{/if}
+  </label>
+  <label class="field">
+    <span>Note</span>
+    <input name="note" bind:value={note} placeholder="Site 34" />
+    {#if fields.note}<em>{fields.note}</em>{/if}
+  </label>
+  <div class="flex gap-2">
+    <label class="field flex-1">
+      <span>Arrival</span>
+      <DateField name="arriveOn" bind:value={arriveOn} />
+      {#if fields.arriveOn}<em>{fields.arriveOn}</em>{/if}
+    </label>
+    <label class="field flex-1">
+      <span>Departure</span>
+      <DateField name="departOn" bind:value={departOn} />
+      {#if fields.departOn}<em>{fields.departOn}</em>{/if}
+    </label>
+  </div>
+  <label class="field">
+    <span>Balance due</span>
+    <DateField name="balanceDueOn" bind:value={balanceDueOn} oninput={() => (balanceDueTouched = true)} />
+    {#if fields.balanceDueOn}<em>{fields.balanceDueOn}</em>{/if}
+  </label>
+  <label class="field">
+    <span>Search</span>
+    <span class="flex gap-2">
+      <input name="search" bind:value={search} />
+      <button class="btn" type="button" onclick={findPlace}>Search</button>
+    </span>
+  </label>
+  {#each places as place (place.latitude + place.longitude)}
+    <button class="btn text-left" type="button" onclick={() => usePlace(place)}>{place.name}</button>
+  {/each}
+  <div class="flex gap-2">
+    <label class="field flex-1">
+      <span>Latitude</span>
+      <input name="latitude" bind:value={latitude} />
+      {#if fields.latitude}<em>{fields.latitude}</em>{/if}
+    </label>
+    <label class="field flex-1">
+      <span>Longitude</span>
+      <input name="longitude" bind:value={longitude} />
+      {#if fields.longitude}<em>{fields.longitude}</em>{/if}
+    </label>
+  </div>
+  {#if latitude && longitude}
+    <Globe
+      satellite
+      marker={{ latitude, longitude, name: placeName, address }}
+      onMarker={(lat, lng) => {
+        latitude = lat;
+        longitude = lng;
+        city = null;
+        region = null;
+        address = null;
+      }}
+    />
+  {/if}
+  <label class="field">
+    <span>Account</span>
+    <select name="accountId" bind:value={accountId}>
+      <option value="">None</option>
+      {#each accounts as item (item.id)}
+        <option value={String(item.id)}>{item.name}</option>
+      {/each}
+    </select>
+    {#if fields.accountId}<em>{fields.accountId}</em>{/if}
+  </label>
+  <label class="field">
+    <span>Total</span>
+    <input name="total" inputmode="decimal" bind:value={total} />
+    {#if fields.totalMinor}<em>{fields.totalMinor}</em>{/if}
+  </label>
+  <label class="field">
+    <span>Amount due</span>
+    <input name="amountDue" inputmode="decimal" bind:value={amountDue} />
+    {#if fields.amountDueMinor}<em>{fields.amountDueMinor}</em>{/if}
+  </label>
+  <div class="flex flex-wrap gap-2">
+    <button class="btn primary" type="submit" disabled={saving}>Save stay</button>
+    <a class="btn" href="/trips" onclick={(event) => { event.preventDefault(); go('/trips'); }}>Cancel</a>
+    {#if id}<button class="btn danger" type="button" onclick={remove}>Delete</button>{/if}
+  </div>
+</form>
+
+<dialog class="modal" bind:this={dialog}>
+  {#if quote}
+    <h2 class="m-0 text-2xl">Charge the deposit?</h2>
+    <p>{quote.accountName}</p>
+    <p>{formatMinor(quote.oldBalanceMinor, quote.currency, quote.exponent)} → {formatMinor(quote.newBalanceMinor, quote.currency, quote.exponent)}</p>
+    {#if quote.overLimit}<p>This would put the card over its limit.</p>{/if}
+    {#if quote.refused}<p>{quote.refused}</p>{/if}
+    {#if !applyCharge}
+      <label class="field">
+        <span>Bucket</span>
+        <select name="categoryId" bind:value={categoryId}>
+          {#each categories as category (category.id)}
+            <option value={String(category.id)}>{category.name}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
+    <div class="flex gap-2">
+      {#if !quote.refused}<button class="btn primary" type="button" onclick={apply}>Apply</button>{/if}
+      <button class="btn" type="button" onclick={skip}>Skip</button>
+    </div>
+  {/if}
+</dialog>

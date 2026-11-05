@@ -1,0 +1,3 @@
+# A confirmed posting moves the stored balance
+
+A balance changes only after a confirmation that shows the old figure and the new one and can be cancelled. Nothing in the background, including a trip's arrival date, changes a balance on its own. Apply on a posting out of an asset decreases the stored balance. A charge on a liability increases the amount owed. The opposite direction reverses that. The move is refused when the stored balance would go below zero. A card may go over its limit, and the confirmation says so. Editing or deleting a posting reverses the old move and applies the new one. Typing a balance still replaces the stored number and leaves older postings as history. Marking a bill paid does not move a balance.

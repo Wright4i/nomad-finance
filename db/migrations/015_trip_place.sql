@@ -1,0 +1,2 @@
+ALTER TABLE trips ADD COLUMN city TEXT;
+ALTER TABLE trips ADD COLUMN region TEXT;

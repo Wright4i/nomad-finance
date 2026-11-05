@@ -1,0 +1,74 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Bill;
+
+use App\Support\Dates;
+
+final class Schedule
+{
+    public static function advance(string $recurrence, string $anchor, string $current): string
+    {
+        $anchorDate = Dates::parse($anchor);
+        $currentDate = Dates::parse($current);
+
+        if ($recurrence === 'weekly') {
+            return $currentDate->modify('+7 days')->format('Y-m-d');
+        }
+
+        if ($recurrence === 'monthly') {
+            $cursor = $currentDate->modify('first day of next month');
+
+            return self::clampDay($cursor, (int) $anchorDate->format('j'));
+        }
+
+        if ($recurrence === 'yearly') {
+            $year = (int) $currentDate->format('Y') + 1;
+            $month = (int) $anchorDate->format('n');
+            $cursor = new \DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month));
+
+            return self::clampDay($cursor, (int) $anchorDate->format('j'));
+        }
+
+        throw new \InvalidArgumentException('This bill does not repeat.');
+    }
+
+    public static function rewind(string $recurrence, string $anchor, string $current): string
+    {
+        $anchorDate = Dates::parse($anchor);
+        $currentDate = Dates::parse($current);
+
+        if ($recurrence === 'weekly') {
+            return $currentDate->modify('-7 days')->format('Y-m-d');
+        }
+
+        if ($recurrence === 'monthly') {
+            $cursor = $currentDate->modify('first day of previous month');
+
+            return self::clampDay($cursor, (int) $anchorDate->format('j'));
+        }
+
+        if ($recurrence === 'yearly') {
+            $year = (int) $currentDate->format('Y') - 1;
+            $month = (int) $anchorDate->format('n');
+            $cursor = new \DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month));
+
+            return self::clampDay($cursor, (int) $anchorDate->format('j'));
+        }
+
+        throw new \InvalidArgumentException('This bill does not repeat.');
+    }
+
+    private static function clampDay(\DateTimeImmutable $monthStart, int $day): string
+    {
+        $last = (int) $monthStart->format('t');
+        $use = min($day, $last);
+
+        return $monthStart->setDate(
+            (int) $monthStart->format('Y'),
+            (int) $monthStart->format('n'),
+            $use,
+        )->format('Y-m-d');
+    }
+}

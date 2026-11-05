@@ -1,0 +1,3 @@
+# A vehicle is its own odometer
+
+A fuel reading belongs to one named vehicle. Miles per gallon are figured from that vehicle's readings only. At most one vehicle is starred. The trip fuel label uses the starred vehicle: the pooled miles per gallon of stretches inside its minimum and maximum, or the midpoint of that range when none are in range yet. A stretch outside the range stays on the fuel log and is left out of the average. No starred vehicle means the label shows driving miles and no cost. This keeps [a confirmed posting moves the stored balance](0016-posting-moves-balance.md): the label assigns nothing.

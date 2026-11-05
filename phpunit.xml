@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         defaultTestSuite="unit"
+         failOnRisky="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Account</directory>
+            <directory>tests/Auth</directory>
+            <directory>tests/Bill</directory>
+            <directory>tests/Category</directory>
+            <directory>tests/Dashboard</directory>
+            <directory>tests/Demo</directory>
+            <directory>tests/Envelope</directory>
+            <directory>tests/ExchangeRate</directory>
+            <directory>tests/Http</directory>
+            <directory>tests/Money</directory>
+            <directory>tests/PayCycle</directory>
+            <directory>tests/Posting</directory>
+            <directory>tests/Support</directory>
+            <directory>tests/Trip</directory>
+            <directory>tests/Vehicle</directory>
+        </testsuite>
+        <testsuite name="browser">
+            <directory>tests/Browser</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
