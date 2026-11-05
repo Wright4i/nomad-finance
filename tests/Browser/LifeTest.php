@@ -207,7 +207,7 @@ final class LifeTest extends TestCase
         self::click('Apply');
         self::waitForText('$2,489.00');
         self::choose('accountId', 'Cash 1');
-        self::choose('categoryId', 'Fuel 1');
+        self::choose('categoryId', 'Fuel Bucket');
         self::waitForText('Odometer, miles');
         self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="More"]')));
         self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="Add a line"]')));

@@ -12,7 +12,7 @@ You assign in the current month, and you can plan the next one. Current Month an
 
 Each bucket shows a bar of what is still remaining of the amount assigned in the month on screen. The bar grows from the left. Remaining at or below zero is over and uses the over color. The assigned amount stays beside the name.
 
-A bill may carry a bucket as a label. Mark paid still changes neither the account balance nor the bucket amount. A bucket that has a target shows what to set aside beside its amount. The target uses the bucket amount, not the assignment in the month on screen.
+A bill fills its bucket on the oldest active pay cycle. Each unpaid due date inside the open span, and inside the next span, adds the bill amount converted to the base currency. An overdue unpaid date fills the open span once. The next span is written as soon as a due date falls there. Available-to-assign still follows the open span. A missing rate leaves that bill out and names it. A later rate refresh does not rewrite the row. Closed spans stay as they were. Cash typed above or below the bill portion stays through the next recompute. Mark paid and unpay leave the assignment alone. Pause takes the bill out. Resume puts it back. The row lists each contributing bill and its converted amount. A bucket that has a target shows what to set aside beside its amount. The target uses the bucket amount, not only the assignment in the month on screen.
 
 Reaching zero available-to-assign celebrates once in that month.
 

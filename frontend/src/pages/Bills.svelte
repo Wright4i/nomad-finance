@@ -65,7 +65,7 @@
               <span>
                 <strong>{bill.name}</strong>
                 <span class="block muted text-sm">
-                  <span class="type-label">{bill.type === 'other' && bill.otherLabel ? bill.otherLabel : bill.type}</span> · {formatDate(bill.shownOn)} · {bill.accountName} · {bill.recurrence}{bill.categoryName ? ` · ${bill.categoryName}` : ''}{bill.autopay ? ' · autopay' : ''}
+                  <span class="type-label">{(bill.type === 'other' || bill.type === 'misc') && bill.otherLabel ? bill.otherLabel : bill.type}</span> · {formatDate(bill.shownOn)} · {bill.accountName} · {bill.recurrence}{bill.categoryName ? ` · ${bill.categoryName}` : ''}{bill.autopay ? ' · autopay' : ''}
                 </span>
               </span>
             </span>

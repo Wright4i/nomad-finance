@@ -25,7 +25,7 @@ final class PostingService
     {
         $stmt = $this->pdo->prepare(
             'SELECT p.*, a.name AS account_name, a.currency, a.side, a.balance_minor, a.credit_limit_minor,
-                    c.name AS category_name, c.fuel, t.place_name
+                    c.name AS category_name, (c.role = \'fuel\') AS fuel, t.place_name
              FROM postings p
              JOIN accounts a ON a.id = p.account_id
              JOIN categories c ON c.id = p.category_id
@@ -389,7 +389,7 @@ final class PostingService
     {
         $stmt = $this->pdo->prepare(
             'SELECT p.*, a.name AS account_name, a.currency, a.side, a.balance_minor, a.credit_limit_minor,
-                    c.name AS category_name, c.fuel, t.place_name
+                    c.name AS category_name, (c.role = \'fuel\') AS fuel, t.place_name
              FROM postings p
              JOIN accounts a ON a.id = p.account_id
              JOIN categories c ON c.id = p.category_id
@@ -480,7 +480,7 @@ final class PostingService
             $category = $this->category((int) $parsed[0]['categoryId']);
             $storedLines = $parsed;
         }
-        $fuel = (int) ($category['fuel'] ?? 0) === 1;
+        $fuel = (string) ($category['role'] ?? '') === 'fuel';
         foreach ($storedLines as $line) {
             if ($line['fuel']) {
                 $fuel = true;
@@ -655,7 +655,7 @@ final class PostingService
                 'categoryId' => $id,
                 'categoryName' => (string) $category['name'],
                 'amountMinor' => $lineAmount,
-                'fuel' => (int) ($category['fuel'] ?? 0) === 1,
+                'fuel' => (string) ($category['role'] ?? '') === 'fuel',
             ];
         }
         if (isset($errors['lines'])) {
@@ -677,7 +677,7 @@ final class PostingService
     private function linesByPosting(): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT l.posting_id, l.category_id, l.amount_minor, c.name, c.fuel
+            'SELECT l.posting_id, l.category_id, l.amount_minor, c.name, (c.role = \'fuel\') AS fuel
              FROM posting_lines l
              JOIN postings p ON p.id = l.posting_id
              JOIN categories c ON c.id = l.category_id
@@ -827,16 +827,16 @@ final class PostingService
                     COALESCE((
                         SELECT SUM(l.amount_minor) FROM posting_lines l
                         JOIN categories fc ON fc.id = l.category_id
-                        WHERE l.posting_id = p.id AND fc.fuel = 1
+                        WHERE l.posting_id = p.id AND fc.role = \'fuel\'
                     ), p.amount_minor) AS amount_minor
              FROM postings p
              WHERE p.user_id = ? AND p.direction = \'out\'
                AND (
-                    EXISTS (SELECT 1 FROM categories c WHERE c.id = p.category_id AND c.fuel = 1)
+                    EXISTS (SELECT 1 FROM categories c WHERE c.id = p.category_id AND c.role = \'fuel\')
                     OR EXISTS (
                         SELECT 1 FROM posting_lines l
                         JOIN categories c ON c.id = l.category_id
-                        WHERE l.posting_id = p.id AND c.fuel = 1
+                        WHERE l.posting_id = p.id AND c.role = \'fuel\'
                     )
                )
              ORDER BY p.posted_on, p.id'

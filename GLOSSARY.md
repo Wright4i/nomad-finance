@@ -67,19 +67,35 @@ _Avoid_: Next due date, due day, horizon
 Total minus amount due. The part arranged before arrival.
 
 **Bill type**:
-The kind of reminder: lodging, rent, electricity, water, internet, cellular, gas, groceries, restaurants, vehicle, debt, healthcare, entertainment, subscriptions, shopping, travel, or other. Other stores a name you type. A preset type stores no extra name.
+The kind of reminder, and it belongs to one group. Needs holds lodging, rent, electricity, water, fuel, propane, groceries, internet, cellular, vehicle, maintenance, insurance, roadside, healthcare, mailbox, laundry, mortgage, storage, and other. Wants holds restaurants, entertainment, subscriptions, shopping, travel, memberships, software, pets, and misc. Savings holds debt, emergency, repairs, investments, and liquidities. Other and misc each store a name you type. A preset type stores no extra name.
 _Avoid_: Bucket
 
 **Bucket**:
 A budget bucket in one group: Needs, Wants, or Savings. The amount it holds is what is assigned to it in open months. The screen says bucket. The stored name stays category.
 _Avoid_: Bill type, account type, envelope
 
+**Default bucket**:
+The system bucket for one group: Needs Default, Wants Default, or Savings Default. Its name, group, and overspend stay fixed. The only edit is one amount to hold.
+_Avoid_: Goal bucket, bill type
+
+**Fuel Bucket**:
+The system bucket in Needs that holds fuel bills and logged fuel postings. Nothing else is filed there. Its only edit is one amount to hold.
+_Avoid_: Goal bucket, fuel label
+
+**Goal bucket**:
+A bucket a person creates. It can hold a target, and a bill of the same group can point at it. A fuel bill cannot. It does not log fuel.
+_Avoid_: Default bucket, Fuel Bucket
+
 **Target**:
-A goal on one bucket: an amount needed by a date, or an amount to hold. It compares with the bucket amount.
+A goal on one bucket: an amount needed by a date, or an amount to hold. It compares with the bucket amount. A default bucket and Fuel Bucket hold an amount only.
 _Avoid_: Plan, budget
 
+**Bill amount**:
+The one amount on a bill, in the currency chosen on that bill. The envelope stores it converted to the base currency.
+_Avoid_: Vendor amount, balance
+
 **Assignment**:
-An amount typed into a bucket for one month on the envelopes screen. A negative amount is overspending. It leaves the account balance as it was typed.
+Cash held in a bucket for one month on the envelopes screen. Bills fill part of it. Cash typed above or below that part stays. A negative amount is overspending. It leaves the account balance as you last typed it.
 _Avoid_: Posting, transaction
 
 **Overspend**:
@@ -110,9 +126,9 @@ _Avoid_: Transaction, bill, fuel label
 One posting named across more than one bucket. Each line is a bucket and an amount, and the lines sum to the posting. Tax and tip are buckets like any other.
 _Avoid_: Transfer
 
-**Fuel bucket**:
-A bucket whose postings can record an odometer and a price per gallon.
-_Avoid_: Gas envelope
+**Logged fuel**:
+A posting on Fuel Bucket. It can record an odometer and a price per gallon. A posting on any other bucket does not.
+_Avoid_: Fuel label, fuel bill
 
 **Vehicle**:
 A named odometer: a kind, and a minimum and maximum miles per gallon. At most one vehicle is starred. The fuel label uses that one.

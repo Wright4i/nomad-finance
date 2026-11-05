@@ -215,7 +215,7 @@ final class VehicleService
                     COALESCE((
                         SELECT SUM(l.amount_minor) FROM posting_lines l
                         JOIN categories fc ON fc.id = l.category_id
-                        WHERE l.posting_id = p.id AND fc.fuel = 1
+                        WHERE l.posting_id = p.id AND fc.role = \'fuel\'
                     ), p.amount_minor) AS fuel_amount,
                     p.account_id, p.category_id, p.direction, p.payee, p.memo, p.trip_id,
                     a.name AS account_name, a.currency

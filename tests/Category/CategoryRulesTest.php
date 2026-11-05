@@ -92,7 +92,7 @@ final class CategoryRulesTest extends TestCase
         $save = $this->categories->create(['name' => 'Save', 'group' => 'savings']);
 
         self::assertSame(
-            ['Alpha', 'Zulu', 'Middle', 'Save'],
+            ['Needs Default', 'Fuel Bucket', 'Alpha', 'Zulu', 'Wants Default', 'Middle', 'Savings Default', 'Save'],
             array_column($this->categories->list(false), 'name'),
         );
 
@@ -109,7 +109,7 @@ final class CategoryRulesTest extends TestCase
         self::assertNotNull($archived['archivedAt']);
         self::assertNotContains('Alpha', array_column($this->categories->list(false), 'name'));
         self::assertSame(
-            ['Alpha', 'Emergency', 'Zulu', 'Middle'],
+            ['Needs Default', 'Fuel Bucket', 'Alpha', 'Emergency', 'Zulu', 'Wants Default', 'Middle', 'Savings Default'],
             array_column($this->categories->list(true), 'name'),
         );
 
@@ -157,7 +157,10 @@ final class CategoryRulesTest extends TestCase
         $this->pdo->prepare('INSERT INTO login_guard (user_id, failed_count) VALUES (?, 0)')->execute([$ownerId]);
 
         $_SESSION['user_id'] = $ownerId;
-        self::assertSame([], $this->categories->list(true));
+        self::assertSame(
+            ['Needs Default', 'Fuel Bucket', 'Wants Default', 'Savings Default'],
+            array_column($this->categories->list(true), 'name'),
+        );
         try {
             $this->categories->get($rent['id']);
             self::fail('Another person cannot open this category.');

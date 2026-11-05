@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\PayCycle;
 
 use App\Auth\Actor;
+use App\Envelope\BillFill;
 use App\Http\ApiException;
+use App\Money\CurrencyCatalog;
 use App\Support\Dates;
 use PDO;
 
@@ -132,8 +134,14 @@ final class PayCycleService
             $now,
             $now,
         ]);
+        $id = (int) $this->pdo->lastInsertId();
+        $open = $this->pdo->prepare('SELECT COUNT(*) FROM pay_cycles WHERE user_id = ? AND archived_at IS NULL');
+        $open->execute([$this->actor->id()]);
+        if ((int) $open->fetchColumn() === 1) {
+            (new BillFill($this->pdo, new CurrencyCatalog(), $this->actor))->apply($today);
+        }
 
-        return $this->get((int) $this->pdo->lastInsertId(), $today);
+        return $this->get($id, $today);
     }
 
     /**
@@ -179,6 +187,7 @@ final class PayCycleService
         $this->pdo->prepare(
             'UPDATE pay_cycles SET archived_at = COALESCE(archived_at, ?), updated_at = ? WHERE id = ? AND user_id = ?'
         )->execute([$now, $now, $id, $this->actor->id()]);
+        (new BillFill($this->pdo, new CurrencyCatalog(), $this->actor))->apply($today);
 
         return $this->get($id, $today);
     }
@@ -190,6 +199,7 @@ final class PayCycleService
         $this->pdo->prepare(
             'UPDATE pay_cycles SET archived_at = NULL, updated_at = ? WHERE id = ? AND user_id = ?'
         )->execute([gmdate('c'), $id, $this->actor->id()]);
+        (new BillFill($this->pdo, new CurrencyCatalog(), $this->actor))->apply($today);
 
         return $this->get($id, $today);
     }

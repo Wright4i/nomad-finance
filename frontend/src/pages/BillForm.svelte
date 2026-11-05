@@ -11,11 +11,16 @@
 
   let { id = null }: { id?: string | null } = $props();
 
-  const types = [
-    'lodging', 'rent', 'electricity', 'water', 'internet', 'cellular', 'gas',
-    'groceries', 'restaurants', 'vehicle', 'debt', 'healthcare', 'entertainment',
-    'subscriptions', 'shopping', 'travel', 'other',
-  ];
+  const groups: Record<string, 'needs' | 'wants' | 'savings'> = {
+    lodging: 'needs', rent: 'needs', electricity: 'needs', water: 'needs', fuel: 'needs',
+    propane: 'needs', groceries: 'needs', internet: 'needs', cellular: 'needs', vehicle: 'needs',
+    maintenance: 'needs', insurance: 'needs', roadside: 'needs', healthcare: 'needs', mailbox: 'needs',
+    laundry: 'needs', mortgage: 'needs', storage: 'needs', other: 'needs',
+    restaurants: 'wants', entertainment: 'wants', subscriptions: 'wants', shopping: 'wants',
+    travel: 'wants', memberships: 'wants', software: 'wants', pets: 'wants', misc: 'wants',
+    debt: 'savings', emergency: 'savings', repairs: 'savings', investments: 'savings', liquidities: 'savings',
+  };
+  const types = Object.keys(groups);
   const recurrences = ['once', 'weekly', 'monthly', 'yearly'];
 
   let accounts = $state<Account[]>([]);
@@ -26,8 +31,8 @@
   let otherLabel = $state('');
   let accountId = $state('');
   let amount = $state('');
-  let vendorAmount = $state('');
-  let vendorCurrency = $state('');
+  let currency = $state('');
+  let currencyTouched = $state(false);
   let recurrence = $state('monthly');
   let nextDueDate = $state(todayISO());
   let autopay = $state(false);
@@ -39,7 +44,29 @@
   let ready = $state(false);
 
   let account = $derived(accounts.find((item) => String(item.id) === accountId) ?? null);
-  let exponent = $derived(account ? account.exponent : exponentOf('USD'));
+  let exponent = $derived(exponentOf(currency || account?.currency || 'USD'));
+  let bucketChoices = $derived.by(() => {
+    const group = groups[type] ?? 'needs';
+    return categories.filter((category) => {
+      if (category.archivedAt !== null) return false;
+      if (type === 'fuel') return category.role === 'fuel';
+      return category.group === group && category.role !== 'fuel';
+    });
+  });
+  let named = $derived(type === 'other' || type === 'misc');
+
+  $effect(() => {
+    if (id || currencyTouched || !account) return;
+    currency = account.currency;
+  });
+
+  $effect(() => {
+    if (!ready) return;
+    const open = bucketChoices;
+    if (open.some((category) => String(category.id) === categoryId)) return;
+    const fallback = type === 'fuel' ? open[0] : open.find((category) => category.role === 'default');
+    categoryId = fallback ? String(fallback.id) : '';
+  });
 
   onMount(async () => {
     try {
@@ -61,10 +88,8 @@
       otherLabel = bill.otherLabel ?? '';
       accountId = String(bill.accountId);
       amount = minorToInput(bill.amountMinor, bill.exponent);
-      vendorAmount = bill.vendorAmountMinor === null || bill.vendorExponent === null
-        ? ''
-        : minorToInput(bill.vendorAmountMinor, bill.vendorExponent);
-      vendorCurrency = bill.vendorCurrency ?? '';
+      currency = bill.currency;
+      currencyTouched = true;
       recurrence = bill.recurrence;
       nextDueDate = bill.nextDueDate;
       autopay = bill.autopay;
@@ -104,14 +129,9 @@
     if (amountMinor === null || amountMinor < 1) {
       fields.amountMinor = 'Enter an amount greater than zero.';
     }
-    let vendorAmountMinor: number | null = null;
-    if (vendorAmount.trim() !== '' || vendorCurrency.trim() !== '') {
-      const vendorExp = exponentOf(vendorCurrency);
-      vendorAmountMinor = parseMajor(vendorAmount, vendorExp);
-      if (vendorAmountMinor === null) fields.vendorAmountMinor = 'Enter the vendor amount and currency together.';
-      if (vendorCurrency.trim() === '') fields.vendorCurrency = 'Use a three-letter currency code.';
-    }
+    if (!/^[A-Za-z]{3}$/.test(currency.trim())) fields.currency = 'Use a three-letter currency code.';
     if (!accountId) fields.accountId = 'Choose the account this bill is drawn from.';
+    if (!categoryId) fields.categoryId = 'Choose a bucket.';
     const dueOn = readDateInput('nextDueDate');
     if (!dueOn) fields.nextDueDate = DATE_INPUT_ERROR;
     if (Object.keys(fields).length > 0) return;
@@ -122,20 +142,16 @@
       const body = {
         name,
         type,
-        otherLabel: type === 'other' ? otherLabel : null,
+        otherLabel: named ? otherLabel : null,
         accountId: Number(accountId),
         amountMinor,
-        vendorAmountMinor,
-        vendorCurrency: vendorCurrency.trim().toUpperCase(),
+        currency: currency.trim().toUpperCase(),
         recurrence,
         nextDueDate,
         autopay,
         notes,
-        categoryId: categoryId === '' ? null : Number(categoryId),
+        categoryId: Number(categoryId),
       };
-      if (!vendorAmountMinor) {
-        body.vendorCurrency = '';
-      }
       const path = id ? `/api/bills/${id}` : '/api/bills';
       await api(path, { method: id ? 'PATCH' : 'POST', body });
       go('/bills');
@@ -164,7 +180,7 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit bill' : 'New bill'}</h1>
-  <p class="muted m-0">The amount uses the draw-from account’s currency. A bucket here is a label. Marking paid changes neither the balance nor that bucket’s amount.</p>
+  <p class="muted m-0">One amount in the currency you choose. Saving writes that amount into the bucket on the oldest pay cycle. Marking paid leaves the account and the bucket as they are.</p>
   {#if ready && accounts.length === 0 && !id}
     <p>Create an account first. <a href="/accounts/new" onclick={(event) => { event.preventDefault(); go('/accounts/new'); }}>New account</a></p>
   {/if}
@@ -186,9 +202,9 @@
     </div>
     {#if fields.type}<em>{fields.type}</em>{/if}
   </div>
-  {#if type === 'other'}
+  {#if named}
     <label class="field">
-      <span>Other name</span>
+      <span>{type === 'misc' ? 'Misc name' : 'Other name'}</span>
       <input name="otherLabel" bind:value={otherLabel} />
       {#if fields.otherLabel}<em>{fields.otherLabel}</em>{/if}
     </label>
@@ -203,33 +219,35 @@
     </select>
     {#if fields.accountId}<em>{fields.accountId}</em>{/if}
   </label>
-  <label class="field">
-    <span>Amount{account ? ` (${account.currency})` : ''}</span>
-    <input name="amount" inputmode="decimal" bind:value={amount} />
-    {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
-  </label>
   <div class="grid grid-cols-2 gap-3">
     <label class="field">
-      <span>Vendor amount</span>
-      <input name="vendorAmount" inputmode="decimal" bind:value={vendorAmount} />
-      {#if fields.vendorAmountMinor}<em>{fields.vendorAmountMinor}</em>{/if}
+      <span>Amount</span>
+      <input name="amount" inputmode="decimal" bind:value={amount} />
+      {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
     </label>
     <label class="field">
-      <span>Vendor currency</span>
-      <CurrencySelect name="vendorCurrency" bind:value={vendorCurrency} allowEmpty />
-      {#if fields.vendorCurrency}<em>{fields.vendorCurrency}</em>{/if}
+      <span>Currency</span>
+      <CurrencySelect
+        name="currency"
+        bind:value={currency}
+        onchange={() => (currencyTouched = true)}
+      />
+      {#if fields.currency}<em>{fields.currency}</em>{/if}
     </label>
   </div>
-  <label class="field">
-    <span>Bucket</span>
-    <select name="categoryId" bind:value={categoryId}>
-      <option value="">None</option>
-      {#each categories as category (category.id)}
-        <option value={String(category.id)}>{category.name}</option>
-      {/each}
-    </select>
-    {#if fields.categoryId}<em>{fields.categoryId}</em>{/if}
-  </label>
+  {#if type === 'fuel'}
+    <p class="m-0">Bucket <strong data-bucket="fuel">{bucketChoices[0]?.name ?? 'Fuel Bucket'}</strong></p>
+  {:else}
+    <label class="field">
+      <span>Bucket</span>
+      <select name="categoryId" bind:value={categoryId}>
+        {#each bucketChoices as category (category.id)}
+          <option value={String(category.id)}>{category.name}</option>
+        {/each}
+      </select>
+      {#if fields.categoryId}<em>{fields.categoryId}</em>{/if}
+    </label>
+  {/if}
   <label class="field">
     <span>Recurrence</span>
     <select name="recurrence" bind:value={recurrence}>

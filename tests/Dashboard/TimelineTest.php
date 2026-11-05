@@ -139,12 +139,12 @@ final class TimelineTest extends TestCase
         self::assertSame(8000, $november['USD']['rent']);
         self::assertSame(4968, $november['USD']['electricity']);
         self::assertSame(127500, $november['USD']['healthcare']);
-        self::assertSame(1500, $november['USD']['other']);
+        self::assertSame(2239, $november['USD']['other']);
         self::assertArrayNotHasKey('debt', $november['USD']);
         self::assertArrayNotHasKey('entertainment', $november['USD']);
 
         $december = $this->slices($sheet['duePies']['2026-12']);
-        self::assertSame(['debt', 'entertainment'], array_keys($december['USD']));
+        self::assertSame(['entertainment', 'debt'], array_keys($december['USD']));
         self::assertSame(45000, $december['USD']['debt']);
         self::assertSame(50000, $december['USD']['entertainment']);
     }

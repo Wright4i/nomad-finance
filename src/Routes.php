@@ -260,10 +260,10 @@ final class Routes
                     return Json::write($response, ['bill' => $bills->markPaid((int) $args['id'], self::body($request))]);
                 });
                 $secure->post('/bills/{id:[0-9]+}/pause', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
-                    return Json::write($response, ['bill' => $bills->pause((int) $args['id'])]);
+                    return Json::write($response, ['bill' => $bills->pause((int) $args['id'], self::body($request))]);
                 });
                 $secure->post('/bills/{id:[0-9]+}/resume', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
-                    return Json::write($response, ['bill' => $bills->resume((int) $args['id'])]);
+                    return Json::write($response, ['bill' => $bills->resume((int) $args['id'], self::body($request))]);
                 });
                 $secure->post('/bills/{id:[0-9]+}/unpay', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
                     return Json::write($response, ['bill' => $bills->unpay((int) $args['id'])]);

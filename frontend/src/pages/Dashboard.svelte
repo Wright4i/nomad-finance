@@ -261,6 +261,9 @@
                     <span class="money">{formatMinor(slice.amountMinor, pie.currency, pie.exponent)}</span>
                   </li>
                 {/each}
+                {#if pie.leftOut && pie.leftOut.length > 0}
+                  <li>Left out {pie.leftOut.join(', ')}</li>
+                {/if}
               </ul>
             {/each}
           </div>
@@ -299,7 +302,16 @@
       <tbody>
         {#each gaugeRows as category (category.id)}
           <tr>
-            <td>{category.name}</td>
+            <td>
+              {category.name}
+              {#if category.bills && category.bills.length > 0}
+                <ul class="m-0 text-sm muted">
+                  {#each category.bills as bill (bill.id)}
+                    <li>{bill.name} · {formatMinor(bill.amountMinor, data.baseCurrency, data.exponent)}</li>
+                  {/each}
+                </ul>
+              {/if}
+            </td>
             <td class="text-right money">{formatMinor(category.amountMinor, data.baseCurrency, data.exponent)}</td>
           </tr>
         {/each}

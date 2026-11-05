@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Category;
 
 use App\Auth\Actor;
+use App\Envelope\BillFill;
 use App\Http\ApiException;
+use App\Money\CurrencyCatalog;
 use App\Target\TargetService;
 use PDO;
 use Throwable;
@@ -30,7 +32,8 @@ final class CategoryService
         if (!$includeArchived) {
             $sql .= ' AND archived_at IS NULL';
         }
-        $sql .= " ORDER BY CASE category_group WHEN 'needs' THEN 0 WHEN 'wants' THEN 1 ELSE 2 END, name COLLATE NOCASE, id";
+        $sql .= " ORDER BY CASE category_group WHEN 'needs' THEN 0 WHEN 'wants' THEN 1 ELSE 2 END, CASE role WHEN 'default' THEN 0 WHEN 'fuel' THEN 1 ELSE 2 END, name COLLATE NOCASE, id";
+        SystemBuckets::ensure($this->pdo, $this->actor->id());
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$this->actor->id()]);
         $rows = $stmt->fetchAll();
@@ -52,10 +55,11 @@ final class CategoryService
         $now = gmdate('c');
         $this->pdo->beginTransaction();
         try {
+            SystemBuckets::ensure($this->pdo, $this->actor->id());
             $this->pdo->prepare(
-                'INSERT INTO categories (user_id, name, category_group, amount_minor, overspend, fuel, created_at, updated_at)
-                 VALUES (?, ?, ?, 0, ?, ?, ?, ?)'
-            )->execute([$this->actor->id(), $data['name'], $data['group'], $data['overspend'], $data['fuel'], $now, $now]);
+                'INSERT INTO categories (user_id, name, category_group, amount_minor, overspend, role, created_at, updated_at)
+                 VALUES (?, ?, ?, 0, ?, \'goal\', ?, ?)'
+            )->execute([$this->actor->id(), $data['name'], $data['group'], $data['overspend'], $now, $now]);
             $id = (int) $this->pdo->lastInsertId();
             if (array_key_exists('target', $input)) {
                 $this->targets->replace($id, $input['target']);
@@ -75,13 +79,29 @@ final class CategoryService
     public function update(int $id, array $input, ?string $today = null): array
     {
         $existing = $this->present($this->row($id));
-        $data = $this->validate($input, (string) $existing['overspend'], (bool) $existing['fuel']);
+        if ($existing['role'] !== 'goal') {
+            if ($this->lockedChange($input, $existing)) {
+                throw new ApiException(409, 'This bucket only takes a target amount.');
+            }
+            if (array_key_exists('target', $input)) {
+                $kind = is_array($input['target']) ? ($input['target']['kind'] ?? null) : null;
+                if ($input['target'] !== null && $kind !== 'balance') {
+                    throw new ApiException(422, 'Check the highlighted fields.', [
+                        'target' => 'This bucket holds one amount.',
+                    ]);
+                }
+                $this->targets->replace($id, $input['target']);
+            }
+
+            return $this->get($id, $today);
+        }
+        $data = $this->validate($input, (string) $existing['overspend']);
         $now = gmdate('c');
         $this->pdo->beginTransaction();
         try {
             $this->pdo->prepare(
-                'UPDATE categories SET name = ?, category_group = ?, overspend = ?, fuel = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-            )->execute([$data['name'], $data['group'], $data['overspend'], $data['fuel'], $now, $id, $this->actor->id()]);
+                'UPDATE categories SET name = ?, category_group = ?, overspend = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+            )->execute([$data['name'], $data['group'], $data['overspend'], $now, $id, $this->actor->id()]);
             if (array_key_exists('target', $input)) {
                 $this->targets->replace($id, $input['target']);
             }
@@ -100,13 +120,25 @@ final class CategoryService
     public function archive(int $id): array
     {
         $existing = $this->get($id);
+        if ($existing['role'] !== 'goal') {
+            throw new ApiException(409, 'This bucket stays on the books.');
+        }
         if ($existing['amountMinor'] !== 0) {
             throw new ApiException(409, 'This bucket still holds an amount. Bring it to zero before archiving it.');
         }
+        $home = $this->pdo->prepare(
+            "SELECT id FROM categories WHERE user_id = ? AND role = 'default' AND category_group = ?"
+        );
+        $home->execute([$this->actor->id(), $existing['group']]);
+        $defaultId = (int) $home->fetchColumn();
+        $this->pdo->prepare('UPDATE bills SET category_id = ?, updated_at = ? WHERE category_id = ?')
+            ->execute([$defaultId, gmdate('c'), $id]);
         $now = gmdate('c');
         $this->pdo->prepare(
             'UPDATE categories SET archived_at = COALESCE(archived_at, ?), updated_at = ? WHERE id = ? AND user_id = ?'
         )->execute([$now, $now, $id, $this->actor->id()]);
+        $today = gmdate('Y-m-d');
+        (new BillFill($this->pdo, new CurrencyCatalog(), $this->actor))->apply($today);
 
         return $this->get($id);
     }
@@ -125,14 +157,16 @@ final class CategoryService
 
     /**
      * @param array<string, mixed> $input
-     * @return array{name:string,group:string,overspend:string,fuel:int}
+     * @return array{name:string,group:string,overspend:string}
      */
-    private function validate(array $input, ?string $existingOverspend, bool $existingFuel = false): array
+    private function validate(array $input, ?string $existingOverspend): array
     {
         $errors = [];
         $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
         if ($name === '' || mb_strlen($name) > 80) {
             $errors['name'] = 'Use a name of 1 to 80 characters.';
+        } elseif (SystemBuckets::reserved($name)) {
+            $errors['name'] = 'That name is reserved.';
         }
 
         $group = strtolower(trim(is_string($input['group'] ?? null) ? $input['group'] : ''));
@@ -150,17 +184,31 @@ final class CategoryService
             }
         }
 
-        if (!array_key_exists('fuel', $input)) {
-            $fuel = $existingFuel ? 1 : 0;
-        } else {
-            $fuel = ($input['fuel'] === true || $input['fuel'] === 1 || $input['fuel'] === '1') ? 1 : 0;
-        }
-
         if ($errors !== []) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
 
-        return ['name' => $name, 'group' => $group, 'overspend' => $overspend, 'fuel' => $fuel];
+        return ['name' => $name, 'group' => $group, 'overspend' => $overspend];
+    }
+
+    /** @param array<string, mixed> $input
+     *  @param array<string, mixed> $existing
+     */
+    private function lockedChange(array $input, array $existing): bool
+    {
+        $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
+        if ($name !== '' && strcasecmp($name, (string) $existing['name']) !== 0) {
+            return true;
+        }
+        $group = strtolower(trim(is_string($input['group'] ?? null) ? $input['group'] : ''));
+        if ($group !== '' && $group !== (string) $existing['group']) {
+            return true;
+        }
+        if (array_key_exists('overspend', $input) && (string) $input['overspend'] !== (string) $existing['overspend']) {
+            return true;
+        }
+
+        return false;
     }
 
     /** @return array<string, mixed> */
@@ -187,7 +235,8 @@ final class CategoryService
             'name' => $row['name'],
             'group' => $row['category_group'],
             'overspend' => (string) ($row['overspend'] ?? 'cover'),
-            'fuel' => (int) ($row['fuel'] ?? 0) === 1,
+            'role' => (string) ($row['role'] ?? 'goal'),
+            'fuel' => (string) ($row['role'] ?? '') === 'fuel',
             'amountMinor' => (int) $row['amount_minor'],
             'archivedAt' => $row['archived_at'],
             'createdAt' => $row['created_at'],

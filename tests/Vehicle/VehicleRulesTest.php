@@ -52,7 +52,10 @@ final class VehicleRulesTest extends TestCase
             'currency' => 'USD',
             'balanceMinor' => 50000,
         ])['id'];
-        $this->fuelId = (int) $categories->create(['name' => 'Fuel 1', 'group' => 'needs', 'fuel' => true])['id'];
+        $categories->list(false);
+        $fuel = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'fuel'");
+        $fuel->execute([$_SESSION['user_id']]);
+        $this->fuelId = (int) $fuel->fetchColumn();
         $this->pdo->prepare('UPDATE user SET fuel_price_minor = 400 WHERE id = ?')->execute([$_SESSION['user_id']]);
     }
 

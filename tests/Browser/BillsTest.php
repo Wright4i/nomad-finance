@@ -146,6 +146,38 @@ final class BillsTest extends TestCase
         self::waitForText('Scratch Bill');
     }
 
+    #[Depends('testOtherAsksForAName')]
+    public function testTheBucketPickerFollowsTheTypeAndFuelIsLocked(): void
+    {
+        self::clickLink('New bill');
+        self::click('rent');
+        $options = self::wait()->until(function (): array|false {
+            $names = self::driver()->executeScript(<<<'JS'
+                const select = document.querySelector('select[name="categoryId"]');
+                if (!select) return [];
+                return [...select.options].map((option) => option.textContent.trim());
+            JS);
+
+            return is_array($names) && $names !== [] ? $names : false;
+        });
+        self::assertContains('Needs Default', $options);
+        self::assertNotContains('Wants Default', $options);
+        self::click('fuel');
+        self::waitForText('Fuel Bucket');
+        $locked = self::driver()->executeScript(
+            'return document.querySelector(\'select[name="categoryId"]\') === null;',
+        );
+        self::assertTrue($locked);
+        self::click('mortgage');
+        $mark = self::driver()->executeScript(<<<'JS'
+            const button = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'mortgage');
+            return Boolean(button && button.querySelector('svg'));
+        JS);
+        self::assertTrue($mark);
+        self::click('misc');
+        self::waitForText('Misc name');
+    }
+
     private static function click(string $label): void
     {
         $by = WebDriverBy::xpath('//button[normalize-space()=' . self::quote($label) . ']');

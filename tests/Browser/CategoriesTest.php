@@ -181,6 +181,32 @@ final class CategoriesTest extends TestCase
     }
 
     #[Depends('testDemoListsOneCategoryInEachGroup')]
+    public function testANewGoalHasNoFuelCheckboxAndADefaultOnlyEditsTheAmount(): void
+    {
+        self::clickLink('New bucket');
+        $fuel = self::driver()->executeScript(
+            'return document.querySelector(\'input[name="fuel"]\') === null;',
+        );
+        self::assertTrue($fuel);
+        self::clickLink('Cancel');
+        self::clickLinkContaining('Needs Default');
+        self::wait()->until(function (): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const name = document.querySelector('input[name="name"]');
+                const amount = document.querySelector('input[name="targetAmount"]');
+                const archive = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Archive');
+                return !name && amount && !archive;
+            JS);
+
+            return $ready === true;
+        });
+        self::clickLink('Envelopes');
+        self::clickLink('Add Bucket');
+        self::clickLink('Cancel');
+        self::waitForText('Buckets');
+    }
+
+    #[Depends('testDemoListsOneCategoryInEachGroup')]
     public function testANewCategoryCanBeArchivedFromAModal(): void
     {
         self::clickLink('New bucket');
@@ -321,7 +347,7 @@ final class CategoriesTest extends TestCase
         self::clickLink('Envelopes');
         self::clickLink('Add Bucket');
         self::clickLink('Cancel');
-        self::waitForText('None.');
+        self::waitForText('Needs Default');
         self::waitForTextGone('Needs 1');
         self::waitForTextGone('Trip 1');
     }

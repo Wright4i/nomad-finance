@@ -32,7 +32,8 @@
   let name = $state('');
   let group = $state('needs');
   let overspend = $state<Overspend>('cover');
-  let fuel = $state(false);
+  let role = $state<'default' | 'fuel' | 'goal'>('goal');
+  let locked = $derived(role !== 'goal');
   let targetKind = $state<'none' | CategoryTarget['kind']>('none');
   let targetAmount = $state('');
   let targetDate = $state('');
@@ -54,7 +55,7 @@
       name = data.category.name;
       group = data.category.group;
       overspend = data.category.overspend;
-      fuel = data.category.fuel;
+      role = data.category.role;
       archivedAt = data.category.archivedAt;
       loadedTarget = data.category.target;
       if (data.category.target) {
@@ -98,7 +99,11 @@
     try {
       const path = id ? `/api/categories/${id}` : '/api/categories';
       const method = id ? 'PATCH' : 'POST';
-      await api(path, { method, body: { name, group, overspend, fuel, today: todayISO(), target: targetBody() } });
+      const target = locked ? (targetAmount.trim() === '' ? null : { kind: 'balance', amountMinor: parseMajor(targetAmount, exponentOf(session.user?.baseCurrency ?? 'USD')) }) : targetBody();
+      const body = locked
+        ? { today: todayISO(), target }
+        : { name, group, overspend, today: todayISO(), target };
+      await api(path, { method, body });
       go('/categories');
     } catch (err) {
       const problem = explain(err);
@@ -152,11 +157,16 @@
   <h1 class="text-3xl m-0">{id ? name || 'Edit bucket' : 'New bucket'}</h1>
   <p class="muted m-0">Name the bucket and put it in Needs, Wants, or Savings. Cover now pulls a negative amount from available-to-assign. Carry keeps it in the bucket. This screen does not assign money.</p>
   {#if message}<p class="banner m-0">{message}</p>{/if}
-  <label class="field">
-    <span>Name</span>
-    <input name="name" bind:value={name} />
-    {#if fields.name}<em>{fields.name}</em>{/if}
-  </label>
+  {#if locked}
+    <p class="m-0">Name <strong>{name}</strong></p>
+  {:else}
+    <label class="field">
+      <span>Name</span>
+      <input name="name" bind:value={name} />
+      {#if fields.name}<em>{fields.name}</em>{/if}
+    </label>
+  {/if}
+  {#if !locked}
   <div class="field">
     <span>Group</span>
     <div class="flex flex-wrap gap-2">
@@ -194,10 +204,8 @@
     </div>
     {#if fields.overspend}<em>{fields.overspend}</em>{/if}
   </div>
-  <label class="field">
-    <span>Fuel</span>
-    <input name="fuel" type="checkbox" bind:checked={fuel} />
-  </label>
+  {/if}
+  {#if !locked}
   <div class="field">
     <span>Target</span>
     <div class="flex flex-wrap gap-2">
@@ -214,14 +222,15 @@
     </div>
     {#if fields.target}<em>{fields.target}</em>{/if}
   </div>
-  {#if targetKind === 'needed' || targetKind === 'balance'}
+  {/if}
+  {#if locked || targetKind === 'needed' || targetKind === 'balance'}
     <label class="field">
       <span>Amount</span>
       <input name="targetAmount" inputmode="decimal" bind:value={targetAmount} />
       {#if fields.targetAmount}<em>{fields.targetAmount}</em>{/if}
     </label>
   {/if}
-  {#if targetKind === 'needed'}
+  {#if !locked && targetKind === 'needed'}
     <label class="field">
       <span>Date</span>
       <DateField name="targetDate" bind:value={targetDate} />
@@ -244,7 +253,7 @@
   <div class="flex flex-wrap gap-2">
     <button class="btn primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save bucket'}</button>
     <a class="btn" href="/categories" onclick={(event) => { event.preventDefault(); go('/categories'); }}>Cancel</a>
-    {#if id && !archivedAt}
+    {#if id && !archivedAt && !locked}
       <button class="btn danger" type="button" title="Hide this bucket. Refused while it holds an amount." disabled={saving} onclick={askArchive}>Archive</button>
     {/if}
     {#if id && archivedAt}

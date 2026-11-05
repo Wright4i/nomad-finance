@@ -5,34 +5,35 @@ declare(strict_types=1);
 namespace App\Bill;
 
 use App\Auth\Actor;
+use App\Category\SystemBuckets;
+use App\Envelope\BillFill;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
+use App\Money\StoredRates;
 use App\Money\UnknownCurrency;
 use App\Support\Dates;
 use PDO;
 
 final class BillService
 {
-    private const TYPES = [
-        'lodging', 'rent', 'electricity', 'water', 'internet', 'cellular', 'gas',
-        'groceries', 'restaurants', 'vehicle', 'debt', 'healthcare', 'entertainment',
-        'subscriptions', 'shopping', 'travel', 'other',
-    ];
-
     private const RECURRENCE = ['once', 'weekly', 'monthly', 'yearly'];
+
+    private BillFill $fill;
 
     public function __construct(
         private readonly PDO $pdo,
         private readonly CurrencyCatalog $currencies,
         private readonly Actor $actor,
+        ?BillFill $fill = null,
     ) {
+        $this->fill = $fill ?? new BillFill($pdo, $currencies, $actor);
     }
 
     /** @return list<array<string, mixed>> */
     public function list(): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT b.*, a.currency, a.name AS account_name, c.name AS category_name
+            "SELECT b.*, a.name AS account_name, c.name AS category_name
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              LEFT JOIN categories c ON c.id = b.category_id
@@ -50,7 +51,7 @@ final class BillService
     public function get(int $id): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT b.*, a.currency, a.name AS account_name, c.name AS category_name
+            'SELECT b.*, a.name AS account_name, c.name AS category_name
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              LEFT JOIN categories c ON c.id = b.category_id
@@ -72,14 +73,15 @@ final class BillService
         $now = gmdate('c');
         $this->pdo->prepare(
             'INSERT INTO bills (
-                name, type, other_label, account_id, category_id, amount_minor, vendor_amount_minor, vendor_currency,
+                name, type, other_label, account_id, category_id, amount_minor, currency,
                 recurrence, anchor_date, next_due_date, autopay, notes, status, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?, ?)'
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?, ?)'
         )->execute([
             $data['name'], $data['type'], $data['otherLabel'], $data['accountId'], $data['categoryId'], $data['amountMinor'],
-            $data['vendorAmountMinor'], $data['vendorCurrency'], $data['recurrence'],
+            $data['currency'], $data['recurrence'],
             $data['nextDueDate'], $data['nextDueDate'], $data['autopay'], $data['notes'], $now, $now,
         ]);
+        $this->fill->apply($this->today($input));
 
         return $this->get((int) $this->pdo->lastInsertId());
     }
@@ -95,18 +97,28 @@ final class BillService
         $anchor = $data['nextDueDate'] !== $existing['next_due_date']
             ? $data['nextDueDate']
             : (string) $existing['anchor_date'];
+        $refill = $data['type'] !== (string) $existing['type']
+            || $data['categoryId'] !== (int) $existing['category_id']
+            || $data['amountMinor'] !== (int) $existing['amount_minor']
+            || $data['currency'] !== (string) $existing['currency']
+            || $data['recurrence'] !== (string) $existing['recurrence']
+            || $data['nextDueDate'] !== (string) $existing['next_due_date']
+            || $anchor !== (string) $existing['anchor_date'];
         $now = gmdate('c');
         $this->pdo->prepare(
             'UPDATE bills SET
-                name = ?, type = ?, other_label = ?, account_id = ?, category_id = ?, amount_minor = ?, vendor_amount_minor = ?,
-                vendor_currency = ?, recurrence = ?, anchor_date = ?, next_due_date = ?,
+                name = ?, type = ?, other_label = ?, account_id = ?, category_id = ?, amount_minor = ?, currency = ?,
+                recurrence = ?, anchor_date = ?, next_due_date = ?,
                 autopay = ?, notes = ?, updated_at = ?
              WHERE id = ?'
         )->execute([
             $data['name'], $data['type'], $data['otherLabel'], $data['accountId'], $data['categoryId'], $data['amountMinor'],
-            $data['vendorAmountMinor'], $data['vendorCurrency'], $data['recurrence'],
+            $data['currency'], $data['recurrence'],
             $anchor, $data['nextDueDate'], $data['autopay'], $data['notes'], $now, $id,
         ]);
+        if ($refill) {
+            $this->fill->apply($this->today($input));
+        }
 
         return $this->get($id);
     }
@@ -201,23 +213,42 @@ final class BillService
             throw new ApiException(422, 'Use a YYYY-MM month.');
         }
 
-        return Occurrences::inMonth($this->list(), $month);
+        $marks = Occurrences::inMonth($this->list(), $month);
+        $base = $this->actor->baseCurrency();
+        $exponent = $this->currencies->exponent($base);
+        $rates = StoredRates::map($this->pdo, $this->actor->id(), $base);
+        foreach ($marks as $index => $mark) {
+            $marks[$index]['baseAmountMinor'] = StoredRates::toBase(
+                (int) $mark['amountMinor'],
+                (string) $mark['currency'],
+                (int) $mark['exponent'],
+                $base,
+                $exponent,
+                $rates,
+            );
+        }
+
+        return $marks;
     }
 
     /** @return array<string, mixed> */
-    public function pause(int $id): array
+    /** @param array<string, mixed> $input */
+    public function pause(int $id, array $input = []): array
     {
-        return $this->setStatus($id, ['active'], 'paused', 'Only an active bill can be paused.');
+        return $this->setStatus($id, ['active'], 'paused', 'Only an active bill can be paused.', $input);
     }
 
-    /** @return array<string, mixed> */
-    public function resume(int $id): array
+    /** @param array<string, mixed> $input */
+    public function resume(int $id, array $input = []): array
     {
-        return $this->setStatus($id, ['paused'], 'active', 'Only a paused bill can resume.');
+        return $this->setStatus($id, ['paused'], 'active', 'Only a paused bill can resume.', $input);
     }
 
-    /** @param list<string> $from */
-    private function setStatus(int $id, array $from, string $to, string $message): array
+    /**
+     * @param list<string> $from
+     * @param array<string, mixed> $input
+     */
+    private function setStatus(int $id, array $from, string $to, string $message, array $input = []): array
     {
         $existing = $this->row($id);
         if (!in_array($existing['status'], $from, true)) {
@@ -225,6 +256,7 @@ final class BillService
         }
         $this->pdo->prepare('UPDATE bills SET status = ?, updated_at = ? WHERE id = ?')
             ->execute([$to, gmdate('c'), $id]);
+        $this->fill->apply($this->today($input));
 
         return $this->get($id);
     }
@@ -233,8 +265,8 @@ final class BillService
      * @param array<string, mixed> $input
      * @param ?array<string, mixed> $existing
      * @return array{
-     *   name:string,type:string,otherLabel:?string,accountId:int,categoryId:?int,amountMinor:int,vendorAmountMinor:?int,
-     *   vendorCurrency:?string,recurrence:string,nextDueDate:string,autopay:int,notes:?string
+     *   name:string,type:string,otherLabel:?string,accountId:int,categoryId:int,amountMinor:int,
+     *   currency:string,recurrence:string,nextDueDate:string,autopay:int,notes:?string
      * }
      */
     private function validate(array $input, ?array $existing): array
@@ -246,12 +278,12 @@ final class BillService
         }
 
         $type = is_string($input['type'] ?? null) ? $input['type'] : '';
-        if (!in_array($type, self::TYPES, true)) {
+        if (!in_array($type, BillTypes::all(), true)) {
             $errors['type'] = 'Choose a type.';
         }
 
         $otherLabel = null;
-        if ($type === 'other') {
+        if (BillTypes::namesItself($type)) {
             $otherLabel = trim(is_string($input['otherLabel'] ?? null) ? $input['otherLabel'] : '');
             if ($otherLabel === '' || mb_strlen($otherLabel) > 80) {
                 $errors['otherLabel'] = 'Use a name of 1 to 80 characters.';
@@ -281,24 +313,24 @@ final class BillService
             $errors['amountMinor'] = 'Enter an amount greater than zero.';
         }
 
-        $vendorAmount = $input['vendorAmountMinor'] ?? null;
-        $vendorCurrency = $input['vendorCurrency'] ?? null;
-        $vendorMinor = null;
-        $vendorCode = null;
-        $amountBlank = $vendorAmount === null || $vendorAmount === '';
-        $codeBlank = $vendorCurrency === null || $vendorCurrency === '';
-        if ($amountBlank xor $codeBlank) {
-            $errors['vendorAmountMinor'] = 'Vendor amount and currency come together.';
-        } elseif (!$amountBlank && !$codeBlank) {
-            $vendorMinor = $this->asInt($vendorAmount);
-            if ($vendorMinor === null || $vendorMinor < 1) {
-                $errors['vendorAmountMinor'] = 'Enter a vendor amount greater than zero.';
-            }
+        $currency = '';
+        $sentCurrency = $input['currency'] ?? null;
+        if (($sentCurrency === null || $sentCurrency === '') && $existing !== null) {
+            $currency = (string) $existing['currency'];
+        } elseif (is_string($sentCurrency) && $sentCurrency !== '') {
             try {
-                $vendorCode = $this->currencies->assert(is_string($vendorCurrency) ? $vendorCurrency : '');
+                $currency = $this->currencies->assert($sentCurrency);
             } catch (UnknownCurrency) {
-                $errors['vendorCurrency'] = 'Use a three-letter ISO currency code.';
+                $errors['currency'] = 'Use a three-letter ISO currency code.';
             }
+        } elseif (is_array($account)) {
+            $code = $this->pdo->prepare('SELECT currency FROM accounts WHERE id = ?');
+            $code->execute([$accountId]);
+            $found = $code->fetchColumn();
+            $currency = is_string($found) ? $found : '';
+        }
+        if ($currency === '' && !isset($errors['currency'])) {
+            $errors['currency'] = 'Choose a currency.';
         }
 
         $recurrence = is_string($input['recurrence'] ?? null) ? $input['recurrence'] : '';
@@ -336,10 +368,9 @@ final class BillService
             'type' => $type,
             'otherLabel' => $otherLabel,
             'accountId' => $accountId,
-            'categoryId' => $this->categoryId($input, $existing),
+            'categoryId' => $this->bucketId($type, $input, $existing),
             'amountMinor' => (int) $amount,
-            'vendorAmountMinor' => $vendorMinor,
-            'vendorCurrency' => $vendorCode,
+            'currency' => $currency,
             'recurrence' => $recurrence,
             'nextDueDate' => $nextDue,
             'autopay' => !empty($input['autopay']) ? 1 : 0,
@@ -351,44 +382,54 @@ final class BillService
      * @param array<string, mixed> $input
      * @param ?array<string, mixed> $existing
      */
-    private function categoryId(array $input, ?array $existing): ?int
+    /**
+     * @param array<string, mixed> $input
+     * @param ?array<string, mixed> $existing
+     */
+    private function bucketId(string $type, array $input, ?array $existing): int
     {
-        if (!array_key_exists('categoryId', $input)) {
-            $kept = $existing['category_id'] ?? null;
-
-            return $kept === null ? null : (int) $kept;
+        $userId = $this->actor->id();
+        if ($type === 'fuel') {
+            return SystemBuckets::id($this->pdo, $userId, 'fuel', 'needs');
         }
+        $group = BillTypes::group($type);
+        $fallback = SystemBuckets::id($this->pdo, $userId, 'default', $group);
+        if (!array_key_exists('categoryId', $input) || $input['categoryId'] === null || $input['categoryId'] === '' || $input['categoryId'] === 0) {
+            if ($existing !== null && (string) $existing['type'] === $type) {
+                return (int) $existing['category_id'];
+            }
 
-        $value = $input['categoryId'];
-        if ($value === null || $value === '' || $value === 0) {
-            return null;
+            return $fallback;
         }
-
-        $id = $this->asInt($value);
+        $id = $this->asInt($input['categoryId']);
         if ($id === null || $id < 1) {
-            throw new ApiException(422, 'Check the highlighted fields.', [
-                'categoryId' => 'Choose a bucket.',
-            ]);
+            throw new ApiException(422, 'Check the highlighted fields.', ['categoryId' => 'Choose a bucket.']);
         }
-
         $stmt = $this->pdo->prepare(
-            'SELECT archived_at FROM categories WHERE id = ? AND user_id = ?'
+            'SELECT category_group, role, archived_at FROM categories WHERE id = ? AND user_id = ?'
         );
-        $stmt->execute([$id, $this->actor->id()]);
-        $archived = $stmt->fetchColumn();
-        if ($archived === false) {
-            throw new ApiException(422, 'Check the highlighted fields.', [
-                'categoryId' => 'Choose a bucket.',
-            ]);
+        $stmt->execute([$id, $userId]);
+        $bucket = $stmt->fetch();
+        if (!is_array($bucket)) {
+            throw new ApiException(422, 'Check the highlighted fields.', ['categoryId' => 'Choose a bucket.']);
         }
-        $kept = (int) ($existing['category_id'] ?? 0) === $id;
-        if ($archived !== null && !$kept) {
-            throw new ApiException(422, 'Check the highlighted fields.', [
-                'categoryId' => 'That bucket is archived.',
-            ]);
+        $kept = $existing !== null && (int) $existing['category_id'] === $id;
+        if ($bucket['archived_at'] !== null && !$kept) {
+            throw new ApiException(422, 'Check the highlighted fields.', ['categoryId' => 'That bucket is archived.']);
+        }
+        if ((string) $bucket['category_group'] !== $group || (string) $bucket['role'] === 'fuel') {
+            return $fallback;
         }
 
         return $id;
+    }
+
+    /** @param array<string, mixed> $input */
+    private function today(array $input): string
+    {
+        $today = $input['today'] ?? null;
+
+        return is_string($today) && $today !== '' ? $today : gmdate('Y-m-d');
     }
 
     /** @return array<string, mixed> */
@@ -440,11 +481,6 @@ final class BillService
             'currency' => $currency,
             'exponent' => $this->currencies->exponent($currency),
             'amountMinor' => (int) $row['amount_minor'],
-            'vendorAmountMinor' => $row['vendor_amount_minor'] === null ? null : (int) $row['vendor_amount_minor'],
-            'vendorCurrency' => $row['vendor_currency'],
-            'vendorExponent' => $row['vendor_currency'] === null
-                ? null
-                : $this->currencies->exponent((string) $row['vendor_currency']),
             'recurrence' => $row['recurrence'],
             'anchorDate' => $row['anchor_date'],
             'nextDueDate' => $row['next_due_date'],

@@ -159,7 +159,8 @@ final class DashboardService
         $start = \DateTimeImmutable::createFromFormat('!Y-m-d', $month . '-01');
         $nextMonth = $start instanceof \DateTimeImmutable ? $start->modify('+1 month')->format('Y-m') : $month;
         $stmt = $this->pdo->prepare(
-            'SELECT b.type, b.status, b.next_due_date AS nextDueDate, b.amount_minor AS amountMinor, a.currency
+            'SELECT b.type, b.name, b.other_label, b.status, b.next_due_date AS nextDueDate,
+                    b.amount_minor AS amountMinor, b.currency
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              WHERE a.user_id = ?'
@@ -171,8 +172,14 @@ final class DashboardService
                 break;
             }
             $currency = (string) $row['currency'];
+            $name = (string) $row['name'];
+            $type = (string) $row['type'];
+            if (($type === 'other' || $type === 'misc') && is_string($row['other_label']) && $row['other_label'] !== '') {
+                $name = (string) $row['other_label'];
+            }
             $bills[] = [
-                'type' => (string) $row['type'],
+                'type' => $type,
+                'name' => $name,
                 'status' => (string) $row['status'],
                 'nextDueDate' => (string) $row['nextDueDate'],
                 'amountMinor' => (int) $row['amountMinor'],
@@ -180,10 +187,13 @@ final class DashboardService
                 'exponent' => $this->currencies->exponent($currency),
             ];
         }
+        $base = $this->actor->baseCurrency();
+        $rates = \App\Money\StoredRates::map($this->pdo, $this->actor->id(), $base);
+        $exponent = $this->currencies->exponent($base);
 
         return [
-            $month => DuePie::month($bills, $month),
-            $nextMonth => DuePie::month($bills, $nextMonth),
+            $month => DuePie::month($bills, $month, $base, $exponent, $rates),
+            $nextMonth => DuePie::month($bills, $nextMonth, $base, $exponent, $rates),
         ];
     }
 

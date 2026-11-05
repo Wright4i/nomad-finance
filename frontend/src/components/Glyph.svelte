@@ -93,6 +93,43 @@
       <path d="M4 14.5 20 9.5l-7 1.2L10 16.5l1.4-4.2L4 14.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
     {:else if mark === 'insurance'}
       <path d="M12 3.5 19 6.5v5.2c0 4.2-2.8 7-7 8.8-4.2-1.8-7-4.6-7-8.8V6.5L12 3.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+    {:else if mark === 'propane'}
+      <path d="M9 8h6v9H9zM10.5 8V6h3v2M12 17v2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'maintenance'}
+      <path d="M14.5 5.5a3 3 0 0 0-4.2 4.2L5 15.1 8.9 19l5.4-5.3a3 3 0 0 0 4.2-4.2L16 12l-2-2 2.5-2.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+    {:else if mark === 'roadside'}
+      <path d="M12 4.5 20 18.5H4L12 4.5zM12 10v4M12 16.2h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'mailbox'}
+      <path d="M5 8.5h10a3 3 0 0 1 0 6H5zM5 8.5v8M15 14.5v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'laundry'}
+      <path d="M6 6.5h12v12H6zM6 10h12M8.5 14.5a3.5 2.2 0 1 0 7 0 3.5 2.2 0 1 0-7 0" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+    {:else if mark === 'mortgage'}
+      <path d="M4 11.5 12 5l8 6.5M7 10.8V19h4v-4h2v4h4v-8.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'storage'}
+      <path d="M5 8h14v4H5zM6 12h12v4H6zM7 16h10v3H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+    {:else if mark === 'memberships'}
+      <rect x="4" y="7" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.8" />
+      <path d="M4 11h16" stroke="currentColor" stroke-width="1.8" />
+    {:else if mark === 'software'}
+      <rect x="4" y="5" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="1.8" />
+      <path d="M9 19.5h6M12 17v2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'pets'}
+      <circle cx="8" cy="8" r="1.4" fill="currentColor" />
+      <circle cx="12" cy="6.5" r="1.4" fill="currentColor" />
+      <circle cx="16" cy="8" r="1.4" fill="currentColor" />
+      <path d="M9 13.5c0-2 1.4-3 3-3s3 1 3 3c0 2.4-1.3 4.5-3 4.5s-3-2.1-3-4.5z" stroke="currentColor" stroke-width="1.8" />
+    {:else if mark === 'misc'}
+      <path d="M12 4.5v3M12 16.5v3M4.5 12h3M16.5 12h3M7 7l2 2M15 15l2 2M17 7l-2 2M9 15l-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'emergency'}
+      <circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.8" />
+      <path d="M12 8v5M12 15.5h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'repairs'}
+      <path d="M6 16.5 16.5 6M8 18.5l-2-2M15 7.5l2.2-2.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'investments'}
+      <path d="M5 16.5 9.5 12l3 2.5L19 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'liquidities'}
+      <path d="M5 14c1.5-2 2.5-2 4 0s2.5 2 4 0 2.5-2 4 0 2.5 2 2 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      <path d="M5 10c1.5-2 2.5-2 4 0s2.5 2 4 0 2.5-2 4 0 2.5 2 2 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {:else if mark === 'active'}
       <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="1.8" />
     {:else if mark === 'paused'}

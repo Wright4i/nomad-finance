@@ -18,6 +18,7 @@
     type: string;
     on: string;
     amountMinor: number;
+    baseAmountMinor: number | null;
     currency: string;
     exponent: number;
     paid: boolean;
@@ -73,6 +74,7 @@
     name: string;
     type: string;
     amountMinor: number;
+    baseAmountMinor?: number | null;
     currency: string;
     exponent: number;
     kind: 'due' | 'paid' | 'income';
@@ -112,6 +114,7 @@
       name: item.name,
       type: item.type,
       amountMinor: -item.amountMinor,
+      baseAmountMinor: item.baseAmountMinor,
       currency: item.currency,
       exponent: item.exponent,
       kind: item.paid ? 'paid' : 'due',
@@ -130,29 +133,27 @@
     let income = 0;
     let billMinor = 0;
     let paidMinor = 0;
-    const other = new Map<string, { amountMinor: number; currency: string; exponent: number }>();
+    const leftOut: string[] = [];
     for (const mark of shown) {
       if (mark.kind === 'income') {
         income += mark.amountMinor;
         continue;
       }
-      if ((mark.kind === 'due' || mark.kind === 'paid') && mark.status && mark.currency === baseCurrency && calendarBillSide(mark.status, mark.kind) === 'paid') {
-        paidMinor += -mark.amountMinor;
-      }
-      if (mark.currency === baseCurrency) {
-        billMinor += mark.amountMinor;
+      if (mark.baseAmountMinor == null) {
+        leftOut.push(mark.name);
         continue;
       }
-      const current = other.get(mark.currency);
-      if (current) current.amountMinor += mark.amountMinor;
-      else other.set(mark.currency, { amountMinor: mark.amountMinor, currency: mark.currency, exponent: mark.exponent });
+      billMinor -= mark.baseAmountMinor;
+      if (mark.status && calendarBillSide(mark.status, mark.kind) === 'paid') {
+        paidMinor += mark.baseAmountMinor;
+      }
     }
     return {
       income,
       bills: billMinor,
       paid: paidMinor,
       net: income + billMinor,
-      other: [...other.values()].sort((left, right) => left.currency.localeCompare(right.currency)),
+      leftOut,
     };
   });
 
@@ -302,9 +303,9 @@
         <span class="month-bills">Bills <strong class="money">{formatMinor(totals.bills, baseCurrency, baseExponent)}</strong></span>
         <span class="month-paid">Paid <strong class="money">{formatMinor(totals.paid, baseCurrency, baseExponent)}</strong></span>
         <span class="month-net">Net <strong class="money">{formatMinor(totals.net, baseCurrency, baseExponent)}</strong></span>
-        {#each totals.other as total (total.currency)}
-          <span class="month-bills">Bills <strong class="money">{formatMinor(total.amountMinor, total.currency, total.exponent)}</strong></span>
-        {/each}
+        {#if totals.leftOut.length > 0}
+          <span class="month-bills">Left out {totals.leftOut.join(', ')}</span>
+        {/if}
       </p>
     </div>
   </div>

@@ -33,9 +33,6 @@ export type Bill = {
   currency: string;
   exponent: number;
   amountMinor: number;
-  vendorAmountMinor: number | null;
-  vendorCurrency: string | null;
-  vendorExponent: number | null;
   recurrence: string;
   anchorDate: string;
   nextDueDate: string;
@@ -71,15 +68,23 @@ export type EnvelopeGroup = {
   over: boolean;
 };
 
+export type EnvelopeBill = {
+  id: number;
+  name: string;
+  amountMinor: number;
+};
+
 export type EnvelopeCategory = {
   id: number;
   name: string;
   group: 'needs' | 'wants' | 'savings';
+  role?: 'default' | 'fuel' | 'goal';
   overspend: Overspend;
   amountMinor: number;
   remainingMinor?: number;
   archivedAt: string | null;
   target: CategoryTarget | null;
+  bills?: EnvelopeBill[];
 };
 
 export type EnvelopeSheet = {
@@ -96,6 +101,7 @@ export type EnvelopeSheet = {
   assignedMinor: number;
   poolMinor: number;
   leftOut: { accountId: number; name: string; currency: string; exponent: number; balanceMinor: number }[];
+  billLeftOut?: string[];
   categories: EnvelopeCategory[];
   groups: EnvelopeGroup[];
   celebrate: boolean;
@@ -154,6 +160,7 @@ export type Category = {
   id: number;
   name: string;
   group: 'needs' | 'wants' | 'savings';
+  role: 'default' | 'fuel' | 'goal';
   overspend: Overspend;
   fuel: boolean;
   amountMinor: number;
@@ -381,6 +388,7 @@ export type DuePie = {
   currency: string;
   exponent: number;
   slices: DueSlice[];
+  leftOut?: string[];
 };
 
 export type Dashboard = {

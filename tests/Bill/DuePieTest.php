@@ -19,28 +19,13 @@ final class DuePieTest extends TestCase
             $this->bill('electricity', 'paused', '2026-11-12', 4000, 'USD'),
             $this->bill('healthcare', 'paid', '2026-11-01', 9900, 'USD'),
             $this->bill('debt', 'active', '2026-12-01', 45000, 'USD'),
-            $this->bill('gas', 'active', '2026-11-14', 0, 'USD'),
-            $this->bill('water', 'active', '2026-11-09', 2800, 'EUR'),
-            $this->bill('rent', 'active', '2026-11-11', 1000, 'EUR'),
-            $this->bill('gas', 'active', '2026-11-02', 500, 'JPY', 0),
-        ], '2026-11');
+            $this->bill('fuel', 'active', '2026-11-14', 0, 'USD'),
+            $this->bill('water', 'active', '2026-11-09', 2800, 'EUR', 2, 'Water Bill'),
+            $this->bill('rent', 'active', '2026-11-11', 1000, 'EUR', 2, 'Rent Abroad'),
+            $this->bill('fuel', 'active', '2026-11-02', 500, 'JPY', 0, 'Fuel Abroad'),
+        ], '2026-11', 'USD', 2, []);
 
         self::assertSame([
-            [
-                'currency' => 'EUR',
-                'exponent' => 2,
-                'slices' => [
-                    ['type' => 'rent', 'amountMinor' => 1000],
-                    ['type' => 'water', 'amountMinor' => 2800],
-                ],
-            ],
-            [
-                'currency' => 'JPY',
-                'exponent' => 0,
-                'slices' => [
-                    ['type' => 'gas', 'amountMinor' => 500],
-                ],
-            ],
             [
                 'currency' => 'USD',
                 'exponent' => 2,
@@ -49,6 +34,7 @@ final class DuePieTest extends TestCase
                     ['type' => 'rent', 'amountMinor' => 8000],
                     ['type' => 'healthcare', 'amountMinor' => 127500],
                 ],
+                'leftOut' => ['Fuel Abroad', 'Rent Abroad', 'Water Bill'],
             ],
         ], $pies);
     }
@@ -57,7 +43,7 @@ final class DuePieTest extends TestCase
     {
         $pies = DuePie::month([
             $this->bill('debt', 'active', '2026-12-01', 45000, 'USD'),
-        ], '2026-11');
+        ], '2026-11', 'USD', 2, []);
 
         self::assertSame([], $pies);
     }
@@ -70,9 +56,11 @@ final class DuePieTest extends TestCase
         int $amountMinor,
         string $currency,
         int $exponent = 2,
+        string $name = '',
     ): array {
         return [
             'type' => $type,
+            'name' => $name !== '' ? $name : $type,
             'status' => $status,
             'nextDueDate' => $nextDueDate,
             'amountMinor' => $amountMinor,

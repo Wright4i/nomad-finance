@@ -43,7 +43,7 @@ final class Occurrences
     private static function marks(array $bill, string $start, string $end): array
     {
         $name = (string) $bill['name'];
-        if (($bill['type'] ?? '') === 'other' && is_string($bill['otherLabel'] ?? null) && $bill['otherLabel'] !== '') {
+        if (in_array($bill['type'] ?? '', ['other', 'misc'], true) && is_string($bill['otherLabel'] ?? null) && $bill['otherLabel'] !== '') {
             $name = $bill['otherLabel'];
         }
         $base = [

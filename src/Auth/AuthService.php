@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Auth;
 
+use App\Category\SystemBuckets;
 use App\Demo\DemoLibrary;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
@@ -81,6 +82,7 @@ final class AuthService
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->prepare('INSERT INTO login_guard (user_id, failed_count) VALUES (?, 0)')->execute([$id]);
             RateBaseline::seed($this->pdo, $id, $books['currency'], [], $now);
+            SystemBuckets::ensure($this->pdo, $id);
             $this->insertStarredVehicle($id, $books['vehicle'], $now);
             $this->demo->ensure();
             $this->pdo->commit();
@@ -125,6 +127,7 @@ final class AuthService
             ]);
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->prepare('INSERT INTO login_guard (user_id, failed_count) VALUES (?, 0)')->execute([$id]);
+            SystemBuckets::ensure($this->pdo, $id);
             $this->insertStarredVehicle($id, $books['vehicle'], $now);
             $this->pdo->commit();
         } catch (\Throwable $e) {

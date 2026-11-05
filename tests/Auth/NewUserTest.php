@@ -97,7 +97,12 @@ final class NewUserTest extends TestCase
         self::assertSame([], $beaBooks['bills']);
         self::assertSame([], $beaBooks['rates']);
         self::assertSame([], $beaBooks['trips']);
-        self::assertSame([], $beaBooks['categories']);
+        self::assertSame([
+            ['name' => 'Fuel Bucket'],
+            ['name' => 'Needs Default'],
+            ['name' => 'Savings Default'],
+            ['name' => 'Wants Default'],
+        ], $beaBooks['categories']);
         self::assertSame([], $beaBooks['payCycles']);
         self::assertCount(1, $beaBooks['vehicles']);
         self::assertSame('Vehicle 1', $beaBooks['vehicles'][0]['name']);

@@ -55,7 +55,10 @@ final class PostingRulesTest extends TestCase
         ]);
         $this->accountId = (int) $account['id'];
         $this->categoryId = (int) $categories->create(['name' => 'Needs 1', 'group' => 'needs'])['id'];
-        $this->fuelId = (int) $categories->create(['name' => 'Fuel 1', 'group' => 'needs', 'fuel' => true])['id'];
+        $categories->list(false);
+        $fuel = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'fuel'");
+        $fuel->execute([$_SESSION['user_id']]);
+        $this->fuelId = (int) $fuel->fetchColumn();
         $this->vehicleId = (int) (new VehicleService($this->pdo, $actor))->create([
             'name' => 'Vehicle 1',
             'kind' => 'car',

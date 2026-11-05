@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Demo;
 
+use App\Bill\BillTypes;
+use App\Category\SystemBuckets;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\Money\RateBaseline;
@@ -105,6 +107,7 @@ final class DemoLibrary
     private function seed(int $userId): void
     {
         $now = gmdate('c');
+        SystemBuckets::ensure($this->pdo, $userId);
         $this->pdo->prepare(
             'UPDATE user SET horizon_days = 60, fuel_price_minor = 400 WHERE id = ?'
         )->execute([$userId]);
@@ -185,9 +188,9 @@ final class DemoLibrary
             'recurrence' => 'weekly', 'anchor' => '2026-11-06', 'next' => '2026-11-06', 'status' => 'active',
         ], $now);
         $this->bill($cash, [
-            'name' => 'Other Bill', 'type' => 'other', 'otherLabel' => 'Custom 1', 'amount' => 1500,
+            'name' => 'Other Bill', 'type' => 'other', 'otherLabel' => 'Custom 1', 'amount' => 2000,
             'recurrence' => 'once', 'anchor' => '2026-11-18', 'next' => '2026-11-18', 'status' => 'active',
-            'vendorAmount' => 2000, 'vendorCurrency' => 'EUR',
+            'currency' => 'EUR',
         ], $now);
         $this->bill($otherAsset, [
             'name' => 'Overdue Monthly Bill', 'type' => 'rent', 'amount' => 30000,
@@ -218,7 +221,7 @@ final class DemoLibrary
             'recurrence' => 'monthly', 'anchor' => '2026-11-11', 'next' => '2026-11-11', 'status' => 'active',
         ], $now);
         $this->bill($checking, [
-            'name' => 'Gas Bill', 'type' => 'gas', 'amount' => 3600,
+            'name' => 'Fuel Bill', 'type' => 'fuel', 'amount' => 3600,
             'recurrence' => 'monthly', 'anchor' => '2026-11-14', 'next' => '2026-11-14', 'status' => 'active',
         ], $now);
         $this->bill($checking, [
@@ -232,6 +235,32 @@ final class DemoLibrary
         $this->bill($checking, [
             'name' => 'Travel Bill', 'type' => 'travel', 'amount' => 8800,
             'recurrence' => 'yearly', 'anchor' => '2026-11-19', 'next' => '2026-11-19', 'status' => 'active',
+        ], $now);
+        foreach ([
+            'propane' => 'Propane Bill',
+            'maintenance' => 'Maintenance Bill',
+            'insurance' => 'Insurance Bill',
+            'roadside' => 'Roadside Bill',
+            'mailbox' => 'Mailbox Bill',
+            'laundry' => 'Laundry Bill',
+            'mortgage' => 'Mortgage Bill',
+            'storage' => 'Storage Bill',
+            'memberships' => 'Memberships Bill',
+            'software' => 'Software Bill',
+            'pets' => 'Pets Bill',
+            'emergency' => 'Emergency Bill',
+            'repairs' => 'Repairs Bill',
+            'investments' => 'Investments Bill',
+            'liquidities' => 'Liquidities Bill',
+        ] as $type => $name) {
+            $this->bill($checking, [
+                'name' => $name, 'type' => $type, 'amount' => 1000,
+                'recurrence' => 'monthly', 'anchor' => '2026-11-20', 'next' => '2026-11-20', 'status' => 'active',
+            ], $now);
+        }
+        $this->bill($checking, [
+            'name' => 'Misc Bill', 'type' => 'misc', 'otherLabel' => 'Custom 2', 'amount' => 1200,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-21', 'next' => '2026-11-21', 'status' => 'active',
         ], $now);
 
         RateBaseline::seed($this->pdo, $userId, 'USD', [], $now);
@@ -250,8 +279,6 @@ final class DemoLibrary
         $this->payCycle($userId, 'Monthly Weekday Payor', '2026-11-01', 'monthly', $now, null, null, false, 'hourly', 11000, 800, 'weekdays');
         $this->payCycle($userId, 'Irregular Payor', '2026-11-01', 'irregular', $now, null, '2026-12-15', false, 'fixed', 150000);
         $this->payCycle($userId, 'Archived Payor', '2026-11-01', 'monthly', $now, null, null, true, 'fixed', 10000);
-        $this->category($userId, 'Fuel 1', 'needs', $now);
-        $this->pdo->prepare('UPDATE categories SET fuel = 1 WHERE user_id = ? AND name = ?')->execute([$userId, 'Fuel 1']);
         $this->seedEnvelopes($userId, $now);
         $this->seedTargets($userId, $now);
         $this->seedLife($userId, $now);
@@ -287,7 +314,7 @@ final class DemoLibrary
         $needs = (int) $category->fetchColumn();
         $category->execute([$userId, 'Wants 1']);
         $wants = (int) $category->fetchColumn();
-        $category->execute([$userId, 'Fuel 1']);
+        $category->execute([$userId, 'Fuel Bucket']);
         $fuel = (int) $category->fetchColumn();
 
         $this->pdo->prepare('UPDATE accounts SET interest_bps = ? WHERE id = ?')->execute([450, $savings]);
@@ -419,15 +446,23 @@ final class DemoLibrary
         return (int) $this->pdo->lastInsertId();
     }
 
-    /** @param array{name:string,type:string,amount:int,recurrence:string,anchor:string,next:string,status:string,otherLabel?:string,autopay?:bool,vendorAmount?:int,vendorCurrency?:string,paidOn?:string} $row */
+    /** @param array{name:string,type:string,amount:int,recurrence:string,anchor:string,next:string,status:string,otherLabel?:string,autopay?:bool,currency?:string,paidOn?:string} $row */
     private function bill(int $accountId, array $row, string $now): void
     {
-        if (isset($row['vendorCurrency'])) {
-            $this->currencies->assert($row['vendorCurrency']);
-        }
+        $owner = $this->pdo->prepare('SELECT user_id, currency FROM accounts WHERE id = ?');
+        $owner->execute([$accountId]);
+        $account = $owner->fetch();
+        $userId = is_array($account) ? (int) $account['user_id'] : 0;
+        $currency = $row['currency'] ?? (is_array($account) ? (string) $account['currency'] : 'USD');
+        $this->currencies->assert($currency);
+        $role = $row['type'] === 'fuel' ? 'fuel' : 'default';
+        $bucket = $this->pdo->prepare(
+            'SELECT id FROM categories WHERE user_id = ? AND role = ? AND category_group = ? AND archived_at IS NULL'
+        );
+        $bucket->execute([$userId, $role, BillTypes::group($row['type'])]);
         $this->pdo->prepare(
             'INSERT INTO bills (
-                name, type, other_label, account_id, amount_minor, vendor_amount_minor, vendor_currency,
+                name, type, other_label, account_id, category_id, amount_minor, currency,
                 recurrence, anchor_date, next_due_date, last_paid_on, autopay, status, created_at, updated_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
@@ -435,9 +470,9 @@ final class DemoLibrary
             $row['type'],
             $row['otherLabel'] ?? null,
             $accountId,
+            (int) $bucket->fetchColumn(),
             $row['amount'],
-            $row['vendorAmount'] ?? null,
-            $row['vendorCurrency'] ?? null,
+            $currency,
             $row['recurrence'],
             $row['anchor'],
             $row['next'],

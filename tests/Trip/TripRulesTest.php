@@ -231,11 +231,10 @@ final class TripRulesTest extends TestCase
     {
         $this->pdo->prepare('UPDATE user SET fuel_price_minor = 400 WHERE id = ?')->execute([$_SESSION['user_id']]);
         $now = gmdate('c');
-        $this->pdo->prepare(
-            'INSERT INTO categories (user_id, name, category_group, amount_minor, overspend, fuel, created_at, updated_at)
-             VALUES (?, \'Fuel 1\', \'needs\', 0, \'cover\', 1, ?, ?)'
-        )->execute([$_SESSION['user_id'], $now, $now]);
-        $fuel = (int) $this->pdo->lastInsertId();
+        \App\Category\SystemBuckets::ensure($this->pdo, (int) $_SESSION['user_id']);
+        $fuelRow = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'fuel'");
+        $fuelRow->execute([$_SESSION['user_id']]);
+        $fuel = (int) $fuelRow->fetchColumn();
         $insert = $this->pdo->prepare(
             'INSERT INTO postings (
                 user_id, account_id, category_id, amount_minor, direction, payee, posted_on,

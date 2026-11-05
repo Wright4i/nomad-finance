@@ -156,6 +156,9 @@
         <p class="banner celebrate m-0">Every dollar for this month is assigned.</p>
       {/if}
 
+      {#if sheet.billLeftOut && sheet.billLeftOut.length > 0}
+        <p class="muted m-0">Left out of the fill: {sheet.billLeftOut.join(', ')}</p>
+      {/if}
       {#if sheet.leftOut.length > 0}
         <section class="grid gap-2">
           <h2 class="group-title text-2xl" style="--tone: var(--amber)">Left out of the pool</h2>
@@ -218,6 +221,13 @@
                   <span class={fill.over && fill.scale > 0 ? 'gauge-over' : 'gauge-fill'} style={`transform: scaleX(${fill.scale})`}></span>
                 </span>
                 <span class="muted text-sm">{formatMinor(remaining, sheet.baseCurrency, sheet.exponent)} remaining</span>
+                {#if category.bills && category.bills.length > 0}
+                  <ul class="m-0 grid gap-1 text-sm">
+                    {#each category.bills as bill (bill.id)}
+                      <li>{bill.name} · {formatMinor(bill.amountMinor, sheet.baseCurrency, sheet.exponent)}</li>
+                    {/each}
+                  </ul>
+                {/if}
                 <input
                   name={`amount-${category.id}`}
                   inputmode="decimal"

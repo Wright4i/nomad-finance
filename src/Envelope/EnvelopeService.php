@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Envelope;
 
 use App\Auth\Actor;
+use App\Envelope\BillFill;
 use App\ExchangeRate\RateService;
 use App\Http\ApiException;
 use App\Money\Converter;
@@ -31,6 +32,7 @@ final class EnvelopeService
     public function show(string $today, ?int $payCycleId = null, ?int $periodId = null, bool $upcoming = false): array
     {
         $today = $this->day($today);
+        $this->fillIfWaiting($today);
         $this->prepare($today);
 
         return $this->present($today, $payCycleId, $periodId, $upcoming, true);
@@ -68,15 +70,26 @@ final class EnvelopeService
         $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
         $this->pdo->beginTransaction();
         try {
+            $kept = $this->pdo->prepare('SELECT category_id, filled_minor FROM assignments WHERE pay_period_id = ?');
+            $kept->execute([(int) $period['id']]);
+            $filled = [];
+            while ($row = $kept->fetch()) {
+                if (is_array($row)) {
+                    $filled[(int) $row['category_id']] = (int) $row['filled_minor'];
+                }
+            }
             $this->pdo->prepare('DELETE FROM assignments WHERE pay_period_id = ?')->execute([(int) $period['id']]);
             $insert = $this->pdo->prepare(
-                'INSERT INTO assignments (pay_period_id, category_id, amount_minor) VALUES (?, ?, ?)'
+                'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
             );
-            foreach ($amounts as $categoryId => $amount) {
-                if ($amount === 0) {
+            $ids = array_unique([...array_keys($amounts), ...array_keys($filled)]);
+            foreach ($ids as $categoryId) {
+                $amount = $amounts[$categoryId] ?? 0;
+                $portion = $filled[$categoryId] ?? 0;
+                if ($amount === 0 && $portion === 0) {
                     continue;
                 }
-                $insert->execute([(int) $period['id'], $categoryId, $amount]);
+                $insert->execute([(int) $period['id'], $categoryId, $amount, $portion]);
             }
             $this->syncAmounts($today);
             $this->pdo->commit();
@@ -283,8 +296,8 @@ final class EnvelopeService
         $previousId = $previous->fetchColumn();
         if ($previousId !== false) {
             $this->pdo->prepare(
-                'INSERT INTO assignments (pay_period_id, category_id, amount_minor)
-                 SELECT ?, a.category_id, a.amount_minor
+                'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
+                 SELECT ?, a.category_id, a.amount_minor, a.filled_minor
                  FROM assignments a
                  JOIN categories c ON c.id = a.category_id
                  WHERE a.pay_period_id = ?
@@ -456,17 +469,22 @@ final class EnvelopeService
             'assignedMinor' => $assigned,
             'poolMinor' => $pool['minor'],
             'leftOut' => $pool['leftOut'],
-            'categories' => $this->targets->decorate(
-                Remaining::attach(
-                    $this->pdo,
-                    $this->actor->id(),
-                    $categories,
-                    is_array($period) ? (string) $period['start'] : null,
-                    is_array($period) && $period['end'] !== null ? (string) $period['end'] : null,
+            'categories' => $this->withBills(
+                $this->targets->decorate(
+                    Remaining::attach(
+                        $this->pdo,
+                        $this->actor->id(),
+                        $categories,
+                        is_array($period) ? (string) $period['start'] : null,
+                        is_array($period) && $period['end'] !== null ? (string) $period['end'] : null,
+                    ),
+                    $today,
+                    $observe,
                 ),
+                is_array($period) ? $period : null,
                 $today,
-                $observe,
             ),
+            'billLeftOut' => $this->billLeftOut(is_array($period) ? $period : null, $today),
             'groups' => $this->groups($categories),
             'celebrate' => $celebrate,
         ];
@@ -611,7 +629,7 @@ final class EnvelopeService
     private function previewCategories(?int $sourcePeriodId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT c.id, c.name, c.category_group, c.overspend, c.archived_at,
+            'SELECT c.id, c.name, c.category_group, c.role, c.overspend, c.archived_at,
                     CASE
                         WHEN a.amount_minor > 0 THEN a.amount_minor
                         WHEN a.amount_minor < 0 AND c.overspend = \'carry\' THEN a.amount_minor
@@ -638,6 +656,7 @@ final class EnvelopeService
                 'id' => (int) $row['id'],
                 'name' => (string) $row['name'],
                 'group' => (string) $row['category_group'],
+                'role' => (string) ($row['role'] ?? 'goal'),
                 'overspend' => (string) $row['overspend'],
                 'amountMinor' => (int) $row['amount_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
@@ -688,7 +707,7 @@ final class EnvelopeService
     private function categories(int $periodId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT c.id, c.name, c.category_group, c.overspend, c.archived_at,
+            'SELECT c.id, c.name, c.category_group, c.role, c.overspend, c.archived_at,
                     COALESCE(a.amount_minor, 0) AS amount_minor
              FROM categories c
              LEFT JOIN assignments a ON a.category_id = c.id AND a.pay_period_id = ?
@@ -711,6 +730,7 @@ final class EnvelopeService
                 'id' => (int) $row['id'],
                 'name' => (string) $row['name'],
                 'group' => (string) $row['category_group'],
+                'role' => (string) ($row['role'] ?? 'goal'),
                 'overspend' => (string) $row['overspend'],
                 'amountMinor' => (int) $row['amount_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
@@ -888,6 +908,75 @@ final class EnvelopeService
         $row = $stmt->fetch();
 
         return is_array($row) ? $row : null;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $categories
+     * @param ?array<string, mixed> $period
+     * @return list<array<string, mixed>>
+     */
+    private function withBills(array $categories, ?array $period, string $today): array
+    {
+        $picture = $this->billPicture($period, $today);
+        foreach ($categories as $index => $category) {
+            $categories[$index]['bills'] = $picture['bills'][(int) $category['id']] ?? [];
+        }
+
+        return $categories;
+    }
+
+    /** @param ?array<string, mixed> $period
+     *  @return list<string>
+     */
+    private function billLeftOut(?array $period, string $today): array
+    {
+        return $this->billPicture($period, $today)['leftOut'];
+    }
+
+    /**
+     * @param ?array<string, mixed> $period
+     * @return array{bills: array<int, list<array{id:int,name:string,amountMinor:int}>>, leftOut: list<string>}
+     */
+    private function billPicture(?array $period, string $today): array
+    {
+        if ($period === null || (($period['editable'] ?? false) !== true && ($period['upcoming'] ?? false) !== true)) {
+            return ['bills' => [], 'leftOut' => []];
+        }
+        $end = $period['end'] ?? null;
+
+        return (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            (string) $period['start'],
+            is_string($end) ? $end : null,
+            ($period['upcoming'] ?? false) !== true,
+        );
+    }
+
+    /** A bill saved before any pay period existed fills on the next load. */
+    private function fillIfWaiting(string $today): void
+    {
+        $periods = $this->pdo->prepare('SELECT COUNT(*) FROM pay_periods WHERE user_id = ?');
+        $periods->execute([$this->actor->id()]);
+        if ((int) $periods->fetchColumn() > 0) {
+            return;
+        }
+        $cycles = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM pay_cycles WHERE user_id = ? AND archived_at IS NULL'
+        );
+        $cycles->execute([$this->actor->id()]);
+        if ((int) $cycles->fetchColumn() === 0) {
+            return;
+        }
+        $bills = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM bills b
+             JOIN accounts a ON a.id = b.account_id
+             WHERE a.user_id = ? AND b.status = \'active\''
+        );
+        $bills->execute([$this->actor->id()]);
+        if ((int) $bills->fetchColumn() === 0) {
+            return;
+        }
+        (new BillFill($this->pdo, $this->currencies, $this->actor))->apply($today);
     }
 
     private function day(string $value): string

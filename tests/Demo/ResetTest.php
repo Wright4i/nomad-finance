@@ -163,9 +163,11 @@ final class ResetTest extends TestCase
             [$demoId],
         );
         self::assertSame([
-            'cellular', 'debt', 'electricity', 'entertainment', 'gas', 'groceries', 'healthcare',
-            'internet', 'lodging', 'other', 'rent', 'restaurants', 'shopping', 'subscriptions',
-            'travel', 'vehicle', 'water',
+            'cellular', 'debt', 'electricity', 'emergency', 'entertainment', 'fuel', 'groceries', 'healthcare',
+            'insurance', 'internet', 'investments', 'laundry', 'liquidities', 'lodging', 'mailbox',
+            'maintenance', 'memberships', 'misc', 'mortgage', 'other', 'pets', 'propane', 'rent', 'repairs',
+            'restaurants', 'roadside', 'shopping', 'software', 'storage', 'subscriptions', 'travel',
+            'vehicle', 'water',
         ], $billTypes);
         $otherName = $this->pdo->prepare(
             'SELECT b.other_label FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? AND b.name = \'Other Bill\''
@@ -190,22 +192,38 @@ final class ResetTest extends TestCase
         self::assertSame([
             'Childcare Bill',
             'Education Bill',
-            'Gas Bill',
+            'Emergency Bill',
+            'Fuel Bill',
             'Groceries Bill',
+            'Insurance Bill',
             'Internet Bill',
+            'Investments Bill',
+            'Laundry Bill',
+            'Liquidities Bill',
             'Lodging Bill',
+            'Mailbox Bill',
+            'Maintenance Bill',
             'Medical Bill',
+            'Memberships Bill',
+            'Misc Bill',
+            'Mortgage Bill',
             'One-Time Bill',
             'Other Bill',
             'Overdue Monthly Bill',
             'Paid One-Time Bill',
             'Paid Weekly Bill',
             'Paused Weekly Bill',
+            'Pets Bill',
             'Phone Bill',
+            'Propane Bill',
             'Recurring Monthly Bill',
             'Recurring Weekly Bill',
             'Recurring Yearly Bill',
+            'Repairs Bill',
             'Restaurants Bill',
+            'Roadside Bill',
+            'Software Bill',
+            'Storage Bill',
             'Tax Bill',
             'Transport Bill',
             'Travel Bill',
@@ -225,7 +243,10 @@ final class ResetTest extends TestCase
         $ownerId = $_SESSION['user_id'];
         $actor = new Actor($this->pdo);
         $categories = new CategoryService($this->pdo, $actor, new TargetService($this->pdo, $actor));
-        self::assertSame([], $categories->list(true));
+        self::assertSame(
+            ['Needs Default', 'Fuel Bucket', 'Wants Default', 'Savings Default'],
+            array_column($categories->list(true), 'name'),
+        );
 
         $auth->enterDemo();
         $categories->create(['name' => 'Scratch Category', 'group' => 'wants']);
@@ -237,7 +258,11 @@ final class ResetTest extends TestCase
             $byName[(string) $row['name']] = $row;
         }
         self::assertSame(
-            ['Archived Category', 'Fuel 1', 'Needs 1', 'Wants 1', 'Needed By Date 1', 'Savings 1', 'Target Balance 1'],
+            [
+                'Needs Default', 'Fuel Bucket', 'Archived Category', 'Needs 1',
+                'Wants Default', 'Wants 1',
+                'Savings Default', 'Needed By Date 1', 'Savings 1', 'Target Balance 1',
+            ],
             array_column($rows, 'name'),
         );
         self::assertNull($byName['Needs 1']['target']);
@@ -263,7 +288,10 @@ final class ResetTest extends TestCase
         self::assertNotContains('Archived Category', array_column($categories->list(false), 'name'));
 
         $_SESSION['user_id'] = $ownerId;
-        self::assertSame([], $categories->list(true));
+        self::assertSame(
+            ['Needs Default', 'Fuel Bucket', 'Wants Default', 'Savings Default'],
+            array_column($categories->list(true), 'name'),
+        );
     }
 
     public function testSeedStoresOneCyclePerPayor(): void
