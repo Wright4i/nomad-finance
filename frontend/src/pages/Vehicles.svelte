@@ -17,6 +17,14 @@
     });
   });
 
+  function odometerChip(miles: number): string {
+    return `${miles.toLocaleString('en-US')} mi`;
+  }
+
+  function mpgChip(vehicle: Vehicle): string {
+    return vehicle.milesPerGallon ? `${vehicle.milesPerGallon} mpg` : '—';
+  }
+
   async function star(vehicle: Vehicle): Promise<void> {
     message = '';
     try {
@@ -40,27 +48,37 @@
   }
 </script>
 
-<div class="grid gap-4 max-w-xl">
+<div class="grid gap-4">
   <div class="flex flex-wrap items-end justify-between gap-3">
-    <h1 class="m-0 text-4xl">Vehicles</h1>
+    <h1 class="text-3xl m-0">Vehicles</h1>
     <a class="btn primary" href="/vehicles/new" onclick={(event) => follow(event, '/vehicles/new')}>New vehicle</a>
   </div>
   <Note bind:message />
   {#if vehicles.length === 0}
     <p class="muted m-0">No vehicles yet.</p>
   {/if}
-  {#each vehicles as vehicle (vehicle.id)}
-    <div class="row">
-      <a class="flex items-center gap-3 min-w-0 no-underline" style={`--tone: var(--tone-${vehicle.kind})`} href={`/vehicles/${vehicle.id}`} onclick={(event) => follow(event, `/vehicles/${vehicle.id}`)}>
-        <Glyph name={vehicle.kind} />
-        <span>
-          <strong>{vehicle.name}</strong>
-          <span class="block muted text-sm">{vehicle.kind}</span>
-        </span>
-      </a>
-      <button class="btn" type="button" aria-pressed={vehicle.starred} aria-label={vehicle.starred ? `${vehicle.name} is the default` : `Star ${vehicle.name}`} onclick={() => star(vehicle)}>
-        {vehicle.starred ? '★' : '☆'}
-      </button>
+  {#if vehicles.length > 0}
+    <div class="vehicle-columns">
+      {#each vehicles as vehicle (vehicle.id)}
+        <article class="card stripe grid gap-3" style={`--tone: var(--tone-${vehicle.kind})`}>
+          <div class="pay-card-head">
+            <a class="flex items-center gap-3 min-w-0 no-underline" href={`/vehicles/${vehicle.id}`} onclick={(event) => follow(event, `/vehicles/${vehicle.id}`)}>
+              <Glyph name={vehicle.kind} />
+              <span>
+                <strong>{vehicle.name}</strong>
+                <span class="block muted text-sm">{vehicle.kind}</span>
+              </span>
+            </a>
+            <button class="btn" type="button" aria-pressed={vehicle.starred} aria-label={vehicle.starred ? `${vehicle.name} is the default` : `Star ${vehicle.name}`} onclick={() => star(vehicle)}>
+              {vehicle.starred ? '★' : '☆'}
+            </button>
+          </div>
+          <div class="pay-chips">
+            <span class="pay-chip pay-chip-roll" data-chip="odometer">{odometerChip(vehicle.currentOdometerMiles)}</span>
+            <span class="pay-chip pay-chip-kind" data-chip="mpg">{mpgChip(vehicle)}</span>
+          </div>
+        </article>
+      {/each}
     </div>
-  {/each}
+  {/if}
 </div>

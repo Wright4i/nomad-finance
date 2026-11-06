@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Envelope;
 
 use App\Account\AccountService;
+use App\Calendar\CalendarEntryService;
 use App\Auth\Actor;
 use App\Auth\AuthService;
 use App\Bill\BillService;
@@ -431,6 +432,7 @@ final class EnvelopeRulesTest extends TestCase
             $this->envelopes,
             new PayCycleService($this->pdo, $actor),
             new TripService($this->pdo, $actor, $catalog, new Drive(false)),
+            new CalendarEntryService($this->pdo, $actor),
         );
 
         $sheet = $dashboard->show('2026-11-03');

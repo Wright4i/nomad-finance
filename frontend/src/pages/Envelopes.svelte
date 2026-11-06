@@ -181,7 +181,7 @@
 <div class="grid gap-5">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <h1 class="text-3xl m-0">Envelopes</h1>
-    <a class="btn primary" href="/categories/new" onclick={(event) => { event.preventDefault(); go('/categories/new'); }}>Add Bucket</a>
+    <a class="btn primary" href="/categories/new" onclick={(event) => { event.preventDefault(); go('/categories/new'); }}>Add bucket</a>
   </div>
   <p class="muted m-0">Assign cash from checking, savings, and cash. An assignment does not change an account balance.</p>
   <Note bind:message />
@@ -289,33 +289,39 @@
                 </span>
                 <label class="bucket-field">
                   <span>Assigned</span>
-                  <input
-                    name={`amount-${category.id}`}
-                    aria-label={`Assigned ${category.name}`}
-                    inputmode="decimal"
-                    disabled={!editable || category.archivedAt !== null || category.role === 'locked'}
-                    value={drafts[category.id] ?? ''}
-                    oninput={(event) => {
-                      drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
-                      queueSave();
-                    }}
-                    onkeydown={saveNow}
-                  />
+                  <span class="money-input">
+                    <span class="money-mark" aria-hidden="true">$</span>
+                    <input
+                      name={`amount-${category.id}`}
+                      aria-label={`Assigned ${category.name}`}
+                      inputmode="decimal"
+                      disabled={!editable || category.archivedAt !== null || category.role === 'locked'}
+                      value={drafts[category.id] ?? ''}
+                      oninput={(event) => {
+                        drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
+                        queueSave();
+                      }}
+                      onkeydown={saveNow}
+                    />
+                  </span>
                 </label>
                 <label class="bucket-field">
                   <span>Max</span>
-                  <input
-                    name={`maximum-${category.id}`}
-                    aria-label={`Maximum ${category.name}`}
-                    inputmode="decimal"
-                    disabled={!editable || category.archivedAt !== null}
-                    value={maximumDrafts[category.id] ?? ''}
-                    oninput={(event) => {
-                      maximumDrafts[category.id] = (event.currentTarget as HTMLInputElement).value;
-                      queueSave();
-                    }}
-                    onkeydown={saveNow}
-                  />
+                  <span class="money-input">
+                    <span class="money-mark" aria-hidden="true">$</span>
+                    <input
+                      name={`maximum-${category.id}`}
+                      aria-label={`Maximum ${category.name}`}
+                      inputmode="decimal"
+                      disabled={!editable || category.archivedAt !== null}
+                      value={maximumDrafts[category.id] ?? ''}
+                      oninput={(event) => {
+                        maximumDrafts[category.id] = (event.currentTarget as HTMLInputElement).value;
+                        queueSave();
+                      }}
+                      onkeydown={saveNow}
+                    />
+                  </span>
                 </label>
                 {#if over}
                   <span>Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</span>

@@ -151,15 +151,19 @@ final class PlannerHeadingTest extends TestCase
         self::assertIsArray($created);
         self::assertSame(201, $created['ok'], (string) ($created['message'] ?? ''));
         self::assertSame('Seattle', $created['city']);
-        $expected = PlannerHeading::phrase((int) $created['id'], 'Seattle');
+        $expected = [];
+        foreach (array_keys(PlannerHeading::PHRASES) as $index) {
+            $expected[] = PlannerHeading::phrase('Seattle', $index);
+        }
 
         self::driver()->navigate()->refresh();
         self::waitForText('Available to assign');
         self::wait()->until(function () use ($expected): bool {
-            return self::heading()['text'] === $expected;
+            return in_array(self::heading()['text'], $expected, true);
         });
         $phrase = self::heading();
-        self::assertSame($expected, $phrase['text']);
+        self::assertContains($phrase['text'], $expected);
+        self::assertStringContainsString('Seattle', $phrase['text']);
         self::assertSame('italic', $phrase['style']);
         self::assertSame('600', (string) $phrase['weight']);
         self::assertStringContainsString('Fraunces', $phrase['family']);

@@ -98,7 +98,7 @@ final class DatePickerTest extends TestCase
         self::click('Use demo');
         self::waitForText('Available to assign');
 
-        self::clickLink('New Log');
+        self::clickLink('New log');
         self::waitForText('New log');
         self::wait()->until(fn (): bool => self::attr('input[name="date"]', 'aria-label') === 'Date');
         self::assertSame('Choose date', self::attr('input[name="date"] ~ button[aria-label="Choose date"]', 'aria-label'));
@@ -110,7 +110,7 @@ final class DatePickerTest extends TestCase
 
         self::clickLink('Income');
         self::waitForText('Irregular Payor');
-        $payroll = WebDriverBy::xpath('//article[contains(., "Irregular Payor")]//button[normalize-space()="Payroll"]');
+        $payroll = WebDriverBy::xpath('//article[contains(., "Irregular Payor")]//button[normalize-space()="Log Payroll"]');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($payroll))->click();
         self::waitForText('Add a date');
         self::assertTrue(self::payrollOpen());

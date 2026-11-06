@@ -425,7 +425,9 @@ final class PayCycleService
             'rollsOn' => $open['next'],
             'archivedAt' => $row['archived_at'],
         ];
-        $presented['paycheckMinor'] = $this->projected($presented, (string) $open['start']);
+        $shown = $this->projected($presented, (string) $open['start']);
+        $presented['paycheckMinor'] = $shown;
+        $presented['monthlyMinor'] = Paycheck::monthlyAmount(is_int($shown) ? $shown : null, (string) $row['length']);
 
         return $presented;
     }

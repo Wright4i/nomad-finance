@@ -292,10 +292,10 @@ final class VehicleService
             $fallback = null;
         }
         $origin = $row['origin_odometer_miles'] === null ? null : (int) $row['origin_odometer_miles'];
-        $fuelRows = $withReadings ? $this->fuelRows((int) $row['id']) : [];
-        $fills = $withReadings ? Stretch::fillUps($this->stretchRows($fuelRows), $origin) : [];
+        $fuelRows = $this->fuelRows((int) $row['id']);
+        $fills = Stretch::fillUps($this->stretchRows($fuelRows), $origin);
         $readings = $withReadings ? $this->readings($fuelRows, $fills) : [];
-        $pooled = $withReadings ? Fuel::pooled($fills, $min, $max) : null;
+        $pooled = Fuel::pooled($fills, $min, $max);
 
         return [
             'id' => (int) $row['id'],
@@ -375,8 +375,9 @@ final class VehicleService
     }
 
     /**
-     * One row per fill-up. Charges that share an odometer stay one reading.
-     * Newest fill-up first: fill-up date descending, then id descending.
+     * One row per fuel bill. Newest date first, then id descending.
+     * Stretch miles and mpg belong to the charge that opens that odometer.
+     * A later charge at the same reading has nothing new to measure, so those cells stay empty.
      *
      * @param list<array<string, mixed>> $rows
      * @param list<array{odometerMiles:int,miles:?int,gallons:?string,milesPerGallon:?string}> $fills
@@ -384,42 +385,37 @@ final class VehicleService
      */
     private function readings(array $rows, array $fills): array
     {
-        $listed = [];
+        $byOdometer = [];
         foreach ($fills as $fill) {
-            $charges = array_values(array_filter(
-                $rows,
-                static fn (array $row): bool => $row['odometerMiles'] === $fill['odometerMiles'],
-            ));
-            if ($charges === []) {
-                continue;
+            $byOdometer[$fill['odometerMiles']] = $fill;
+        }
+        $opened = [];
+        $listed = [];
+        foreach ($rows as $row) {
+            $odometer = $row['odometerMiles'];
+            $fill = is_int($odometer) && isset($byOdometer[$odometer]) ? $byOdometer[$odometer] : null;
+            $measures = $fill !== null && !isset($opened[(string) $odometer]);
+            if ($odometer !== null) {
+                $opened[(string) $odometer] = true;
             }
-            $first = $charges[0];
-            $amount = 0;
-            $price = $first['pricePerGallonMinor'];
-            $samePrice = true;
-            foreach ($charges as $charge) {
-                $amount += (int) $charge['amountMinor'];
-                if ($charge['pricePerGallonMinor'] !== $price) {
-                    $samePrice = false;
-                }
-            }
+            $price = $row['pricePerGallonMinor'] === null ? null : (int) $row['pricePerGallonMinor'];
             $listed[] = [
-                'id' => $first['id'],
-                'postedOn' => $first['postedOn'],
-                'odometerMiles' => $fill['odometerMiles'],
-                'pricePerGallonMinor' => $samePrice ? $price : null,
-                'amountMinor' => $amount,
-                'accountId' => $first['accountId'],
-                'accountName' => $first['accountName'],
-                'currency' => $first['currency'],
-                'categoryId' => $first['categoryId'],
+                'id' => (int) $row['id'],
+                'postedOn' => (string) $row['postedOn'],
+                'odometerMiles' => $odometer,
+                'pricePerGallonMinor' => $price,
+                'amountMinor' => (int) $row['amountMinor'],
+                'accountId' => (int) $row['accountId'],
+                'accountName' => (string) $row['accountName'],
+                'currency' => (string) $row['currency'],
+                'categoryId' => (int) $row['categoryId'],
                 'direction' => 'out',
                 'payee' => 'Fuel',
                 'memo' => null,
                 'tripId' => null,
-                'miles' => $fill['miles'],
-                'gallons' => $fill['gallons'],
-                'milesPerGallon' => $fill['milesPerGallon'],
+                'miles' => $measures ? $fill['miles'] : null,
+                'gallons' => Stretch::gallons((int) $row['amountMinor'], $price),
+                'milesPerGallon' => $measures ? $fill['milesPerGallon'] : null,
                 'note' => null,
             ];
         }

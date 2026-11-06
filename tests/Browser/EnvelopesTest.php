@@ -149,7 +149,7 @@ final class EnvelopesTest extends TestCase
                 rentFill: slice ? getComputedStyle(slice).fill : '',
                 teal: teal ? getComputedStyle(teal).color : '',
                 swatch: swatch ? getComputedStyle(swatch).backgroundColor : '',
-                assign: Boolean(envelopes.querySelector('a[href="/envelopes"]')),
+                assign: [...envelopes.querySelectorAll('a, button')].some((node) => (node.textContent || '').trim() === 'Assign'),
                 squares: monthButtons.length,
                 monthButtons,
             };

@@ -208,10 +208,22 @@
     <label class="field">
       <span>Odometer</span>
       <input name="odometer" inputmode="numeric" bind:value={odometer} oninput={() => (odometerTouched = true)} />
-      {#if miles !== null}<span class="muted" data-miles={miles}>{miles} miles traveled</span>{/if}
-      {#if mpg !== null}<span class="muted" data-mpg={mpg}>{mpg} mpg</span>{/if}
       {#if fields.odometerMiles}<em>{fields.odometerMiles}</em>{/if}
     </label>
+    {#if miles !== null}
+      <div class="log-stats">
+        <div class="log-stat log-stat-miles" data-miles={miles}>
+          <strong>{miles} mi.</strong>
+          <span>traveled</span>
+        </div>
+        {#if mpg !== null}
+          <div class="log-stat log-stat-mpg" data-mpg={mpg}>
+            <strong>{mpg}</strong>
+            <span>mpg</span>
+          </div>
+        {/if}
+      </div>
+    {/if}
     <label class="field">
       <span>Price per gallon</span>
       <span class="money-input">
@@ -275,7 +287,10 @@
   {/if}
   <label class="field">
     <span>Amount</span>
-    <input name="amount" inputmode="decimal" bind:value={amount} />
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <input name="amount" inputmode="decimal" bind:value={amount} />
+    </span>
     {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
   </label>
   <label class="field">

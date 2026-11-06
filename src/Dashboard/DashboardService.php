@@ -6,6 +6,7 @@ namespace App\Dashboard;
 
 use App\Auth\Actor;
 use App\Bill\DuePie;
+use App\Calendar\CalendarEntryService;
 use App\Bill\Schedule;
 use App\Envelope\EnvelopeService;
 use App\Http\ApiException;
@@ -26,6 +27,7 @@ final class DashboardService
         private readonly EnvelopeService $envelopes,
         private readonly PayCycleService $payCycles,
         private readonly TripService $trips,
+        private readonly CalendarEntryService $entries,
     ) {
     }
 
@@ -42,7 +44,8 @@ final class DashboardService
         $horizon = $this->horizonDays();
         $windowEnd = Dates::parse($today)->modify('+' . ($horizon - 1) . ' days')->format('Y-m-d');
         $stmt = $this->pdo->prepare(
-            'SELECT id, name, type, side, currency, balance_minor AS balanceMinor
+            'SELECT id, name, type, side, currency, balance_minor AS balanceMinor,
+                    interest_bps AS interestBps
              FROM accounts WHERE user_id = ? AND archived_at IS NULL'
         );
         $stmt->execute([$this->actor->id()]);
@@ -59,10 +62,12 @@ final class DashboardService
                 'side' => (string) $row['side'],
                 'currency' => (string) $row['currency'],
                 'balanceMinor' => (int) $row['balanceMinor'],
+                'interestBps' => $row['interestBps'] === null ? null : (int) $row['interestBps'],
             ];
         }
 
         $summary = NetWorth::summarize($accounts);
+        $interest = MonthlyInterest::summarize($accounts);
         $cycles = $this->payCycles->list($today, false);
         $income = [];
         $incomeMinor = 0;
@@ -103,15 +108,27 @@ final class DashboardService
 
         $listed = $this->trips->list($today);
         $heading = PlannerHeading::label($listed, $today);
-        $timeline = array_merge($timeline, $this->bills($today, $windowEnd), $this->stays($listed, $today, $windowEnd));
+        $timeline = array_merge(
+            $timeline,
+            $this->bills($today, $windowEnd),
+            $this->stays($listed, $today, $windowEnd),
+            $this->entryMarks($today, $windowEnd),
+        );
         usort($timeline, static function (array $left, array $right): int {
             $date = strcmp((string) $left['on'], (string) $right['on']);
             if ($date !== 0) {
                 return $date;
             }
-            $order = ['payday' => 0, 'bill' => 1, 'stay' => 2, 'balanceDue' => 3];
+            $order = ['payday' => 0, 'bill' => 1, 'stay' => 2, 'balanceDue' => 3, 'entry' => 4];
+            $kind = ($order[$left['kind']] ?? 9) <=> ($order[$right['kind']] ?? 9);
+            if ($kind !== 0) {
+                return $kind;
+            }
+            if (($left['kind'] ?? '') === 'entry') {
+                return ((int) ($left['id'] ?? 0)) <=> ((int) ($right['id'] ?? 0));
+            }
 
-            return ($order[$left['kind']] ?? 9) <=> ($order[$right['kind']] ?? 9);
+            return 0;
         });
 
         return [
@@ -124,6 +141,8 @@ final class DashboardService
             'netWorthMinor' => $summary['netWorthMinor'],
             'assetsMinor' => $summary['assetsMinor'],
             'liabilitiesMinor' => $summary['liabilitiesMinor'],
+            'interestLostMinor' => $interest['interestLostMinor'],
+            'interestGainedMinor' => $interest['interestGainedMinor'],
             'unconverted' => [],
             'timeline' => $timeline,
             'envelopes' => $this->envelopes->show($today, $payCycleId, $periodId, $upcoming),
@@ -422,6 +441,26 @@ final class DashboardService
         }
 
         return $dates;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function entryMarks(string $today, string $end): array
+    {
+        $rows = [];
+        foreach ($this->entries->between($today, $end) as $entry) {
+            foreach ($entry['days'] as $day) {
+                $rows[] = [
+                    'kind' => 'entry',
+                    'on' => $day,
+                    'id' => $entry['id'],
+                    'text' => $entry['text'],
+                    'startOn' => $entry['startOn'],
+                    'endOn' => $entry['endOn'],
+                ];
+            }
+        }
+
+        return $rows;
     }
 
     /** @param list<array<string, mixed>> $trips

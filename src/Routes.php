@@ -8,6 +8,7 @@ use App\Account\AccountService;
 use App\Auth\Actor;
 use App\Auth\AuthService;
 use App\Bill\BillService;
+use App\Calendar\CalendarEntryService;
 use App\Category\CategoryService;
 use App\Dashboard\DashboardService;
 use App\Demo\DemoLibrary;
@@ -38,6 +39,7 @@ final class Routes
         private readonly TripService $trips,
         private readonly PlaceSearch $places,
         private readonly VehicleService $vehicles,
+        private readonly CalendarEntryService $entries,
         private readonly Actor $actor,
         private readonly DemoLibrary $demo,
     ) {
@@ -55,10 +57,11 @@ final class Routes
         $trips = $this->trips;
         $places = $this->places;
         $vehicles = $this->vehicles;
+        $entries = $this->entries;
         $actor = $this->actor;
         $demo = $this->demo;
 
-        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $actor, $demo): void {
+        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo): void {
             $group->get('/session', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                 return Json::write($response, [
                     'needsSetup' => $auth->needsSetup(),
@@ -89,7 +92,7 @@ final class Routes
                 });
             })->add(CsrfMiddleware::class);
 
-            $group->group('', function (RouteCollectorProxy $secure) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $actor, $demo): void {
+            $group->group('', function (RouteCollectorProxy $secure) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo): void {
                 $secure->post('/logout', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                     $auth->logout();
 
@@ -162,6 +165,23 @@ final class Routes
                         'trip' => $trips->rememberLocality((int) $args['id'], $found['city'], $found['region'], $found['address'], $today),
                     ]);
                 });
+                $secure->get('/calendar-entries', function (ServerRequestInterface $request, ResponseInterface $response) use ($entries) {
+                    $month = $request->getQueryParams()['month'] ?? '';
+
+                    return Json::write($response, ['entries' => $entries->month(is_string($month) ? $month : '')]);
+                });
+                $secure->post('/calendar-entries', function (ServerRequestInterface $request, ResponseInterface $response) use ($entries) {
+                    return Json::write($response, ['entry' => $entries->create(self::body($request))], 201);
+                });
+                $secure->patch('/calendar-entries/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($entries) {
+                    return Json::write($response, ['entry' => $entries->update((int) $args['id'], self::body($request))]);
+                });
+                $secure->post('/calendar-entries/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($entries) {
+                    $entries->delete((int) $args['id']);
+
+                    return Json::write($response, ['ok' => true]);
+                });
+
                 $secure->post('/trips/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($trips) {
                     $body = self::body($request);
                     $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
@@ -220,6 +240,16 @@ final class Routes
                 });
                 $secure->patch('/bills/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
                     return Json::write($response, ['bill' => $bills->update((int) $args['id'], self::body($request))]);
+                });
+                $secure->patch('/bills/{id:[0-9]+}/fuel', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
+                    return Json::write($response, ['bill' => $bills->updateFuel((int) $args['id'], self::body($request))]);
+                });
+                $secure->post('/bills/{id:[0-9]+}/fuel/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
+                    $body = self::body($request);
+                    $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
+                    $bills->deleteFuel((int) $args['id'], $confirm, $body);
+
+                    return Json::write($response, ['ok' => true]);
                 });
                 $secure->post('/bills/{id:[0-9]+}/paid', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
                     return Json::write($response, ['bill' => $bills->markPaid((int) $args['id'], self::body($request))]);

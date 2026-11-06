@@ -9,6 +9,7 @@
             <directory>tests/Account</directory>
             <directory>tests/Auth</directory>
             <directory>tests/Bill</directory>
+            <directory>tests/Calendar</directory>
             <directory>tests/Category</directory>
             <directory>tests/Dashboard</directory>
             <directory>tests/Demo</directory>

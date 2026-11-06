@@ -153,6 +153,7 @@ export type PayCycle = {
   averageOn: boolean;
   hours: string | null;
   paycheckMinor: number | null;
+  monthlyMinor: number | null;
   weekdayPay: WeekdayPay | null;
   monthlyWeekday: MonthlyWeekday | null;
   periodStart: string;
@@ -194,6 +195,14 @@ export type FuelLabel = {
   milesPerGallon: string | null;
   costMinor: number | null;
   priceMinor: number | null;
+};
+
+export type CalendarEntry = {
+  id: number;
+  text: string;
+  startOn: string;
+  endOn: string;
+  days?: string[];
 };
 
 export type Trip = {
@@ -277,12 +286,19 @@ export type Posting = {
   assignedMinor: number;
 };
 
+export type FuelCharge = {
+  id: number;
+  amountMinor: number;
+  pricePerGallonMinor: number | null;
+};
+
 export type VehicleReading = {
   id: number;
   postedOn: string;
   odometerMiles: number | null;
   pricePerGallonMinor: number | null;
   amountMinor: number;
+  charges?: FuelCharge[];
   accountId: number;
   accountName: string;
   currency: string;
@@ -442,6 +458,8 @@ export type Dashboard = {
   netWorthMinor: number | null;
   assetsMinor: number;
   liabilitiesMinor: number;
+  interestLostMinor: number;
+  interestGainedMinor: number;
   unconverted: Unconverted[];
   timeline: TimelineRow[];
   envelopes: EnvelopeSheet;
@@ -456,5 +474,5 @@ export type Dashboard = {
   stay: PlannerStay | null;
   accountTotals: AccountTotal[];
   plannerOrder: PlannerWidget[];
-  plannerSpans: Record<PlannerWidget, 2 | 3 | 6>;
+  plannerSpans: Record<PlannerWidget, 1 | 2 | 3 | 4 | 5 | 6>;
 };

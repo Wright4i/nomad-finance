@@ -268,12 +268,18 @@
   </label>
   <label class="field">
     <span>Total</span>
-    <input name="total" inputmode="decimal" bind:value={total} />
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <input name="total" inputmode="decimal" bind:value={total} />
+    </span>
     {#if fields.totalMinor}<em>{fields.totalMinor}</em>{/if}
   </label>
   <label class="field">
     <span>Amount due</span>
-    <input name="amountDue" inputmode="decimal" bind:value={amountDue} />
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <input name="amountDue" inputmode="decimal" bind:value={amountDue} />
+    </span>
     {#if fields.amountDueMinor}<em>{fields.amountDueMinor}</em>{/if}
   </label>
   <div class="flex flex-wrap gap-2">

@@ -141,6 +141,117 @@ final class BillService
         return $this->get($id);
     }
 
+    /**
+     * Correct one fuel bill's odometer, amount, and price per gallon.
+     * A past reading may sit below the current odometer. A higher reading
+     * raises the current odometer so it never sits below a fuel reading.
+     *
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function updateFuel(int $id, array $input): array
+    {
+        $existing = $this->row($id);
+        $this->assertFuelEntry($existing);
+        $errors = [];
+        $amount = $this->asInt($input['amountMinor'] ?? null);
+        if ($amount === null || $amount < 1) {
+            $errors['amountMinor'] = 'Enter an amount greater than zero.';
+            $amount = 0;
+        }
+        $odometer = $this->asInt($input['odometerMiles'] ?? null);
+        if ($odometer === null || $odometer < 0) {
+            $errors['odometerMiles'] = 'Enter the odometer.';
+            $odometer = 0;
+        }
+        $price = null;
+        if (array_key_exists('pricePerGallonMinor', $input) && $input['pricePerGallonMinor'] !== null && $input['pricePerGallonMinor'] !== '') {
+            $price = $this->asInt($input['pricePerGallonMinor']);
+            if ($price === null || $price < 1) {
+                $errors['pricePerGallonMinor'] = 'Enter a price per gallon greater than zero, or leave it blank.';
+                $price = null;
+            }
+        }
+        if ($errors !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $errors);
+        }
+        $now = gmdate('c');
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare(
+                'UPDATE bills SET amount_minor = ?, odometer_miles = ?, price_per_gallon_minor = ?, updated_at = ? WHERE id = ?'
+            )->execute([$amount, $odometer, $price, $now, $id]);
+            $this->holdOdometer((int) $existing['vehicle_id']);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        if ((string) $existing['status'] !== 'paid' && $amount !== (int) $existing['amount_minor']) {
+            $this->fill->apply($this->today($input));
+        }
+
+        return $this->get($id);
+    }
+
+    /**
+     * Remove the fuel bill. The fuel row is that bill, so nothing is left behind.
+     *
+     * @param array<string, mixed> $input
+     */
+    public function deleteFuel(int $id, bool $confirm, array $input = []): void
+    {
+        $existing = $this->row($id);
+        $this->assertFuelEntry($existing);
+        if (!$confirm) {
+            throw new ApiException(409, 'Confirm before deleting this fuel entry.');
+        }
+        $this->pdo->prepare('DELETE FROM bills WHERE id = ?')->execute([$id]);
+        if ((string) $existing['status'] !== 'paid') {
+            $this->fill->apply($this->today($input));
+        }
+    }
+
+    /** @param array<string, mixed> $existing */
+    private function assertFuelEntry(array $existing): void
+    {
+        if ($existing['source_account_id'] !== null) {
+            throw new ApiException(409, 'This bill is kept by the account.');
+        }
+        if ((string) $existing['type'] !== 'fuel' || $existing['vehicle_id'] === null) {
+            throw new ApiException(409, 'This bill is not a fuel entry.');
+        }
+        if (in_array($existing['status'], ['archived', 'hidden'], true)) {
+            throw new ApiException(409, 'This bill is closed.');
+        }
+    }
+
+    /** Raise the current odometer when a fuel reading now sits above it. Never lower it. */
+    private function holdOdometer(int $vehicleId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT current_odometer_miles FROM vehicles WHERE id = ? AND user_id = ?'
+        );
+        $stmt->execute([$vehicleId, $this->actor->id()]);
+        $current = $stmt->fetchColumn();
+        if ($current === false) {
+            return;
+        }
+        $floor = $this->pdo->prepare(
+            'SELECT MAX(odometer_miles) FROM bills WHERE vehicle_id = ? AND odometer_miles IS NOT NULL'
+        );
+        $floor->execute([$vehicleId]);
+        $highest = $floor->fetchColumn();
+        if ($highest === null || $highest === false || (int) $current >= (int) $highest) {
+            return;
+        }
+        $this->pdo->prepare(
+            'UPDATE vehicles SET current_odometer_miles = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+        )->execute([(int) $highest, gmdate('c'), $vehicleId, $this->actor->id()]);
+    }
+
     /** @param array<string, mixed> $input */
     public function markPaid(int $id, array $input): array
     {

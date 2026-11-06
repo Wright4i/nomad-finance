@@ -202,7 +202,10 @@
   {#if !locked && (targetKind === 'needed' || targetKind === 'balance')}
     <label class="field">
       <span>Amount</span>
-      <input name="targetAmount" inputmode="decimal" bind:value={targetAmount} />
+      <span class="money-input">
+        <span class="money-mark" aria-hidden="true">$</span>
+        <input name="targetAmount" inputmode="decimal" bind:value={targetAmount} />
+      </span>
       {#if fields.targetAmount}<em>{fields.targetAmount}</em>{/if}
     </label>
   {/if}

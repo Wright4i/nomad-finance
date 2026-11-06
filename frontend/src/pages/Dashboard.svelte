@@ -1,23 +1,20 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import CalendarEntryDialog from '../components/CalendarEntryDialog.svelte';
   import Globe from '../components/Globe.svelte';
   import Glyph from '../components/Glyph.svelte';
   import Note from '../components/Note.svelte';
   import { api } from '../lib/api';
+  import { dayChips, plannerDayDates, type DayBill, type DayPayday, type DayStay } from '../lib/daySquare';
+  import { fitThree } from '../lib/fitThree';
   import { formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { wantGaugeLevels } from '../lib/wantGauge';
-  import type { Dashboard, DuePie, EnvelopeCategory, EnvelopeGroup, PlannerStay, PlannerWidget } from '../lib/types';
+  import type { CalendarEntry, Dashboard, DuePie, EnvelopeCategory, EnvelopeGroup, PlannerStay, PlannerWidget } from '../lib/types';
 
   const WIDGETS = ['income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'] as const;
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const SPAN_OPTIONS = [
-    { span: 2, label: 'Single' },
-    { span: 3, label: 'Half' },
-    { span: 6, label: 'Full' },
-  ] as const;
-
-  type PlannerSpan = 2 | 3 | 6;
+  type PlannerSpan = 1 | 2 | 3 | 4 | 5 | 6;
   type PlannerSpans = Record<PlannerWidget, PlannerSpan>;
 
   // Income shares the top row with net worth. Calendar, Trips, and Accounts sit three across.
@@ -82,7 +79,7 @@
   }
 
   function isSpan(value: unknown): value is PlannerSpan {
-    return value === 2 || value === 3 || value === 6;
+    return value === 1 || value === 2 || value === 3 || value === 4 || value === 5 || value === 6;
   }
 
   function spanKey(value: PlannerSpans): string {
@@ -199,6 +196,8 @@
   let sizing = $state<PlannerWidget | null>(null);
   let spanDialog: HTMLDialogElement | undefined = $state();
   let spanChain: Promise<void> = Promise.resolve();
+  let orderChain: Promise<void> = Promise.resolve();
+  let phone = $state(false);
   let dragId = $state<string | null>(null);
   let drag: { id: string; pointerId: number; dx: number; dy: number } | null = null;
   let pieFocus = $state<{ currency: string; type: string; pull: boolean } | null>(null);
@@ -238,10 +237,42 @@
       : [],
   );
 
+  let stays = $state<DayStay[]>([]);
+  let paydays = $state<DayPayday[]>([]);
+  let dayBills = $state<DayBill[]>([]);
+  let entries = $state<CalendarEntry[]>([]);
+  let entryOpen = $state(false);
+  let editing = $state<CalendarEntry | null>(null);
+  let calendarSquares = $derived(
+    data
+      ? plannerDayDates(data.today, spans.calendar).map((date) => ({
+          date,
+          chips: dayChips(date, stays, paydays, dayBills, data.baseCurrency, data.exponent, entries),
+        }))
+      : [],
+  );
+
   async function load(): Promise<void> {
     try {
-      const params = new URLSearchParams({ today: todayISO() });
-      const sheet = await api<Dashboard>(`/api/dashboard?${params}`);
+      const today = todayISO();
+      const monthKey = today.slice(0, 7);
+      const nextKey = shiftMonth(monthKey, 1);
+      const [sheet, tripData, payData, nextPay, billData, nextBills, entryData, nextEntries] = await Promise.all([
+        api<Dashboard>(`/api/dashboard?today=${today}`),
+        api<{ trips: DayStay[] }>(`/api/trips?today=${today}&fuel=0`),
+        api<{ paydays: DayPayday[] }>(`/api/pay-cycles/month?month=${monthKey}&today=${today}`),
+        api<{ paydays: DayPayday[] }>(`/api/pay-cycles/month?month=${nextKey}&today=${today}`),
+        api<{ occurrences: DayBill[] }>(`/api/bills/calendar?month=${monthKey}`),
+        api<{ occurrences: DayBill[] }>(`/api/bills/calendar?month=${nextKey}`),
+        api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${monthKey}`),
+        api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${nextKey}`),
+      ]);
+      stays = tripData.trips;
+      paydays = [...payData.paydays, ...nextPay.paydays];
+      dayBills = [...billData.occurrences, ...nextBills.occurrences];
+      const byId = new Map<number, CalendarEntry>();
+      for (const entry of [...entryData.entries, ...nextEntries.entries]) byId.set(entry.id, entry);
+      entries = [...byId.values()];
       data = sheet;
       const next = normalize(sheet.plannerOrder);
       order = next;
@@ -254,16 +285,22 @@
     }
   }
 
-  async function persist(next: PlannerWidget[]): Promise<void> {
+  function persist(next: PlannerWidget[]): void {
     const key = next.join(',');
-    if (key === saved) return;
-    try {
-      await api('/api/settings', { method: 'PATCH', body: { plannerOrder: next } });
-      saved = key;
-    } catch (err) {
-      message = err instanceof Error ? err.message : 'Could not save the layout.';
-      order = normalize(saved.split(','));
-    }
+    orderChain = orderChain
+      .catch(() => undefined)
+      .then(async () => {
+        if (key === saved) return;
+        try {
+          await api('/api/settings', { method: 'PATCH', body: { plannerOrder: next } });
+          if (order.join(',') !== key) return;
+          saved = key;
+        } catch (err) {
+          if (order.join(',') !== key) return;
+          message = err instanceof Error ? err.message : 'Could not save the layout.';
+          order = normalize(saved.split(','));
+        }
+      });
   }
 
   function widgetUnder(x: number, y: number, selfId: string): string | null {
@@ -359,17 +396,33 @@
   }
 
   function chooseSpan(span: PlannerSpan): void {
-    if (!sizing || spans[sizing] === span) return;
+    if (phone || !sizing || spans[sizing] === span) return;
     const next = { ...spans, [sizing]: span };
     spans = next;
     persistSpans(next);
   }
 
+  function stepWidget(by: -1 | 1): void {
+    if (!sizing) return;
+    const from = order.indexOf(sizing);
+    const to = from + by;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    const next = order.slice();
+    const item = next[from];
+    const neighbor = next[to];
+    if (!item || !neighbor) return;
+    next[from] = neighbor;
+    next[to] = item;
+    order = next;
+    persist(next);
+  }
+
   function openSpan(id: PlannerWidget): void {
     sizing = id;
     void tick().then(() => {
-      if (!spanDialog || spanDialog.open) return;
-      spanDialog.showModal();
+      if (!spanDialog) return;
+      sizing = id;
+      if (!spanDialog.open) spanDialog.showModal();
     });
   }
 
@@ -413,7 +466,38 @@
     return formatMinor(minor, data?.baseCurrency ?? '', data?.exponent ?? 2);
   }
 
-  onMount(load);
+  function openPlannerDay(event: MouseEvent): void {
+    const target = event.target;
+    if (target instanceof Element && target.closest('.calendar-entry, [data-calendar-entry]')) {
+      event.preventDefault();
+      return;
+    }
+    follow(event, widgetPage.calendar);
+  }
+
+  function openEntry(event: MouseEvent, id: number): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const found = entries.find((item) => item.id === id);
+    if (!found) return;
+    editing = found;
+    entryOpen = true;
+  }
+
+  onMount(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const applyPhone = () => {
+      phone = query.matches;
+    };
+    applyPhone();
+    query.addEventListener('change', applyPhone);
+    window.addEventListener('resize', applyPhone);
+    void load();
+    return () => {
+      query.removeEventListener('change', applyPhone);
+      window.removeEventListener('resize', applyPhone);
+    };
+  });
 </script>
 
 <div class="grid gap-4">
@@ -430,6 +514,16 @@
           <span aria-hidden="true">·</span>
           Liabilities <span class="coral">{money(data.liabilitiesMinor)}</span>
         </p>
+        <div class="planner-interest">
+          <p class="planner-interest-lost m-0" data-interest="lost">
+            <span class="planner-interest-label">Interest lost</span>
+            <span class="planner-interest-amount">{money(data.interestLostMinor ?? 0)} per month</span>
+          </p>
+          <p class="planner-interest-gained m-0" data-interest="gained">
+            <span class="planner-interest-label">Interest gained</span>
+            <span class="planner-interest-amount">{money(data.interestGainedMinor ?? 0)} per month</span>
+          </p>
+        </div>
       </section>
 
       {#each order as id (id)}
@@ -485,14 +579,70 @@
             {:else if id === 'calendar'}
               <div class="planner-calendar">
                 <a class="planner-widget-title" href={widgetPage.calendar} onclick={(event) => follow(event, widgetPage.calendar)}>Calendar</a>
-                <a
-                  class="planner-day day today"
-                  href={widgetPage.calendar}
-                  data-today={data.today}
-                  onclick={(event) => follow(event, widgetPage.calendar)}
-                >
-                  <strong><span class="day-week">{weekdayName(data.today)}&nbsp;</span>{Number(data.today.slice(8))}</strong>
-                </a>
+                <div class="planner-days">
+                  {#each calendarSquares as square (square.date)}
+                    <a
+                      class="planner-day day"
+                      class:today={square.date === data.today}
+                      href={widgetPage.calendar}
+                      data-date={square.date}
+                      data-today={square.date === data.today ? data.today : undefined}
+                      onclick={openPlannerDay}
+                    >
+                      <strong><span class="day-week">{weekdayName(square.date)}&nbsp;</span>{Number(square.date.slice(8))}</strong>
+                      <span class="day-items" class:day-scroll={square.chips.length > 3} use:fitThree={square.chips.length}>
+                        {#each square.chips as chip (chip.key)}
+                          {#if chip.kind === 'stay'}
+                            <span class="bill-chip stay-chip" title={chip.name}>
+                              <span class="bill-chip-line">
+                                <Glyph name="tree" mini />
+                                <span class="bill-chip-name">{chip.name}</span>
+                              </span>
+                              <span class="bill-chip-amount">{chip.caption}</span>
+                            </span>
+                          {:else if chip.kind === 'entry'}
+                            <button
+                              class="bill-chip entry-chip"
+                              type="button"
+                              data-calendar-entry={chip.id}
+                              title={chip.name}
+                              onclick={(event) => openEntry(event, chip.id)}
+                              onkeydown={(event) => event.stopPropagation()}
+                            >
+                              <span class="bill-chip-line">
+                                <Glyph name="entry" mini />
+                                <span class="bill-chip-name">{chip.name}</span>
+                              </span>
+                            </button>
+                          {:else if chip.kind === 'income'}
+                            <span class="bill-chip income-chip" title={chip.name}>
+                              <span class="bill-chip-line">
+                                <Glyph name={chip.glyph} mini />
+                                <span class="bill-chip-name">{chip.name}</span>
+                              </span>
+                              <span class="bill-chip-amount money">{formatMinor(chip.amountMinor ?? 0, chip.currency, chip.exponent)}</span>
+                            </span>
+                          {:else}
+                            <span class="bill-chip" class:paid-chip={chip.paid} title={chip.name}>
+                              <span class="bill-chip-line">
+                                <Glyph name={chip.glyph} mini />
+                                <span class="bill-chip-name">{chip.name}</span>
+                              </span>
+                              <span class="bill-chip-amount money">{formatMinor(chip.amountMinor ?? 0, chip.currency, chip.exponent)}</span>
+                            </span>
+                          {/if}
+                        {/each}
+                      </span>
+                      {#if square.chips.length > 3}
+                        <span class="day-more" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M12 5v11M7.5 12.5 12 17.5 16.5 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        </span>
+                      {/if}
+                    </a>
+                  {/each}
+                </div>
               </div>
             {:else if id === 'trips'}
               <a class="planner-widget-title" href={widgetPage.trips} onclick={(event) => follow(event, widgetPage.trips)}>Trips</a>
@@ -707,27 +857,64 @@
   {/if}
 </dialog>
 
-<dialog class="modal" bind:this={spanDialog} aria-labelledby="span-title" onclose={() => (sizing = null)}>
+<dialog class="modal" bind:this={spanDialog} aria-labelledby="span-title" onclose={() => { if (!spanDialog?.open) sizing = null; }}>
   {#if sizing}
     <div class="modal-body">
-      <h2 id="span-title" class="m-0 text-2xl">Size {widgetLabel[sizing]}</h2>
-      <div class="span-toggle" role="radiogroup" aria-label={`Size ${widgetLabel[sizing]}`}>
-        {#each SPAN_OPTIONS as option (option.span)}
-          <label class="choice" class:on={spans[sizing] === option.span}>
-            <input
-              type="radio"
-              name="planner-span"
-              value={option.span}
-              checked={spans[sizing] === option.span}
-              onchange={() => chooseSpan(option.span)}
-            />
-            {option.label}
-          </label>
-        {/each}
+      <h2 id="span-title" class="m-0 text-2xl">Edit {widgetLabel[sizing]} layout</h2>
+      <div class="span-moves">
+        <button
+          class="btn"
+          type="button"
+          disabled={order.indexOf(sizing) <= 0}
+          onpointerdown={keepDragOff}
+          onclick={() => stepWidget(-1)}
+        >Move back</button>
+        <button
+          class="btn"
+          type="button"
+          disabled={order.indexOf(sizing) >= order.length - 1}
+          onpointerdown={keepDragOff}
+          onclick={() => stepWidget(1)}
+        >Move forward</button>
       </div>
+      <label class="span-slider" style={`--span: ${spans[sizing]}`}>
+        <span class="span-slider-readout">
+          <strong>{spans[sizing]}</strong>
+          <span>of 6 columns</span>
+        </span>
+        <input
+          type="range"
+          min="1"
+          max="6"
+          step="1"
+          value={spans[sizing]}
+          aria-label={`Width of ${widgetLabel[sizing]}`}
+          aria-valuemin={1}
+          aria-valuemax={6}
+          aria-valuenow={spans[sizing]}
+          aria-valuetext={`${spans[sizing]} of 6 columns`}
+          disabled={phone}
+          oninput={(event) => {
+            const input = event.currentTarget as HTMLInputElement;
+            if (phone) {
+              if (sizing) input.value = String(spans[sizing]);
+              return;
+            }
+            const raw = Number(input.value);
+            if (isSpan(raw)) chooseSpan(raw);
+          }}
+        />
+        <span class="span-slider-ticks" aria-hidden="true">
+          {#each [1, 2, 3, 4, 5, 6] as stop (stop)}
+            <span class:on={spans[sizing] === stop}>{stop}</span>
+          {/each}
+        </span>
+      </label>
     </div>
     <div class="modal-actions">
       <button class="btn" type="button" onclick={() => spanDialog?.close()}>Close</button>
     </div>
   {/if}
 </dialog>
+
+<CalendarEntryDialog bind:open={entryOpen} entry={editing} onsaved={load} />

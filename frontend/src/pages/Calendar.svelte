@@ -1,13 +1,15 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
+  import CalendarEntryDialog from '../components/CalendarEntryDialog.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api } from '../lib/api';
   import { calendarBillColor, calendarBillShown, calendarBillSide } from '../lib/calendarBill';
+  import { fitThree } from '../lib/fitThree';
   import { exponentOf, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
-  import type { Trip } from '../lib/types';
+  import type { CalendarEntry, Trip } from '../lib/types';
 
   type Payday = { id: number; payor: string; on: string; paycheckMinor: number; length: string };
 
@@ -29,6 +31,9 @@
   let occurrences = $state<Occurrence[]>([]);
   let trips = $state<Trip[]>([]);
   let paydays = $state<Payday[]>([]);
+  let entries = $state<CalendarEntry[]>([]);
+  let entryOpen = $state(false);
+  let editing = $state<CalendarEntry | null>(null);
   let message = $state('');
   let month = $state(todayISO().slice(0, 7));
   let day = $state<string | null>(null);
@@ -68,6 +73,29 @@
 
   function dayStays(date: string): Trip[] {
     return trips.filter((trip) => trip.arriveOn <= date && date <= trip.departOn);
+  }
+
+  function dayEntries(date: string): CalendarEntry[] {
+    return entries
+      .filter((entry) => entry.startOn <= date && date <= entry.endOn)
+      .sort((left, right) => left.startOn.localeCompare(right.startOn) || left.id - right.id);
+  }
+
+  function addEntry(): void {
+    editing = null;
+    entryOpen = true;
+  }
+
+  function openEntry(event: MouseEvent, entry: CalendarEntry): void {
+    event.preventDefault();
+    event.stopPropagation();
+    editing = entry;
+    entryOpen = true;
+  }
+
+  async function reloadEntries(): Promise<void> {
+    const data = await api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${month}`);
+    entries = data.entries;
   }
 
   type Mark = {
@@ -130,64 +158,9 @@
 
   function dayItemCount(date: string): number {
     return (showStays ? dayStays(date).length : 0)
+      + dayEntries(date).length
       + (showIncome ? incomeMarks(date).length : 0)
       + visibleBills(date).length;
-  }
-
-  function fitThree(node: HTMLElement, count: number) {
-    let items = count;
-    let frame = 0;
-
-    const apply = () => {
-      const chips = [...node.querySelectorAll(':scope > .bill-chip')].filter((chip): chip is HTMLElement => chip instanceof HTMLElement);
-      if (items <= 3 || chips.length <= 3) {
-        if (node.style.maxHeight !== '') node.style.maxHeight = '';
-        return;
-      }
-      const first = chips[0];
-      const third = chips[2];
-      const height = Math.ceil(third.offsetTop + third.offsetHeight - first.offsetTop);
-      if (height < 1) return;
-      const current = node.style.maxHeight === '' ? NaN : parseFloat(node.style.maxHeight);
-      if (Number.isNaN(current) || Math.abs(current - height) > 1) node.style.maxHeight = `${height}px`;
-    };
-
-    const schedule = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(apply);
-    };
-
-    const resize = new ResizeObserver(schedule);
-    const watch = () => {
-      resize.disconnect();
-      resize.observe(node);
-      for (const chip of node.querySelectorAll(':scope > .bill-chip')) resize.observe(chip);
-    };
-    const mutations = new MutationObserver(() => {
-      watch();
-      schedule();
-    });
-    const keepScrollbarClick = (event: MouseEvent) => {
-      if (event.offsetX > node.clientWidth || event.offsetY > node.clientHeight) event.stopPropagation();
-    };
-    mutations.observe(node, { childList: true });
-    node.addEventListener('click', keepScrollbarClick);
-    watch();
-    schedule();
-
-    return {
-      update(next: number) {
-        items = next;
-        watch();
-        schedule();
-      },
-      destroy() {
-        cancelAnimationFrame(frame);
-        resize.disconnect();
-        mutations.disconnect();
-        node.removeEventListener('click', keepScrollbarClick);
-      },
-    };
   }
 
   let shown = $derived(cells(month).flatMap((date) => (date === null ? [] : [...incomeMarks(date), ...billMarks(date)])));
@@ -263,10 +236,28 @@
       stale = true;
     };
   });
+
+  $effect(() => {
+    const current = month;
+    let stale = false;
+    api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${current}`)
+      .then((data) => {
+        if (!stale) entries = data.entries;
+      })
+      .catch((err: unknown) => {
+        if (!stale) message = err instanceof Error ? err.message : 'Could not load calendar entries.';
+      });
+    return () => {
+      stale = true;
+    };
+  });
 </script>
 
 <div class="grid gap-4">
-  <h1 class="m-0 text-4xl">Calendar</h1>
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <h1 class="m-0 text-4xl">Calendar</h1>
+    <button class="btn primary" type="button" onclick={addEntry}>Add entry</button>
+  </div>
   <Note bind:message />
   <div class="flex flex-wrap items-center gap-2">
     <button class="btn" type="button" onclick={() => shift(-1)}>Previous month</button>
@@ -341,6 +332,21 @@
                     </span>
                   {/each}
                 {/if}
+                {#each dayEntries(date) as entry (entry.id)}
+                  <button
+                    class="bill-chip entry-chip"
+                    type="button"
+                    data-calendar-entry={entry.id}
+                    title={entry.text}
+                    onclick={(event) => openEntry(event, entry)}
+                    onkeydown={(event) => event.stopPropagation()}
+                  >
+                    <span class="bill-chip-line">
+                      <Glyph name="entry" mini />
+                      <span class="bill-chip-name">{entry.text}</span>
+                    </span>
+                  </button>
+                {/each}
                 {#if showIncome}
                   {#each incomeMarks(date) as mark (`${date}-income-${mark.id}`)}
                     <span class="bill-chip income-chip" title={mark.name}>
@@ -457,3 +463,5 @@
     </div>
   {/if}
 </dialog>
+
+<CalendarEntryDialog bind:open={entryOpen} entry={editing} onsaved={reloadEntries} />

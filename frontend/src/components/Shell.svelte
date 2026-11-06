@@ -180,14 +180,16 @@
   {/if}
 
   <nav class="nav drawer md:static" class:open aria-label="Primary">
-    <div class="px-2 pt-2 pb-3 hidden md:block">
+    <div class="px-2 pt-2 pb-3">
       <p class="brand text-5xl m-0 text-[var(--teal)]">Nomad</p>
       <p class="kicker mt-2">Finance</p>
     </div>
     <hr class="nav-rule" />
     <a class="nav-log" href="/log" class:active={active('/log')} onclick={(event) => visit(event, '/log')}>
-      <Glyph name="log" mini />
-      New Log
+      <span class="nav-log-label">
+        <Glyph name="log" mini />
+        <span>New log</span>
+      </span>
     </a>
     <hr class="nav-rule" />
     {#each groups as group, index}

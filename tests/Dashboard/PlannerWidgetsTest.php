@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Dashboard;
 
 use App\Auth\Actor;
+use App\Calendar\CalendarEntryService;
 use App\Auth\AuthService;
 use App\Bill\Occurrences;
 use App\Database\Database;
@@ -55,6 +56,7 @@ final class PlannerWidgetsTest extends TestCase
             new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor), new PayCycleService($this->pdo, $actor)),
             new PayCycleService($this->pdo, $actor),
             new TripService($this->pdo, $actor, $catalog, new Drive(false)),
+            new CalendarEntryService($this->pdo, $actor),
         );
     }
 
@@ -177,6 +179,70 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame(1750000, $sheet['incomeComing']['2026-11']);
     }
 
+    public function testPayStayAndBillsFollowTheAppToday(): void
+    {
+        $today = $this->appToday();
+        $clock = new \DateTimeImmutable($today);
+        $yesterday = $clock->modify('-1 day')->format('Y-m-d');
+        $tomorrow = $clock->modify('+1 day')->format('Y-m-d');
+        $later = $clock->modify('+4 days')->format('Y-m-d');
+        $month = $clock->format('Y-m');
+
+        $coming = PlannerWidgets::stillComing([
+            ['on' => $yesterday, 'paycheckMinor' => 100],
+            ['on' => $today, 'paycheckMinor' => 200],
+            ['on' => $tomorrow, 'paycheckMinor' => 300],
+        ], $month, $today);
+        $expected = 200 + (str_starts_with($tomorrow, $month) ? 300 : 0);
+        self::assertSame($expected, $coming);
+        if (str_starts_with($yesterday, $month)) {
+            self::assertNotSame($expected + 100, $coming);
+        }
+
+        $payday = PlannerWidgets::payday([
+            ['kind' => 'payday', 'on' => $yesterday, 'payor' => 'Earlier', 'paycheckMinor' => 100],
+            ['kind' => 'payday', 'on' => $tomorrow, 'payor' => 'Next', 'paycheckMinor' => 50],
+            ['kind' => 'payday', 'on' => $today, 'payor' => 'Now', 'paycheckMinor' => 75],
+        ], $today);
+        self::assertNotNull($payday);
+        self::assertSame('Now', $payday['payor']);
+        self::assertSame($today, $payday['on']);
+
+        $underway = $this->stay(1, 'Underway', 'Reno', 'NV', $clock->modify('-3 days')->format('Y-m-d'), $clock->modify('+6 days')->format('Y-m-d'));
+        $arrival = $this->stay(2, 'Arrival', 'Bend', 'OR', $tomorrow, $clock->modify('+6 days')->format('Y-m-d'));
+        $lead = PlannerWidgets::stay([$underway, $arrival], $today);
+        self::assertNotNull($lead);
+        self::assertSame('Arrival', $lead['placeName']);
+        $covered = PlannerWidgets::stay([$underway], $today);
+        self::assertNotNull($covered);
+        self::assertSame('Underway', $covered['placeName']);
+
+        $sheet = $this->dashboard->show($today);
+        self::assertIsArray($sheet['payday']);
+        self::assertGreaterThanOrEqual($today, $sheet['payday']['on']);
+        if ($sheet['stay'] !== null) {
+            $stay = $sheet['stay'];
+            $leads = $stay['arriveOn'] === $today || $stay['arriveOn'] === $tomorrow;
+            $covers = $stay['arriveOn'] <= $today && $today <= $stay['departOn'];
+            self::assertTrue($leads || $covers);
+        }
+
+        $paidOn = $clock->modify('-2 days')->format('Y-m-d');
+        $future = $this->occurrence('Later Bill', 'once', $later, $later, null);
+        $settled = $this->occurrence('Paid Weekly Bill', 'weekly', $paidOn, $later, $paidOn);
+        self::assertSame([[$later, false]], $this->dated(Occurrences::inMonth([$future], substr($later, 0, 7))));
+        $paidDates = $this->dated(Occurrences::inMonth([$settled], substr($paidOn, 0, 7)));
+        self::assertContains([$paidOn, true], $paidDates);
+        foreach ($paidDates as $mark) {
+            if ($mark[0] > $today) {
+                self::assertFalse($mark[1]);
+            }
+        }
+        if (substr($later, 0, 7) === substr($paidOn, 0, 7)) {
+            self::assertContains([$later, false], $paidDates);
+        }
+    }
+
     public function testASavedOrderRoundTripsAndAPartialOrderFallsBack(): void
     {
         $custom = ['bills', 'income', 'calendar', 'trips', 'accounts', 'envelopes'];
@@ -211,9 +277,27 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame(PlannerWidgets::ORDER, $this->auth->current()['plannerOrder']);
     }
 
-    public function testAWidgetSpanIsTwoThreeOrSixAndRestores(): void
+    public function testAWidgetStepsOnePlaceAndTheEndsStayPut(): void
     {
-        // Income is half beside net worth. Calendar, Trips, and Accounts are single, three across.
+        $order = PlannerWidgets::ORDER;
+        $forward = PlannerWidgets::step($order, 'income', 1);
+        self::assertSame(['calendar', 'income', 'trips', 'accounts', 'envelopes', 'bills'], $forward);
+        self::assertSame($order, PlannerWidgets::step($forward, 'income', -1));
+        self::assertSame($order, PlannerWidgets::step($order, 'income', -1));
+        self::assertSame($order, PlannerWidgets::step($order, 'bills', 1));
+        $later = PlannerWidgets::step($order, 'bills', -1);
+        self::assertSame(['income', 'calendar', 'trips', 'accounts', 'bills', 'envelopes'], $later);
+        self::assertSame($order, PlannerWidgets::step($order, 'income', 2));
+        self::assertSame($order, PlannerWidgets::step($order, 'missing', 1));
+
+        $saved = $this->auth->updateSettings(['plannerOrder' => $forward]);
+        self::assertSame($forward, $saved['plannerOrder']);
+        self::assertSame(json_encode($forward), $this->pdo->query("SELECT planner_order FROM user WHERE role = 'demo'")->fetchColumn());
+    }
+
+    public function testAWidgetSpanIsOneThroughSixAndRestores(): void
+    {
+        // Income is 3 beside net worth. Calendar, Trips, and Accounts are 2.
         // Envelopes and Bills each take the row.
         $defaults = [
             'income' => 3,
@@ -223,21 +307,21 @@ final class PlannerWidgetsTest extends TestCase
             'envelopes' => 6,
             'bills' => 6,
         ];
-        self::assertSame([2, 3, 6], PlannerWidgets::SPAN_VALUES);
+        self::assertSame([1, 2, 3, 4, 5, 6], PlannerWidgets::SPAN_VALUES);
         self::assertSame($defaults, PlannerWidgets::SPANS);
         self::assertSame($defaults, PlannerWidgets::spans(null));
         self::assertSame($defaults, $this->dashboard->show('2026-11-05')['plannerSpans']);
         foreach ($defaults as $span) {
-            self::assertContains($span, [2, 3, 6]);
+            self::assertContains($span, PlannerWidgets::SPAN_VALUES);
         }
 
         $custom = [
             'income' => 6,
-            'calendar' => 2,
-            'trips' => 3,
-            'accounts' => 2,
+            'calendar' => 1,
+            'trips' => 5,
+            'accounts' => 4,
             'envelopes' => 2,
-            'bills' => 6,
+            'bills' => 3,
         ];
         self::assertSame($custom, PlannerWidgets::spans(PlannerWidgets::encodeSpans($custom)));
         foreach ([
@@ -270,10 +354,11 @@ final class PlannerWidgetsTest extends TestCase
 
         foreach ([
             ['income' => 4],
-            ['income' => 1, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
+            ['income' => 0, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
+            ['income' => 7, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
             ['income' => '6', 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
             ['income' => 2, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6, 'net' => 3],
-            [2, 3, 6, 2, 2, 6],
+            [1, 2, 3, 4, 5, 6],
         ] as $bad) {
             try {
                 $this->auth->updateSettings(['plannerSpans' => $bad]);
@@ -288,6 +373,40 @@ final class PlannerWidgetsTest extends TestCase
         $this->pdo->prepare('UPDATE user SET planner_spans = ? WHERE role = \'demo\'')->execute(['{"income":9}']);
         self::assertSame($defaults, $this->auth->current()['plannerSpans']);
         self::assertSame($order, $this->auth->current()['plannerOrder']);
+    }
+
+    /** The planner asks for the browser's local date. This suite runs on that clock. */
+    private function appToday(): string
+    {
+        return (new \DateTimeImmutable('now', new \DateTimeZone('America/Los_Angeles')))->format('Y-m-d');
+    }
+
+    /** @return array<string, mixed> */
+    private function occurrence(string $name, string $recurrence, string $anchor, string $next, ?string $paidOn): array
+    {
+        return [
+            'id' => 7,
+            'name' => $name,
+            'type' => 'rent',
+            'otherLabel' => null,
+            'amountMinor' => 1000,
+            'currency' => 'USD',
+            'exponent' => 2,
+            'recurrence' => $recurrence,
+            'anchorDate' => $anchor,
+            'nextDueDate' => $next,
+            'lastPaidOn' => $paidOn,
+            'status' => 'active',
+        ];
+    }
+
+    /**
+     * @param list<array{on:string,paid:bool}> $marks
+     * @return list<array{0:string,1:bool}>
+     */
+    private function dated(array $marks): array
+    {
+        return array_map(static fn (array $mark): array => [$mark['on'], $mark['paid']], $marks);
     }
 
     /** @return array{id:int,placeName:string,city:string,region:string,arriveOn:string,departOn:string} */

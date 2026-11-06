@@ -290,7 +290,10 @@
     <span>
       {#if payKind === 'salary'}Annual salary{:else if payKind === 'hourly'}Hourly rate{:else}Paycheck{/if}
     </span>
-    <input name="rate" inputmode="decimal" bind:value={rate} />
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <input name="rate" inputmode="decimal" bind:value={rate} />
+    </span>
     {#if fields.rateMinor}<em>{fields.rateMinor}</em>{/if}
   </label>
   {#if payKind === 'hourly'}

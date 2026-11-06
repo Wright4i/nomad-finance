@@ -171,7 +171,10 @@
   {/if}
   <label class="field">
     <span>Balance</span>
-    <input name="balance" inputmode="decimal" bind:value={balance} />
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <input name="balance" inputmode="decimal" bind:value={balance} />
+    </span>
     {#if fields.balanceMinor}<em>{fields.balanceMinor}</em>{/if}
   </label>
   <label class="field">
@@ -182,7 +185,10 @@
   {#if showLiability}
     <label class="field">
       <span>Minimum due</span>
-      <input name="minimumDue" inputmode="decimal" bind:value={minimumDue} />
+      <span class="money-input">
+        <span class="money-mark" aria-hidden="true">$</span>
+        <input name="minimumDue" inputmode="decimal" bind:value={minimumDue} />
+      </span>
       {#if fields.minimumDueMinor}<em>{fields.minimumDueMinor}</em>{/if}
     </label>
     <label class="field">
@@ -205,7 +211,10 @@
   {#if showLimit}
     <label class="field">
       <span>Credit limit</span>
-      <input name="creditLimit" inputmode="decimal" bind:value={creditLimit} />
+      <span class="money-input">
+        <span class="money-mark" aria-hidden="true">$</span>
+        <input name="creditLimit" inputmode="decimal" bind:value={creditLimit} />
+      </span>
       {#if fields.creditLimitMinor}<em>{fields.creditLimitMinor}</em>{/if}
     </label>
   {/if}

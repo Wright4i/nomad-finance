@@ -52,6 +52,7 @@ final class DemoLibrary
                 'DELETE FROM bills WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?)'
             )->execute([$id]);
             $this->pdo->prepare('DELETE FROM trips WHERE user_id = ?')->execute([$id]);
+            $this->pdo->prepare('DELETE FROM calendar_entries WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE FROM vehicles WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE FROM accounts WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare('DELETE FROM targets WHERE user_id = ?')->execute([$id]);
@@ -295,6 +296,10 @@ final class DemoLibrary
         $this->seedEnvelopes($userId, $now);
         $this->seedTargets($userId, $now);
         $this->seedLife($userId, $now);
+        $this->pdo->prepare(
+            'INSERT INTO calendar_entries (user_id, text, start_on, end_on, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        )->execute([$userId, 'Calendar entry 1', '2026-11-05', '2026-11-06', $now, $now]);
     }
 
     private function seedTargets(int $userId, string $now): void

@@ -5,7 +5,7 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
-  import { follow } from '../lib/nav.svelte.ts';
+  import { follow, go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { DriveLeg, Trip } from '../lib/types';
 
@@ -142,6 +142,15 @@
     if (next >= 0) index = next;
   }
 
+  function editStay(id: number): void {
+    go(`/trips/${id}`);
+  }
+
+  function locate(id: number): void {
+    choose(id);
+    locateToken += 1;
+  }
+
   function shiftMonth(by: number): void {
     const [year, monthNumber] = month.split('-').map(Number);
     const date = new Date(year, monthNumber - 1 + by, 1);
@@ -157,6 +166,7 @@
     return trip.arriveOn.slice(0, 7) <= month && trip.departOn.slice(0, 7) >= month;
   }
 
+  let locateToken = $state(0);
   let commentDraft = $state('');
   let commentFor = $state<number | null>(null);
   let savedComment = $state('');
@@ -296,6 +306,7 @@
       data-stay-color={stayColor(selected, index)}
       style="--stay: var(--{stayColor(selected, index)})"
     >
+      <button class="stay-card-hit" type="button" aria-label="Edit stay" onclick={() => editStay(selected.id)}></button>
       <p class="m-0 text-2xl">{selected.placeName}</p>
       {#if selected.note}<p class="m-0 text-xl">{selected.note}</p>{/if}
       <p class="muted m-0">{formatDate(selected.arriveOn)} – {formatDate(selected.departOn)} · {selected.status}</p>
@@ -349,7 +360,6 @@
       <button class="btn" type="button" onclick={() => step(1)} disabled={index >= trips.length - 1}>Next</button>
       {#if selected}
         {@const rating = shownRating(selected)}
-        <a class="btn" href={`/trips/${selected.id}`} onclick={(event) => follow(event, `/trips/${selected.id}`)}>Edit</a>
         <div class="stay-rating" role="group" aria-label="Rating">
           {#if rating !== null}
             <span class="stay-rating-value" data-rating={ratingText(rating)}>
@@ -423,6 +433,7 @@
     }))}
     legs={legs.map((leg) => ({ miles: leg.miles, coordinates: leg.coordinates }))}
     selectedId={selected?.id ?? null}
+    locateToken={locateToken}
     onSelect={choose}
   />
 
@@ -469,27 +480,35 @@
     </div>
     {#each trips.filter(overlaps) as trip (trip.id)}
       {@const tripIndex = trips.findIndex((item) => item.id === trip.id)}
-      <button
-        class="btn stay-fill w-full justify-start text-left"
-        type="button"
+      <div
+        class="stay-list stay-fill"
         data-stay-color={stayColor(trip, tripIndex)}
         style="--stay: var(--{stayColor(trip, tripIndex)})"
-        onclick={() => choose(trip.id)}
       >
-        <strong>{trip.placeName}</strong>
-        {#if trip.note}<span> · {trip.note}</span>{/if}
-        <span class="muted"> · {formatDate(trip.arriveOn)} – {formatDate(trip.departOn)}</span>
-        {#if trip.balanceDueOn}<span class="muted"> · balance due {formatDate(trip.balanceDueOn)}</span>{/if}
-        {#if trip.fuel?.miles !== null && trip.fuel}
-          <span class="muted">
-            · Fuel · {trip.fuel.miles} miles from previous stay
-            {#if trip.fuel.milesPerGallon}· {trip.fuel.milesPerGallon} mpg{/if}
-            {#if trip.fuel.costMinor !== null}· {formatMinor(trip.fuel.costMinor, baseCurrency, baseExponent)}{/if}
-          </span>
-        {:else if legs.find((leg) => leg.toId === trip.id)}
-          <span class="muted"> · {legs.find((leg) => leg.toId === trip.id)?.miles} miles from previous stay</span>
-        {/if}
-      </button>
+        <div class="stay-list-copy">
+          <strong>{trip.placeName}</strong>
+          {#if trip.note}<span> · {trip.note}</span>{/if}
+          <span class="muted"> · {formatDate(trip.arriveOn)} – {formatDate(trip.departOn)}</span>
+          {#if trip.balanceDueOn}<span class="muted"> · balance due {formatDate(trip.balanceDueOn)}</span>{/if}
+          {#if trip.fuel?.miles !== null && trip.fuel}
+            <span class="muted">
+              · Fuel · {trip.fuel.miles} miles from previous stay
+              {#if trip.fuel.milesPerGallon}· {trip.fuel.milesPerGallon} mpg{/if}
+              {#if trip.fuel.costMinor !== null}· {formatMinor(trip.fuel.costMinor, baseCurrency, baseExponent)}{/if}
+            </span>
+          {:else if legs.find((leg) => leg.toId === trip.id)}
+            <span class="muted"> · {legs.find((leg) => leg.toId === trip.id)?.miles} miles from previous stay</span>
+          {/if}
+        </div>
+        <div class="stay-list-actions">
+          <button class="icon-btn" type="button" aria-label="Locate stay" onclick={() => locate(trip.id)}>
+            <Glyph name="crosshair" mini />
+          </button>
+          <button class="icon-btn" type="button" aria-label="Edit stay" onclick={() => editStay(trip.id)}>
+            <Glyph name="pencil" mini />
+          </button>
+        </div>
+      </div>
     {/each}
   </section>
 </section>

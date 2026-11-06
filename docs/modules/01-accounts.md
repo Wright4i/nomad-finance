@@ -9,7 +9,7 @@ Create and edit an account for the signed-in user. Demo and the owner do not see
 | Side | Implied, except other, which asks asset or liability |
 | Currency | Not asked. The account is stored as dollars |
 | Balance | Integer cents, zero or greater |
-| Interest | Optional basis points, 0–100000 |
+| Interest | Optional basis points, 0–100000. 500 is 5 percent a year. Credit and loan use it for interest lost. Savings uses it for interest gained |
 | Minimum due | Optional, credit and loan only, in cents |
 | Due day | Optional, credit and loan only, 1–31 |
 | Credit limit | Optional, credit only |

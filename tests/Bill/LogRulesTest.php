@@ -198,6 +198,131 @@ final class LogRulesTest extends TestCase
         self::assertSame('hidden', $hidden);
     }
 
+    public function testEditingAFuelEntryUpdatesTheReadingAndDeletingItRemovesTheBill(): void
+    {
+        $vehicle = $this->vehicles->create([
+            'name' => 'Vehicle 1',
+            'kind' => 'rv',
+            'mpgMinTenths' => 60,
+            'mpgMaxTenths' => 120,
+            'currentOdometerMiles' => 1000,
+        ]);
+        $before = $this->balance();
+        $logged = $this->bills->log([
+            'kind' => 'fuel',
+            'accountId' => $this->checkingId,
+            'amountMinor' => 4000,
+            'vehicleId' => $vehicle['id'],
+            'odometerMiles' => 1100,
+            'pricePerGallonMinor' => 400,
+            'date' => '2026-11-05',
+            'today' => '2026-11-05',
+        ]);
+        $id = (int) $logged['id'];
+        try {
+            $this->bills->updateFuel($id, [
+                'odometerMiles' => -1,
+                'amountMinor' => 0,
+                'pricePerGallonMinor' => 0,
+                'today' => '2026-11-05',
+            ]);
+            self::fail('An invalid fuel edit was stored.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertArrayHasKey('odometerMiles', $e->fields);
+            self::assertArrayHasKey('amountMinor', $e->fields);
+            self::assertArrayHasKey('pricePerGallonMinor', $e->fields);
+        }
+        self::assertSame(4000, $this->bills->get($id)['amountMinor']);
+        self::assertSame(1100, $this->bills->get($id)['odometerMiles']);
+        self::assertSame(400, $this->bills->get($id)['pricePerGallonMinor']);
+        self::assertSame($before, $this->balance());
+
+        $this->bills->markPaid($id, ['paidOn' => '2026-11-05']);
+        $lowered = $this->bills->updateFuel($id, [
+            'odometerMiles' => 1050,
+            'amountMinor' => 2000,
+            'pricePerGallonMinor' => 500,
+            'today' => '2026-11-05',
+        ]);
+        self::assertSame(2000, $lowered['amountMinor']);
+        self::assertSame(1050, $lowered['odometerMiles']);
+        self::assertSame(500, $lowered['pricePerGallonMinor']);
+        self::assertSame('paid', $lowered['status']);
+        self::assertSame($before, $this->balance());
+        $past = $this->vehicles->get($vehicle['id']);
+        self::assertSame(1100, $past['currentOdometerMiles']);
+        self::assertSame(1050, $past['readings'][0]['odometerMiles']);
+        self::assertSame(2000, $past['readings'][0]['amountMinor']);
+        self::assertSame(500, $past['readings'][0]['pricePerGallonMinor']);
+        self::assertSame(50, $past['readings'][0]['miles']);
+        self::assertSame('12.5', $past['readings'][0]['milesPerGallon']);
+
+        $raised = $this->bills->updateFuel($id, [
+            'odometerMiles' => 1200,
+            'amountMinor' => 2000,
+            'pricePerGallonMinor' => 500,
+            'today' => '2026-11-05',
+        ]);
+        self::assertSame(1200, $raised['odometerMiles']);
+        $advanced = $this->vehicles->get($vehicle['id']);
+        self::assertSame(1200, $advanced['currentOdometerMiles']);
+        self::assertSame(200, $advanced['readings'][0]['miles']);
+        self::assertSame('50.0', $advanced['readings'][0]['milesPerGallon']);
+        self::assertSame($before, $this->balance());
+
+        $cleared = $this->bills->updateFuel($id, [
+            'odometerMiles' => 1200,
+            'amountMinor' => 2000,
+            'pricePerGallonMinor' => null,
+            'today' => '2026-11-05',
+        ]);
+        self::assertNull($cleared['pricePerGallonMinor']);
+        self::assertNull($this->vehicles->get($vehicle['id'])['readings'][0]['milesPerGallon']);
+
+        try {
+            $this->bills->deleteFuel($id, false, ['today' => '2026-11-05']);
+            self::fail('A fuel entry was deleted without confirmation.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        self::assertSame(2000, $this->bills->get($id)['amountMinor']);
+
+        $rent = $this->bills->create([
+            'name' => 'Rent 1',
+            'type' => 'rent',
+            'accountId' => $this->checkingId,
+            'amountMinor' => 1000,
+            'currency' => 'USD',
+            'recurrence' => 'monthly',
+            'nextDueDate' => '2026-11-20',
+            'today' => '2026-11-05',
+        ]);
+        try {
+            $this->bills->deleteFuel((int) $rent['id'], true, ['today' => '2026-11-05']);
+            self::fail('A rent bill was deleted with the fuel entry.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        self::assertSame('Rent 1', $this->bills->get((int) $rent['id'])['name']);
+
+        $this->bills->deleteFuel($id, true, ['today' => '2026-11-05']);
+        $count = $this->pdo->prepare('SELECT COUNT(*) FROM bills WHERE id = ?');
+        $count->execute([$id]);
+        self::assertSame(0, (int) $count->fetchColumn());
+        try {
+            $this->bills->get($id);
+            self::fail('The deleted fuel bill was still on the books.');
+        } catch (ApiException $e) {
+            self::assertSame(404, $e->status);
+        }
+        $gone = $this->vehicles->get($vehicle['id']);
+        self::assertSame([], $gone['readings']);
+        self::assertSame(1200, $gone['currentOdometerMiles']);
+        self::assertSame($before, $this->balance());
+        self::assertSame('Rent 1', $this->bills->get((int) $rent['id'])['name']);
+    }
+
     /** @return array<string, mixed> */
     private function named(string $name): array
     {

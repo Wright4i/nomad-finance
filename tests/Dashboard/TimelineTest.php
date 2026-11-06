@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Dashboard;
 
 use App\Auth\Actor;
+use App\Calendar\CalendarEntryService;
 use App\Auth\AuthService;
 use App\Database\Database;
 use App\Dashboard\DashboardService;
@@ -52,6 +53,7 @@ final class TimelineTest extends TestCase
             new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor), new PayCycleService($this->pdo, $actor)),
             new PayCycleService($this->pdo, $actor),
             new TripService($this->pdo, $actor, $catalog, new Drive(false)),
+            new CalendarEntryService($this->pdo, $actor),
         );
     }
 

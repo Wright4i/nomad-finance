@@ -258,7 +258,7 @@ final class AuthService
         if (array_key_exists('plannerSpans', $input)) {
             $acceptedSpans = PlannerWidgets::acceptSpans($input['plannerSpans']);
             if ($acceptedSpans === null) {
-                throw new ApiException(422, 'Check the highlighted fields.', ['plannerSpans' => 'Choose single, half, or full for each widget.']);
+                throw new ApiException(422, 'Check the highlighted fields.', ['plannerSpans' => 'Choose a width from 1 to 6 columns for each widget.']);
             }
             $plannerSpans = PlannerWidgets::encodeSpans($acceptedSpans);
         } else {

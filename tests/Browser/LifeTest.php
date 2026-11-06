@@ -126,18 +126,7 @@ final class LifeTest extends TestCase
 
             return $ready === true;
         });
-        self::clickLink('Edit');
-        self::wait()->until(function (): bool {
-            $ready = self::driver()->executeScript(<<<'JS'
-                const pin = document.querySelector('.globe .map-pin');
-                const label = pin ? pin.getAttribute('aria-label') || '' : '';
-                return label.includes('Stay 1') && label.includes('1 Fremont St, Las Vegas, NV 89101');
-            JS);
-
-            return $ready === true;
-        });
-        self::clickLink('Cancel');
-        self::waitForText('Stay 1');
+        self::assertStayCardAndList();
         $balanceColor = self::assertBalanceChipOnStayOne();
         self::click('Next');
         self::waitForText('Stay 2');
@@ -178,7 +167,7 @@ final class LifeTest extends TestCase
     #[Depends('testAStayKeepsItsNoteAndTheNextPinIsTheOtherStay')]
     public function testLogShowsTheBalanceBeforeItMovesAndAFuelStretch(): void
     {
-        self::clickLink('New Log');
+        self::clickLink('New log');
         self::waitForText('Fuel');
         self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//*[normalize-space()="Recent"]')));
         self::assertSame([], self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="Out"]')));
@@ -196,14 +185,14 @@ final class LifeTest extends TestCase
         self::click('Save log');
         self::waitForText('That reading is below the current odometer.');
         self::replace('odometer', '10600');
-        self::waitForText('100 miles traveled');
+        self::waitForText('100 mi.');
         self::click('Save log');
         self::wait()->until(function (): bool {
             return str_contains(self::driver()->getCurrentURL(), '/calendar');
         });
         self::clickLink('Accounts');
         self::waitForText('$2,490.00');
-        self::clickLink('New Log');
+        self::clickLink('New log');
         self::driver()->executeScript(<<<'JS'
             const input = document.querySelector('input[name="date"]');
             input.value = '01 / 01 / 2099';
@@ -221,7 +210,7 @@ final class LifeTest extends TestCase
         $labels = self::driver()->executeScript(<<<'JS'
             return [...document.querySelectorAll('nav[aria-label="Primary"] a')].map((node) => node.textContent.trim());
         JS);
-        self::assertSame(['New Log', 'Planner', 'Calendar', 'Trips', 'Income', 'Bills', 'Envelopes', 'Accounts', 'Vehicles'], $labels);
+        self::assertSame(['New log', 'Planner', 'Calendar', 'Trips', 'Income', 'Bills', 'Envelopes', 'Accounts', 'Vehicles'], $labels);
         $rules = self::driver()->executeScript(<<<'JS'
             const nav = document.querySelector('nav[aria-label="Primary"]');
             const betweenLinks = (left, right) => {
@@ -236,7 +225,7 @@ final class LifeTest extends TestCase
             const pill = kids.findIndex((node) => node.classList.contains('theme-pill'));
             const demoRule = kids.slice(demo + 1, pill).some((node) => node.tagName === 'HR' && node.classList.contains('nav-rule'));
             return {
-                logPlanner: betweenLinks('New Log', 'Planner'),
+                logPlanner: betweenLinks('New log', 'Planner'),
                 tripsIncome: betweenLinks('Trips', 'Income'),
                 envelopesAccounts: betweenLinks('Envelopes', 'Accounts'),
                 demoPill: demoRule,
@@ -279,7 +268,7 @@ final class LifeTest extends TestCase
         JS);
         self::assertTrue($marks['ruleAboveLog']);
         self::assertSame([
-            ['New Log', true, false],
+            ['New log', true, false],
             ['Planner', true, false],
             ['Calendar', true, false],
             ['Trips', true, false],
@@ -631,13 +620,14 @@ final class LifeTest extends TestCase
     private static function assertStayRating(): void
     {
         $before = self::driver()->executeScript(<<<'JS'
-            const edit = [...document.querySelectorAll('a.btn')].find((node) => node.textContent.trim() === 'Edit');
+            const edit = [...document.querySelectorAll('a, button')].some((node) => node.textContent.trim() === 'Edit');
             const rating = document.querySelector('[aria-label="Rating"]');
             const comment = document.querySelector('input[name="ratingComment"]');
             const zero = document.querySelector('[aria-label="0 stars"]');
-            const nav = edit ? edit.closest('.stay-toolbar-nav') : null;
+            const nav = document.querySelector('.stay-toolbar-nav');
             return {
-                beside: Boolean(edit && rating && nav && rating.closest('.stay-toolbar-nav') === nav),
+                beside: Boolean(rating && nav && rating.closest('.stay-toolbar-nav') === nav),
+                edit,
                 comment: comment !== null,
                 zero: zero !== null,
                 value: document.querySelector('.stay-rating-value') !== null,
@@ -645,6 +635,7 @@ final class LifeTest extends TestCase
         JS);
         self::assertIsArray($before);
         self::assertTrue($before['beside']);
+        self::assertFalse($before['edit']);
         self::assertFalse($before['comment']);
         self::assertFalse($before['zero']);
         self::assertFalse($before['value']);
@@ -670,7 +661,7 @@ final class LifeTest extends TestCase
                 const stroke = line ? getComputedStyle(line).stroke.replace(/\s+/g, '') : '';
                 const lineFill = line ? getComputedStyle(line).fill : '';
                 const value = document.querySelector('.stay-rating-value');
-                const edit = [...document.querySelectorAll('a.btn')].find((node) => node.textContent.trim() === 'Edit');
+                const next = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Next');
                 const bar = document.querySelector('.stay-toolbar');
                 const preview = shape ? shape.querySelector('.stay-star-preview') : null;
                 const previewClip = preview ? getComputedStyle(preview).clipPath.replace(/\s+/g, '') : '';
@@ -686,14 +677,14 @@ final class LifeTest extends TestCase
                 }
                 const hover = texts.find((text) => text.includes('.stay-star:hover') && text.includes('scale(1.03)')) || '';
                 const glow = texts.some((text) => text.includes('.stay-star:hover') && text.includes('drop-shadow') && text.includes('color-mix'));
-                const sameLine = input && edit && Math.abs(input.getBoundingClientRect().top - edit.getBoundingClientRect().top) < 24;
-                const withEdit = edit && shape && Math.abs(edit.getBoundingClientRect().top - shape.getBoundingClientRect().top) < 16;
+                const sameLine = input && next && Math.abs(input.getBoundingClientRect().top - next.getBoundingClientRect().top) < 24;
+                const withNav = next && shape && Math.abs(next.getBoundingClientRect().top - shape.getBoundingClientRect().top) < 16;
                 const save = [...document.querySelectorAll('button')].some((node) => node.textContent.trim() === 'Save comment');
                 return {
                     input: Boolean(input),
                     inBar: Boolean(input && input.closest('.stay-toolbar') === bar),
                     sameLine,
-                    withEdit,
+                    withNav,
                     pressed: star ? star.getAttribute('aria-pressed') : null,
                     fill: shape ? shape.getAttribute('data-fill') : null,
                     fills: shape ? shape.querySelectorAll('.stay-star-fill').length : 0,
@@ -711,7 +702,7 @@ final class LifeTest extends TestCase
                     save,
                     zero: document.querySelector('[aria-label="0 stars"]') !== null,
                     inputTop: input ? input.getBoundingClientRect().top : null,
-                    editTop: edit ? edit.getBoundingClientRect().top : null,
+                    nextTop: next ? next.getBoundingClientRect().top : null,
                     starTop: shape ? shape.getBoundingClientRect().top : null,
                 };
             JS);
@@ -720,7 +711,7 @@ final class LifeTest extends TestCase
             $ready['input']
                 && $ready['inBar']
                 && $ready['sameLine']
-                && $ready['withEdit']
+                && $ready['withNav']
                 && $ready['pressed'] === 'true'
                 && $ready['fill'] === '0.5'
                 && $ready['fills'] === 1
@@ -757,8 +748,8 @@ final class LifeTest extends TestCase
         self::assertStringContainsString('drop-shadow', $three['hoveredFilter']);
         self::assertEqualsWithDelta(1.0, self::matrixScale($three['earlierScale']), 0.01);
         self::assertSame('rgb(62,224,197)', $three['previewColor']);
-        $edit = self::driver()->findElement(WebDriverBy::linkText('Edit'));
-        self::driver()->action()->moveToElement($edit)->perform();
+        $next = self::driver()->findElement(WebDriverBy::xpath('//button[normalize-space()="Next"]'));
+        self::driver()->action()->moveToElement($next)->perform();
         self::assertSame(['empty', 'empty', 'empty', 'empty', 'empty'], self::ghostFills());
 
         self::type('ratingComment', 'Comment 2');
@@ -780,13 +771,15 @@ final class LifeTest extends TestCase
                 const fill = shape ? shape.querySelector('.stay-star-fill') : null;
                 const clip = fill ? getComputedStyle(fill).clipPath.replace(/\s+/g, '') : '';
                 const fillColor = fill ? getComputedStyle(fill).color.replace(/\s+/g, '') : '';
-                const edit = [...document.querySelectorAll('a.btn')].find((node) => node.textContent.trim() === 'Edit');
+                const next = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Next');
                 const value = document.querySelector('.stay-rating-value');
-                const sameLine = input && edit && Math.abs(input.getBoundingClientRect().top - edit.getBoundingClientRect().top) < 24;
+                const sameLine = input && next && Math.abs(input.getBoundingClientRect().top - next.getBoundingClientRect().top) < 24;
+                const edit = [...document.querySelectorAll('a, button')].some((node) => node.textContent.trim() === 'Edit');
                 return Boolean(input)
                     && input.value === 'Comment 2'
                     && sameLine
-                    && input.closest('.stay-toolbar') === edit.closest('.stay-toolbar')
+                    && !edit
+                    && input.closest('.stay-toolbar') === next.closest('.stay-toolbar')
                     && star
                     && star.getAttribute('aria-pressed') === 'true'
                     && shape
@@ -970,7 +963,7 @@ final class LifeTest extends TestCase
                 const day = (date) => document.querySelector(`button[data-date="${date}"]`);
                 const compact = (value) => String(value || '').replace(/\s+/g, '');
                 const card = document.querySelector('.stay-card');
-                const row = [...document.querySelectorAll('button.stay-fill')].find((node) => node.textContent.includes(arguments[4]));
+                const row = [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes(arguments[4]));
                 const arrive = day(arguments[0]);
                 const middle = day(arguments[1]);
                 const depart = day(arguments[2]);
@@ -1004,6 +997,230 @@ final class LifeTest extends TestCase
         self::assertIsArray($paint);
 
         return $paint;
+    }
+
+    private static function assertStayCardAndList(): void
+    {
+        self::assertSame(
+            [],
+            self::driver()->findElements(WebDriverBy::xpath('//a[normalize-space()="Edit"]|//button[normalize-space()="Edit"]')),
+        );
+        $row = self::stayListFacts('Stay 1');
+        self::assertTrue(
+            $row['locate'] && $row['pencil'] && $row['crosshair'] && $row['right'] && $row['inside'] && $row['plain'] && $row['compact'] && $row['card'],
+            json_encode($row),
+        );
+        self::assertPhoneStayListFits();
+
+        self::clickCss('.stay-card-hit');
+        self::waitForPin('Stay 1', '1 Fremont St, Las Vegas, NV 89101');
+        self::clickLink('Cancel');
+        self::waitForText('Stay 1');
+
+        self::wait()->until(function (): bool {
+            $view = self::mapView();
+
+            return $view !== null
+                && $view['zoom'] < 8
+                && abs($view['longitude'] + 115.1398) < 0.8
+                && abs($view['latitude'] - 36.1699) < 0.8
+                && str_contains($view['pin'], 'Stay 1');
+        });
+        $wide = self::mapView();
+        self::assertNotNull($wide);
+        self::clickCss('.stay-list [aria-label="Locate stay"]');
+        self::wait()->until(function (): bool {
+            $view = self::mapView();
+
+            return $view !== null
+                && self::closeZoom($view['zoom'])
+                && abs($view['longitude'] + 115.1398) < 0.8
+                && abs($view['latitude'] - 36.1699) < 0.8
+                && str_contains($view['pin'], 'Stay 1');
+        });
+        $close = self::mapView();
+        self::assertNotNull($close);
+        self::assertGreaterThan($wide['zoom'], $close['zoom']);
+        self::assertTrue(self::closeZoom($close['zoom']));
+
+        self::click('Next month');
+        self::wait()->until(function (): bool {
+            return self::driver()->findElements(
+                WebDriverBy::xpath('//div[contains(@class,"stay-list")]//strong[normalize-space()="Stay 2"]'),
+            ) !== [];
+        });
+        $held = self::mapView();
+        self::assertNotNull($held);
+        $name = self::driver()->findElement(WebDriverBy::xpath('//div[contains(@class,"stay-list")]//strong[normalize-space()="Stay 2"]'));
+        self::driver()->executeScript('arguments[0].scrollIntoView({block:"center", inline:"nearest"})', [$name]);
+        $name->click();
+        usleep(700000);
+        $still = self::mapView();
+        self::assertNotNull($still);
+        self::assertEqualsWithDelta($held['longitude'], $still['longitude'], 0.15);
+        self::assertEqualsWithDelta($held['latitude'], $still['latitude'], 0.15);
+        self::assertEqualsWithDelta($held['zoom'], $still['zoom'], 0.2);
+        self::assertStringContainsString('Stay 1', $still['pin']);
+        $card = self::driver()->findElement(WebDriverBy::cssSelector('.stay-card'))->getText();
+        self::assertStringContainsString('Stay 1', $card);
+        self::assertStringNotContainsString('Stay 2', $card);
+
+        $later = self::stayListFacts('Stay 2');
+        self::assertTrue($later['locate'] && $later['pencil'] && $later['right'] && $later['plain'], json_encode($later));
+        self::clickCss('.stay-list [aria-label="Locate stay"]');
+        self::wait()->until(function (): bool {
+            $view = self::mapView();
+            if ($view === null || !self::closeZoom($view['zoom'])) {
+                return false;
+            }
+            $text = self::driver()->findElement(WebDriverBy::cssSelector('.stay-card'))->getText();
+
+            return abs($view['longitude'] + 118.2437) < 0.8
+                && abs($view['latitude'] - 34.0522) < 0.8
+                && str_contains($view['pin'], 'Stay 2')
+                && str_contains($view['pin'], 'Los Angeles, CA')
+                && str_contains($text, 'Stay 2');
+        });
+        $moved = self::mapView();
+        self::assertNotNull($moved);
+        self::assertTrue(self::closeZoom($moved['zoom']));
+        self::clickCss('.stay-list [aria-label="Locate stay"]');
+        usleep(700000);
+        $again = self::mapView();
+        self::assertNotNull($again);
+        self::assertTrue(self::closeZoom($again['zoom']));
+        self::assertEqualsWithDelta($moved['longitude'], $again['longitude'], 0.15);
+        self::assertEqualsWithDelta($moved['latitude'], $again['latitude'], 0.15);
+        self::assertStringContainsString('Stay 2', $again['pin']);
+
+        self::clickCss('.stay-list [aria-label="Edit stay"]');
+        self::waitForPin('Stay 2', '1 Main St, Los Angeles, CA 90012');
+        self::clickLink('Cancel');
+        self::waitForText('Stay 1');
+    }
+
+    private static function closeZoom(float $zoom): bool
+    {
+        return $zoom >= 14.5 && $zoom < 15.5;
+    }
+
+    private static function waitForPin(string $name, string $address): void
+    {
+        self::wait()->until(function () use ($name, $address): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const pin = document.querySelector('.globe .map-pin');
+                const label = pin ? pin.getAttribute('aria-label') || '' : '';
+                return label.includes(arguments[0]) && label.includes(arguments[1]);
+            JS, [$name, $address]);
+
+            return $ready === true;
+        });
+    }
+
+    private static function clickCss(string $selector): void
+    {
+        $by = WebDriverBy::cssSelector($selector);
+        $node = self::wait()->until(WebDriverExpectedCondition::presenceOfElementLocated($by));
+        self::driver()->executeScript('arguments[0].scrollIntoView({block:"center", inline:"nearest"})', [$node]);
+        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by))->click();
+    }
+
+    /** @return array{longitude: float, latitude: float, zoom: float, pin: string}|null */
+    private static function mapView(): ?array
+    {
+        $view = self::driver()->executeScript(<<<'JS'
+            const globe = document.querySelector('.globe');
+            const pin = document.querySelector('.globe button.map-pin.selected');
+            if (!globe || globe.dataset.longitude === undefined || globe.dataset.latitude === undefined || globe.dataset.zoom === undefined) return null;
+            const longitude = Number(globe.dataset.longitude);
+            const latitude = Number(globe.dataset.latitude);
+            const zoom = Number(globe.dataset.zoom);
+            if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || !Number.isFinite(zoom)) return null;
+            return {
+                longitude,
+                latitude,
+                zoom,
+                pin: pin ? (pin.getAttribute('aria-label') || '') : '',
+            };
+        JS);
+        if (
+            !is_array($view)
+            || !is_numeric($view['longitude'])
+            || !is_numeric($view['latitude'])
+            || !is_numeric($view['zoom'])
+        ) {
+            return null;
+        }
+
+        return [
+            'longitude' => (float) $view['longitude'],
+            'latitude' => (float) $view['latitude'],
+            'zoom' => (float) $view['zoom'],
+            'pin' => (string) $view['pin'],
+        ];
+    }
+
+    /** @return array{locate: bool, pencil: bool, crosshair: bool, right: bool, inside: bool, plain: bool, compact: bool, card: bool} */
+    private static function stayListFacts(string $name): array
+    {
+        $facts = self::driver()->executeScript(<<<'JS'
+            const row = [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes(arguments[0]));
+            const card = document.querySelector('.stay-card-hit');
+            if (!row) return null;
+            const locate = row.querySelector('[aria-label="Locate stay"]');
+            const edit = row.querySelector('[aria-label="Edit stay"]');
+            const title = row.querySelector('strong');
+            const locateBox = locate ? locate.getBoundingClientRect() : null;
+            const editBox = edit ? edit.getBoundingClientRect() : null;
+            const titleBox = title ? title.getBoundingClientRect() : null;
+            const rowBox = row.getBoundingClientRect();
+            const path = edit ? edit.querySelector('path') : null;
+            const mark = locate ? locate.querySelector('circle') : null;
+            return {
+                locate: Boolean(locate && locate.tagName === 'BUTTON' && locate.getAttribute('type') === 'button'),
+                pencil: Boolean(edit && edit.tagName === 'BUTTON' && path && (path.getAttribute('d') || '').includes('M13.2 5.4')),
+                crosshair: Boolean(mark),
+                right: Boolean(locateBox && editBox && titleBox && locateBox.left >= titleBox.right - 1 && editBox.left >= locateBox.right - 1),
+                inside: Boolean(editBox && locateBox && editBox.right <= rowBox.right + 1 && locateBox.left >= rowBox.left),
+                plain: row.tagName !== 'BUTTON' && Boolean(title) && title.closest('button') === null,
+                compact: Boolean(locateBox && editBox && locateBox.width <= 48 && locateBox.height <= 48 && editBox.width <= 48 && editBox.height <= 48),
+                card: Boolean(card && card.tagName === 'BUTTON' && card.getAttribute('type') === 'button' && card.getAttribute('aria-label') === 'Edit stay'),
+            };
+        JS, [$name]);
+        self::assertIsArray($facts);
+
+        return [
+            'locate' => (bool) $facts['locate'],
+            'pencil' => (bool) $facts['pencil'],
+            'crosshair' => (bool) $facts['crosshair'],
+            'right' => (bool) $facts['right'],
+            'inside' => (bool) $facts['inside'],
+            'plain' => (bool) $facts['plain'],
+            'compact' => (bool) $facts['compact'],
+            'card' => (bool) $facts['card'],
+        ];
+    }
+
+    private static function assertPhoneStayListFits(): void
+    {
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(390, 844));
+        try {
+            $fit = self::driver()->executeScript(<<<'JS'
+                const row = [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes('Stay 1'));
+                if (!row) return null;
+                const box = row.getBoundingClientRect();
+                const buttons = [...row.querySelectorAll('button')].map((node) => node.getBoundingClientRect());
+                return {
+                    row: row.scrollWidth <= row.clientWidth + 1,
+                    screen: box.left >= -1 && box.right <= window.innerWidth + 1,
+                    buttons: buttons.length === 2 && buttons.every((item) => item.left >= -1 && item.right <= window.innerWidth + 1),
+                };
+            JS);
+            self::assertIsArray($fit);
+            self::assertTrue($fit['row'] && $fit['screen'] && $fit['buttons'], json_encode($fit));
+        } finally {
+            self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+        }
     }
 
     private static function tripMonth(): string

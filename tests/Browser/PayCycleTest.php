@@ -124,7 +124,110 @@ final class PayCycleTest extends TestCase
             self::assertEqualsWithDelta($cards['first']['left'], $cards['last']['left'], 2);
             self::assertEqualsWithDelta($cards['first']['width'], $cards['last']['width'], 2);
         }
-        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Averaged Payor")]//button[normalize-space()="Payroll"]'))->click();
+        $card = self::driver()->executeScript(<<<'JS'
+            const card = [...document.querySelectorAll('.payor-columns article')].find((node) => node.textContent.includes('Monthly Payor') && !node.textContent.includes('Monthly Weekday'));
+            const weekly = [...document.querySelectorAll('.payor-columns article')].find((node) => node.textContent.includes('Weekly Payor'));
+            const range = card.querySelector('.pay-period-range');
+            const name = card.querySelector('.pay-card-head strong');
+            const button = card.querySelector('.pay-card-head button');
+            const weeklyRange = weekly.querySelector('.pay-period-range');
+            const nameBox = name.getBoundingClientRect();
+            const buttonBox = button.getBoundingClientRect();
+            return {
+                range: range.textContent.trim(),
+                weeklyRange: weeklyRange.textContent.trim(),
+                italic: getComputedStyle(range).fontStyle,
+                button: button.textContent.trim(),
+                background: getComputedStyle(button).backgroundColor,
+                buttonRightOfName: buttonBox.left >= nameBox.right - 1,
+                sameRow: Math.abs((buttonBox.top + buttonBox.bottom) / 2 - (nameBox.top + nameBox.bottom) / 2) < 24,
+                basedOnPayday: card.textContent.includes('Based on payday'),
+                chips: [...card.querySelectorAll('.pay-chip')].map((node) => node.textContent.trim()),
+                weeklyChips: [...weekly.querySelectorAll('.pay-chip')].map((node) => node.textContent.trim()),
+            };
+        JS);
+        self::assertIsArray($card);
+        self::assertSame('Nov 1 - Nov 30 | $7,000.00', $card['range']);
+        self::assertSame('Nov 1 - Nov 7 | $1,000.00', $card['weeklyRange']);
+        self::assertSame('normal', $card['italic']);
+        self::assertSame('Log Payroll', $card['button']);
+        self::assertSame('rgba(0, 0, 0, 0)', $card['background']);
+        self::assertTrue($card['buttonRightOfName']);
+        self::assertTrue($card['sameRow']);
+        self::assertFalse($card['basedOnPayday']);
+        self::assertSame(
+            ['Roll Dec 1', 'Salary', 'Monthly $7,000.00'],
+            $card['chips'],
+        );
+        self::assertNotContains('Check Amount $1,000.00', $card['weeklyChips']);
+        self::assertContains('Monthly $4,333.33', $card['weeklyChips']);
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(390, 844));
+        try {
+            self::wait()->until(function (): bool {
+                $stacked = self::driver()->executeScript(<<<'JS'
+                    const cards = [...document.querySelectorAll('.payor-columns article')];
+                    if (cards.length < 2) return false;
+                    const first = cards[0].getBoundingClientRect();
+                    const second = cards[1].getBoundingClientRect();
+                    return Math.abs(first.left - second.left) < 2 && second.top >= first.bottom - 1;
+                JS);
+
+                return $stacked === true;
+            });
+            $phone = self::driver()->executeScript(<<<'JS'
+                const columns = document.querySelector('.payor-columns').getBoundingClientRect();
+                const cards = [...document.querySelectorAll('.payor-columns article')].map((card) => {
+                    const rect = card.getBoundingClientRect();
+                    const name = card.querySelector('.pay-card-head strong').getBoundingClientRect();
+                    const button = card.querySelector('.pay-card-head button').getBoundingClientRect();
+                    const range = card.querySelector('.pay-period-range').getBoundingClientRect();
+                    const chips = [...card.querySelectorAll('.pay-chip')].map((node) => node.getBoundingClientRect());
+                    const nameMid = (name.top + name.bottom) / 2;
+                    const buttonMid = (button.top + button.bottom) / 2;
+                    const contents = [name, button, range, ...chips];
+                    return {
+                        top: rect.top,
+                        bottom: rect.bottom,
+                        left: rect.left,
+                        right: rect.right,
+                        width: rect.width,
+                        scrollWidth: card.scrollWidth,
+                        clientWidth: card.clientWidth,
+                        buttonRight: button.right,
+                        buttonLeft: button.left,
+                        buttonTop: button.top,
+                        buttonBottom: button.bottom,
+                        beside: button.left >= name.right - 1 && Math.abs(buttonMid - nameMid) < 24,
+                        below: button.top >= name.bottom - 1,
+                        inside: contents.every((box) => box.left >= rect.left - 1 && box.right <= rect.right + 1 && box.top >= rect.top - 1 && box.bottom <= rect.bottom + 1),
+                    };
+                });
+                return { columnsWidth: columns.width, cards };
+            JS);
+            self::assertIsArray($phone);
+            self::assertIsArray($phone['cards']);
+            self::assertGreaterThan(1, count($phone['cards']));
+            $previousBottom = null;
+            foreach ($phone['cards'] as $index => $row) {
+                self::assertIsArray($row);
+                self::assertEqualsWithDelta($phone['cards'][0]['left'], $row['left'], 2);
+                self::assertEqualsWithDelta($phone['columnsWidth'], $row['width'], 2);
+                if ($previousBottom !== null) {
+                    self::assertGreaterThanOrEqual($previousBottom - 1, $row['top']);
+                }
+                $previousBottom = $row['bottom'];
+                self::assertLessThanOrEqual($row['clientWidth'] + 1, $row['scrollWidth']);
+                self::assertLessThanOrEqual($row['right'] + 1, $row['buttonRight']);
+                self::assertGreaterThanOrEqual($row['left'], $row['buttonLeft']);
+                self::assertLessThanOrEqual($row['bottom'] + 1, $row['buttonBottom']);
+                self::assertGreaterThanOrEqual($row['top'], $row['buttonTop']);
+                self::assertTrue($row['beside'] || $row['below']);
+                self::assertTrue($row['inside']);
+            }
+        } finally {
+            self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+        }
+        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Averaged Payor")]//button[normalize-space()="Log Payroll"]'))->click();
         self::waitForText('Payroll · Averaged Payor');
         self::waitForText('$4,000.00');
         self::click('Close');

@@ -172,8 +172,16 @@ Retired from the books.
 _Avoid_: Target
 
 **Interest**:
-The optional annual rate stored on an account, in basis points. It is an account fact.
+The optional annual rate stored on an account, in basis points. One hundred basis points is one percent, so 500 is 5 percent a year. It is an account fact.
 _Avoid_: Paycheck, interest charge
+
+**Interest lost**:
+The monthly cost of interest on credit and loan accounts. Each balance times its interest divided by 12, half up to the cent, then added. A blank rate, a zero rate, or a balance that is not positive adds nothing. Fuel and other stay out.
+_Avoid_: Interest charge
+
+**Interest gained**:
+The monthly gain from interest on savings accounts. The monthly rate is one plus the annual rate, to the power of one twelfth, minus one, applied to the balance, half up to the cent, then added. A blank rate, a zero rate, or a balance that is not positive adds nothing. Checking and cash stay out.
+_Avoid_: Interest yield
 
 **Interest charge**:
 Retired from the books. The annual rate on the account stays.
@@ -234,8 +242,12 @@ An hourly monthly pay cycle. Its hours are the weekdays in the month before the 
 _Avoid_: Weekdays, day of the month
 
 **Paycheck**:
-What one period of a pay cycle brings in. A salary on a regular length is the annual rate split across that length. An hourly paycheck is the rate times the hours. Weekdays mode on a semimonthly cycle splits that gross across the two paydays, half up, with the odd minor unit on the earlier day. A monthly weekday paycheck is the weekday count times the hours per weekday times the rate. It is a preview. An irregular salary is not a paycheck.
+What one period of a pay cycle brings in. A salary on a regular length is the annual rate split across that length. An hourly paycheck is the rate times the hours. Weekdays mode on a semimonthly cycle splits that gross across the two paydays, half up, with the odd minor unit on the earlier day. A monthly weekday paycheck is the weekday count times the hours per weekday times the rate. It is a preview. An irregular salary is not a paycheck. On the income list it is shown beside the open period.
 _Avoid_: Assignment, posting
+
+**Monthly amount**:
+The check scaled to a month, half up to the cent. Weekly multiplies by 52/12, biweekly by 26/12, semimonthly by 2, and monthly stays the check. An irregular cycle has no monthly amount. On the income list the chip is labeled Monthly.
+_Avoid_: Paycheck
 
 **Average payroll**:
 A checkbox on a pay cycle, off by default. When it is on and a payday has no payroll entry, that payday shows the average of keyed amounts dated before it, half up.
@@ -259,6 +271,10 @@ _Avoid_: Horizon
 **Horizon**:
 The 30- or 60-day calendar window saved on the user: today through the next 29 days, or today through the next 59 days. The default is 60. It is not an assignment period.
 _Avoid_: Pay period, open period
+
+**Calendar entry**:
+A note on a span of days, from a start date through an end date.
+_Avoid_: Event, appointment, reminder, stay
 
 **Draw-from account**:
 The account a bill is paid from. Required.
@@ -292,5 +308,5 @@ The person who created the books at setup. Their accounts and bills stay theirs.
 _Avoid_: Admin, the real user
 
 **Demo**:
-The sample user created with the owner. Tests and agents use Demo. Resetting Demo puts the sample accounts, bills, rates, buckets, and pay cycles back.
+The sample user created with the owner. Tests and agents use Demo. Resetting Demo puts the sample accounts, bills, rates, buckets, pay cycles, and calendar entries back.
 _Avoid_: Guest, test user

@@ -99,6 +99,91 @@ final class VehiclesTest extends TestCase
         self::waitForText('Available to assign');
         self::clickLink('Vehicles');
         self::waitForText('Vehicle 1');
+        self::waitForText('10,500 mi');
+        self::waitForText('8.0 mpg');
+        $vehicle = self::wait()->until(function (): array|false {
+            $measured = self::driver()->executeScript(<<<'JS'
+                const columns = document.querySelector('.vehicle-columns');
+                const card = columns ? columns.querySelector('article') : null;
+                const odometer = card ? card.querySelector('[data-chip="odometer"]') : null;
+                const mpg = card ? card.querySelector('[data-chip="mpg"]') : null;
+                if (!columns || !card || !odometer || !mpg) return null;
+                const columnBox = columns.getBoundingClientRect();
+                const cardBox = card.getBoundingClientRect();
+                const inside = (node) => {
+                    const box = node.getBoundingClientRect();
+                    return box.width > 0 && box.height > 0
+                        && box.left >= cardBox.left - 1 && box.right <= cardBox.right + 1
+                        && box.top >= cardBox.top - 1 && box.bottom <= cardBox.bottom + 1;
+                };
+                return {
+                    columns: columnBox.width,
+                    card: cardBox.width,
+                    odometer: odometer.textContent.trim(),
+                    mpg: mpg.textContent.trim(),
+                    inside: inside(odometer) && inside(mpg),
+                };
+            JS);
+
+            return is_array($measured) ? $measured : false;
+        });
+        self::assertSame('10,500 mi', $vehicle['odometer']);
+        self::assertSame('8.0 mpg', $vehicle['mpg']);
+        self::assertTrue($vehicle['inside']);
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(390, 844));
+        try {
+            $phone = self::wait()->until(function (): array|false {
+                $measured = self::driver()->executeScript(<<<'JS'
+                    const columns = document.querySelector('.vehicle-columns');
+                    const card = columns ? columns.querySelector('article') : null;
+                    const odometer = card ? card.querySelector('[data-chip="odometer"]') : null;
+                    const mpg = card ? card.querySelector('[data-chip="mpg"]') : null;
+                    if (!columns || !card || !odometer || !mpg) return null;
+                    const columnBox = columns.getBoundingClientRect();
+                    const cardBox = card.getBoundingClientRect();
+                    const chips = [odometer, mpg].map((node) => node.getBoundingClientRect());
+                    return {
+                        columns: columnBox.width,
+                        card: cardBox.width,
+                        cardLeft: cardBox.left,
+                        cardRight: cardBox.right,
+                        viewport: window.innerWidth,
+                        overflow: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+                        inside: chips.every((box) => box.left >= cardBox.left - 1 && box.right <= cardBox.right + 1 && box.top >= cardBox.top - 1 && box.bottom <= cardBox.bottom + 1),
+                        count: columns.querySelectorAll('article').length,
+                    };
+                JS);
+
+                return is_array($measured) && $measured['card'] > 0 ? $measured : false;
+            });
+            self::assertSame(1, $phone['count']);
+            self::assertTrue($phone['inside']);
+            self::assertTrue($phone['overflow']);
+            self::assertGreaterThanOrEqual(-1, $phone['cardLeft']);
+            self::assertLessThanOrEqual($phone['viewport'] + 1, $phone['cardRight']);
+            self::assertEqualsWithDelta($phone['columns'], $phone['card'], 2);
+        } finally {
+            self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+        }
+        self::clickLink('Bills');
+        self::waitForText('Recurring Monthly Bill');
+        $bills = self::wait()->until(function (): array|false {
+            $measured = self::driver()->executeScript(<<<'JS'
+                const columns = document.querySelector('.bill-columns');
+                const card = columns ? columns.querySelector('.card') : null;
+                if (!columns || !card) return null;
+                return {
+                    columns: columns.getBoundingClientRect().width,
+                    card: card.getBoundingClientRect().width,
+                };
+            JS);
+
+            return is_array($measured) && $measured['columns'] > 0 ? $measured : false;
+        });
+        self::clickLink('Vehicles');
+        self::waitForText('10,500 mi');
+        self::assertEqualsWithDelta($bills['columns'], $vehicle['columns'], 4);
+        self::assertGreaterThanOrEqual($bills['card'] - 1, $vehicle['card']);
         self::clickLinkContaining('Vehicle 1');
         self::waitForText('Minimum mpg');
         self::assertFalse(self::colorFieldPresent());
@@ -141,6 +226,7 @@ final class VehiclesTest extends TestCase
             'Nov 18, 2026',
             'Nov 8, 2026',
             'Nov 1, 2026',
+            'Oct 1, 2026',
             'Oct 1, 2026',
             'Sep 15, 2026',
         ], $dates);

@@ -97,7 +97,7 @@ final class WantLogGaugeTest extends TestCase
         self::waitForText('Use demo');
         self::click('Use demo');
         self::waitForText('Available to assign');
-        self::clickLink('New Log');
+        self::clickLink('New log');
         self::click('Want');
         self::waitForGauge();
 

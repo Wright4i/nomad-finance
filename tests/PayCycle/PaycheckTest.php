@@ -19,6 +19,16 @@ final class PaycheckTest extends TestCase
         self::assertNull(Paycheck::amount('salary', 'monthly', 0, null));
     }
 
+    public function testMonthlyAmountScalesTheCheckAndSkipsIrregular(): void
+    {
+        self::assertSame(433333, Paycheck::monthlyAmount(100000, 'weekly'));
+        self::assertSame(520000, Paycheck::monthlyAmount(240000, 'biweekly'));
+        self::assertSame(500000, Paycheck::monthlyAmount(250000, 'semimonthly'));
+        self::assertSame(700000, Paycheck::monthlyAmount(700000, 'monthly'));
+        self::assertNull(Paycheck::monthlyAmount(150000, 'irregular'));
+        self::assertNull(Paycheck::monthlyAmount(null, 'monthly'));
+    }
+
     public function testFixedIsTheRateAndHourlyRoundsHalfUp(): void
     {
         self::assertSame(150000, Paycheck::amount('fixed', 'irregular', 150000, null));

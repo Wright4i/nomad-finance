@@ -99,7 +99,7 @@ final class CategoriesTest extends TestCase
         self::click('Use demo');
         self::waitForText('Available to assign');
         self::clickLink('Envelopes');
-        self::clickLink('Add Bucket');
+        self::clickLink('Add bucket');
         self::clickLink('Cancel');
         self::waitForText('Needs 1');
         self::waitForText('Wants 1');
@@ -119,7 +119,7 @@ final class CategoriesTest extends TestCase
             return $ready === true;
         });
         self::clickLink('Envelopes');
-        self::clickLink('Add Bucket');
+        self::clickLink('Add bucket');
         self::clickLink('Cancel');
         self::waitForText('Buckets');
         self::waitForText('Needs 1');
@@ -159,7 +159,7 @@ final class CategoriesTest extends TestCase
             return $ready === true;
         });
         self::clickLink('Envelopes');
-        self::clickLink('Add Bucket');
+        self::clickLink('Add bucket');
         self::clickLink('Cancel');
         self::waitForText('Savings 1');
 
@@ -200,7 +200,7 @@ final class CategoriesTest extends TestCase
             return $ready === true;
         });
         self::clickLink('Envelopes');
-        self::clickLink('Add Bucket');
+        self::clickLink('Add bucket');
         self::clickLink('Cancel');
         self::waitForText('Buckets');
     }
@@ -397,7 +397,7 @@ final class CategoriesTest extends TestCase
         self::click('Unlock');
         self::waitForText('Net worth');
         self::clickLink('Envelopes');
-        self::clickLink('Add Bucket');
+        self::clickLink('Add bucket');
         self::clickLink('Cancel');
         self::waitForText('Rent');
         self::waitForTextGone('Needs 1');

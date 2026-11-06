@@ -171,7 +171,7 @@ final class LogTest extends TestCase
         self::assertSame(201, $seeded['vehicleStatus'], (string) ($seeded['message'] ?? ''));
         self::assertSame(201, $seeded['logStatus'], (string) ($seeded['message'] ?? ''));
 
-        self::clickLink('New Log');
+        self::clickLink('New log');
         self::waitForText('New log');
         self::waitForField('odometer', '10500');
         self::waitForField('price', '4.00');
@@ -179,12 +179,34 @@ final class LogTest extends TestCase
         self::assertSame('', self::attr('[data-mpg]', 'data-mpg'));
         self::type('amount', '10');
         self::waitForAttr('[data-mpg]', 'data-mpg', '0.0');
-        self::assertSame('0.0 mpg', self::text('[data-mpg]'));
+        self::assertSame('0.0 mpg', self::statText('[data-mpg]'));
         self::replace('odometer', '10600');
         self::waitForAttr('[data-miles]', 'data-miles', '100');
         self::waitForAttr('[data-mpg]', 'data-mpg', '40.0');
-        self::assertSame('40.0 mpg', self::text('[data-mpg]'));
-        self::assertSame('100 miles traveled', self::text('[data-miles]'));
+        self::assertSame('40.0 mpg', self::statText('[data-mpg]'));
+        self::assertSame('100 mi. traveled', self::statText('[data-miles]'));
+        $squares = self::driver()->executeScript(<<<'JS'
+            const miles = document.querySelector('.log-stat-miles');
+            const mpg = document.querySelector('.log-stat-mpg');
+            if (!miles || !mpg) return null;
+            const milesBox = miles.getBoundingClientRect();
+            const mpgBox = mpg.getBoundingClientRect();
+            return {
+                milesBg: getComputedStyle(miles).backgroundColor,
+                mpgBg: getComputedStyle(mpg).backgroundColor,
+                figure: parseFloat(getComputedStyle(miles.querySelector('strong')).fontSize),
+                beside: mpgBox.left >= milesBox.right - 1,
+                sameRow: Math.abs((mpgBox.top + mpgBox.bottom) / 2 - (milesBox.top + milesBox.bottom) / 2) < 24,
+                square: Math.abs(milesBox.width - milesBox.height) < 2,
+            };
+        JS);
+        self::assertIsArray($squares);
+        self::assertSame('rgb(62, 224, 197)', $squares['milesBg']);
+        self::assertSame('rgb(226, 59, 74)', $squares['mpgBg']);
+        self::assertGreaterThan(32, $squares['figure']);
+        self::assertTrue($squares['beside']);
+        self::assertTrue($squares['sameRow']);
+        self::assertTrue($squares['square']);
         self::assertStringContainsString('/log', self::driver()->getCurrentURL());
         self::assertNotEmpty(self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="Save log"]')));
 
@@ -422,6 +444,13 @@ final class LogTest extends TestCase
         );
 
         return is_string($value) ? $value : '';
+    }
+
+    private static function statText(string $selector): string
+    {
+        $text = preg_replace('/\s+/', ' ', self::text($selector)) ?? '';
+
+        return trim($text);
     }
 
     private static function waitForText(string $text): void

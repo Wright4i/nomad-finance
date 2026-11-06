@@ -36,6 +36,7 @@
     zoom = null,
     quiet = false,
     compact = false,
+    locateToken = 0,
     onSelect = () => {},
     onMarker = () => {},
   }: {
@@ -51,6 +52,8 @@
     /** A picture of the place. Clicks pass through to the cell around the map. */
     quiet?: boolean;
     compact?: boolean;
+    /** Bumps when Locate stay should fly to street level, even if that stay is already centered. */
+    locateToken?: number;
     onSelect?: (id: number) => void;
     onMarker?: (latitude: string, longitude: string) => void;
   } = $props();
@@ -62,6 +65,8 @@
   let stayPins: Marker[] = [];
   let legPins: Marker[] = [];
   let failed = $state(false);
+  let seenLocate = 0;
+  let flownKey = '';
 
   const pinZoom = 15;
   const routeZoom = 3.4;
@@ -107,9 +112,17 @@
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
-  function fly(longitude: number, latitude: number): void {
+  function rememberView(): void {
+    if (!host || !map) return;
+    const center = map.getCenter();
+    host.dataset.zoom = map.getZoom().toFixed(2);
+    host.dataset.longitude = center.lng.toFixed(4);
+    host.dataset.latitude = center.lat.toFixed(4);
+  }
+
+  function fly(longitude: number, latitude: number, zoom = viewZoom()): void {
     if (!map) return;
-    const camera = { center: [longitude, latitude] as LngLat, zoom: viewZoom() };
+    const camera = { center: [longitude, latitude] as LngLat, zoom };
     if (reduced()) map.jumpTo(camera);
     else map.flyTo({ ...camera, essential: true, duration: 400 });
   }
@@ -275,9 +288,8 @@
         interactive: !quiet,
         attributionControl: !quiet,
       });
-      map.on('moveend', () => {
-        if (host && map) host.dataset.zoom = map.getZoom().toFixed(2);
-      });
+      rememberView();
+      map.on('moveend', rememberView);
       map.on('load', () => {
         if (!map) return;
         const line = { 'line-cap': 'round' as const, 'line-join': 'round' as const };
@@ -303,10 +315,11 @@
         drawRoute();
         placeMarker();
         const selected = pins.find((item) => item.id === selectedId) ?? pins[0];
-        if (selected && !marker) fly(Number(selected.longitude), Number(selected.latitude));
+        if (selected && !marker && seenLocate === 0) fly(Number(selected.longitude), Number(selected.latitude));
       });
-    } catch {
+    } catch (error) {
       failed = true;
+      if (host) host.dataset.mapError = error instanceof Error ? error.message : 'The map did not start.';
     }
     return () => {
       pin?.remove();
@@ -324,13 +337,28 @@
     legs;
     selectedId;
     quiet;
+    const token = locateToken;
     if (map) {
       drawPins();
       drawLegLabels();
     }
     if (map?.getSource('route')) drawRoute();
     const selected = pins.find((item) => item.id === selectedId);
-    if (selected && !marker) fly(Number(selected.longitude), Number(selected.latitude));
+    if (!selected || marker || !map) return;
+    const lng = Number(selected.longitude);
+    const lat = Number(selected.latitude);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+    const locating = token !== seenLocate;
+    if (locating) {
+      seenLocate = token;
+      flownKey = `select:${selected.id}:${selected.longitude}:${selected.latitude}`;
+      fly(lng, lat, pinZoom);
+      return;
+    }
+    const key = `select:${selected.id}:${selected.longitude}:${selected.latitude}`;
+    if (flownKey === key) return;
+    flownKey = key;
+    fly(lng, lat);
   });
 
   $effect(() => {

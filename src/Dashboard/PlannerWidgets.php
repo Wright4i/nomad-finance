@@ -32,7 +32,7 @@ final class PlannerWidgets
     ];
 
     /** @var list<int> */
-    public const SPAN_VALUES = [2, 3, 6];
+    public const SPAN_VALUES = [1, 2, 3, 4, 5, 6];
 
     /** @var list<string> */
     public const TYPES = ['checking', 'savings', 'cash', 'credit', 'loan', 'fuel', 'other'];
@@ -78,7 +78,37 @@ final class PlannerWidgets
     }
 
     /**
-     * A stored map is kept only when every widget has a span of 2, 3, or 6.
+     * Swap a widget with the one beside it.
+     * A step of -1 moves it earlier, toward the start of the order.
+     * A step of 1 moves it later. The first widget does not move earlier.
+     * The last widget does not move later.
+     *
+     * @param list<string> $order
+     * @return list<string>
+     */
+    public static function step(array $order, string $widget, int $by): array
+    {
+        $next = array_values($order);
+        if ($by !== -1 && $by !== 1) {
+            return $next;
+        }
+        $from = array_search($widget, $next, true);
+        if (!is_int($from)) {
+            return $next;
+        }
+        $to = $from + $by;
+        if ($to < 0 || $to >= count($next)) {
+            return $next;
+        }
+        $neighbor = $next[$to];
+        $next[$to] = $next[$from];
+        $next[$from] = $neighbor;
+
+        return $next;
+    }
+
+    /**
+     * A stored map is kept only when every widget has a span from 1 to 6.
      * Anything unknown or partial returns the default.
      *
      * @return array<string, int>

@@ -166,8 +166,17 @@
       <rect x="4.5" y="4" width="15" height="16" rx="2" stroke="currentColor" stroke-width="1.8" />
       <circle cx="12.5" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
       <path d="M12.5 12h2.4M4.5 8.2h1.6M4.5 15.8h1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'entry'}
+      <path d="M8 4.5h6.2L18 8.3V19.5H8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+      <path d="M14 4.8V8.5h3.7M10.5 12h5M10.5 15h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'wrench'}
       <path d="M14.7 5.1a2.9 2.9 0 0 0-3.2 4L6.3 14.3a1.7 1.7 0 0 0 2.4 2.4l5.2-5.2a2.9 2.9 0 0 0 3.9-3.6L15.4 10.3 12.6 7.5l2.1-2.4z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'pencil'}
+      <path d="M13.2 5.4 18.6 10.8 8.2 21.2H4.8v-3.4L13.2 5.4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+      <path d="m11.4 7.2 5.4 5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'crosshair'}
+      <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
+      <path d="M12 3.2v3.1M12 17.7v3.1M3.2 12h3.1M17.7 12h3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {/if}
   </svg>
 </span>

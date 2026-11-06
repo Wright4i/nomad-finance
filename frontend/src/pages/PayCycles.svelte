@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import { formatDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { formatChipDate, formatDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { PayCycle } from '../lib/types';
@@ -108,8 +108,19 @@
   }
 
   function span(cycle: PayCycle): string {
-    if (cycle.periodEnd) return `${formatDate(cycle.periodStart)} – ${formatDate(cycle.periodEnd)}`;
-    return `Open since ${formatDate(cycle.periodStart)}`;
+    if (cycle.periodEnd) return `${formatChipDate(cycle.periodStart)} - ${formatChipDate(cycle.periodEnd)}`;
+    return `Open since ${formatChipDate(cycle.periodStart)}`;
+  }
+
+  function kindLabel(kind: PayCycle['payKind']): string {
+    if (kind === 'salary') return 'Salary';
+    if (kind === 'hourly') return 'Hourly';
+    return 'Fixed';
+  }
+
+  function moneyOrDash(minor: number | null): string {
+    if (minor === null) return '—';
+    return formatMinor(minor, session.user?.baseCurrency ?? 'USD');
   }
 </script>
 
@@ -137,35 +148,26 @@
     <div class="payor-columns">
       {#each cycles as cycle (cycle.id)}
         <article class="card stripe grid gap-1" style={`--tone: var(--tone-${cycle.length})`}>
-          <a
-            class="flex items-center gap-3 no-underline"
-            href={`/pay-cycles/${cycle.id}`}
-            onclick={(event) => { event.preventDefault(); go(`/pay-cycles/${cycle.id}`); }}
-          >
-            <Glyph name={cycle.length} />
-            <span>
-              <strong>{cycle.payor}</strong>
-              {#if cycle.archivedAt}<span class="block muted text-sm">archived</span>{/if}
-            </span>
-          </a>
-          <p class="group-title text-xl m-0" style={`--tone: var(--tone-${cycle.length})`}>{span(cycle)}</p>
-          <button class="btn w-fit" type="button" onclick={() => void openPayroll(cycle)}>Payroll</button>
-          <p class="m-0">
-            {cycle.payKind === 'salary' ? 'Salary' : cycle.payKind === 'hourly' ? 'Hourly' : 'Fixed'}
-            {#if cycle.paycheckMinor !== null}
-              · {formatMinor(cycle.paycheckMinor, session.user?.baseCurrency ?? 'USD')}
-            {:else if cycle.payKind === 'salary'}
-              · not split into a paycheck
-            {:else}
-              · enter a rate
-            {/if}
-          </p>
-          <p class="muted m-0">Based on payday {formatDate(cycle.payday)}.</p>
-          {#if cycle.rollsOn}
-            <p class="muted m-0">Rolls on {formatDate(cycle.rollsOn)}.</p>
-          {:else}
-            <p class="muted m-0">Stays open until you type the next payday.</p>
-          {/if}
+          <div class="pay-card-head">
+            <a
+              class="flex items-center gap-3 no-underline"
+              href={`/pay-cycles/${cycle.id}`}
+              onclick={(event) => { event.preventDefault(); go(`/pay-cycles/${cycle.id}`); }}
+            >
+              <Glyph name={cycle.length} />
+              <span>
+                <strong>{cycle.payor}</strong>
+                {#if cycle.archivedAt}<span class="block muted text-sm">archived</span>{/if}
+              </span>
+            </a>
+            <button class="btn" type="button" onclick={() => void openPayroll(cycle)}>Log Payroll</button>
+          </div>
+          <p class="pay-period-range m-0">{span(cycle)} | {moneyOrDash(cycle.paycheckMinor)}</p>
+          <div class="pay-chips">
+            <span class="pay-chip pay-chip-roll">{cycle.rollsOn ? `Roll ${formatChipDate(cycle.rollsOn)}` : 'Open'}</span>
+            <span class="pay-chip pay-chip-kind">{kindLabel(cycle.payKind)}</span>
+            <span class="pay-chip pay-chip-month">Monthly {moneyOrDash(cycle.monthlyMinor)}</span>
+          </div>
         </article>
       {/each}
     </div>
@@ -191,14 +193,17 @@
             }}
           />
         {/if}
-        <input
-          name={`amount-${row.payday}`}
-          inputmode="decimal"
-          value={payrollDrafts[row.payday] ?? ''}
-          oninput={(event) => {
-            payrollDrafts[row.payday] = (event.currentTarget as HTMLInputElement).value;
-          }}
-        />
+        <span class="money-input">
+          <span class="money-mark" aria-hidden="true">$</span>
+          <input
+            name={`amount-${row.payday}`}
+            inputmode="decimal"
+            value={payrollDrafts[row.payday] ?? ''}
+            oninput={(event) => {
+              payrollDrafts[row.payday] = (event.currentTarget as HTMLInputElement).value;
+            }}
+          />
+        </span>
       </label>
     {/each}
     {#if payrollCycle?.length === 'irregular'}

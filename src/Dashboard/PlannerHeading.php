@@ -6,6 +6,7 @@ namespace App\Dashboard;
 
 /**
  * The Planner heading. A label only: it does not move a balance or pick a stay.
+ * Each load picks one phrase. The page keeps that phrase until the next load.
  */
 final class PlannerHeading
 {
@@ -15,17 +16,64 @@ final class PlannerHeading
         'Hello from %s',
         'Settled in %s',
         'Good to be in %s',
+        'Viva %s',
+        'Good evening from %s',
+        'Good morning from %s',
+        'Happy days in %s',
+        'Enjoying the sights in %s',
+        'Living it up in %s',
+        'Greetings from %s',
+        'A fine day in %s',
+        'At home in %s',
+        'Checking in from %s',
+        'A warm hello from %s',
+        'Glad to be in %s',
+        'Out and about in %s',
+        'A good day in %s',
+        'Notes from %s',
+        'A postcard from %s',
+        'The view from %s',
+        'Life in %s',
+        'These days in %s',
+        'Today in %s',
+        'This week in %s',
+        'Quiet time in %s',
+        'A quiet day in %s',
+        'Sunshine in %s',
+        'Fresh air in %s',
+        'Slow days in %s',
+        'Bright days in %s',
+        'Easy days in %s',
+        'A soft landing in %s',
+        'Arrived in %s',
+        'Here in %s',
+        'Still here in %s',
+        'Happy to be in %s',
+        'Nice to be in %s',
+        'Right at home in %s',
+        'Making a home in %s',
+        'Good news from %s',
+        'Hello again from %s',
+        'Back in %s',
+        'Safe and well in %s',
+        'Another day in %s',
+        'A full day in %s',
+        'Good afternoon from %s',
+        'At ease in %s',
+        'Staying a while in %s',
+        'All is well in %s',
     ];
 
     /**
      * Stays are in arrival order, the same order as the trips list.
      * The open stay is the first one whose dates cover today.
      * A handoff day keeps that earlier stay.
+     * A missing index picks one phrase for this load.
      *
      * @param list<array<string, mixed>> $trips
      * @return array{text:string,italic:bool}
      */
-    public static function label(array $trips, string $today): array
+    public static function label(array $trips, string $today, ?int $index = null): array
     {
         foreach ($trips as $trip) {
             $arrive = (string) ($trip['arriveOn'] ?? '');
@@ -39,7 +87,7 @@ final class PlannerHeading
             }
 
             return [
-                'text' => self::phrase((int) ($trip['id'] ?? 0), trim($city)),
+                'text' => self::phrase(trim($city), $index ?? random_int(0, count(self::PHRASES) - 1)),
                 'italic' => true,
             ];
         }
@@ -47,15 +95,20 @@ final class PlannerHeading
         return self::planner();
     }
 
-    public static function phrase(int $stayId, string $city): string
+    public static function phrase(string $place, int $index): string
     {
+        $place = trim($place);
+        if ($place === '') {
+            return 'Planner';
+        }
+
         $count = count(self::PHRASES);
-        $index = $stayId % $count;
+        $index %= $count;
         if ($index < 0) {
             $index += $count;
         }
 
-        return sprintf(self::PHRASES[$index], $city);
+        return sprintf(self::PHRASES[$index], $place);
     }
 
     /** @return array{text:string,italic:bool} */

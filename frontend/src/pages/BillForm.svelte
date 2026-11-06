@@ -230,7 +230,10 @@
   </label>
   <label class="field">
     <span>Amount</span>
-    <input name="amount" inputmode="decimal" bind:value={amount} />
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <input name="amount" inputmode="decimal" bind:value={amount} />
+    </span>
     {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
   </label>
   {#if type === 'fuel' || locked}

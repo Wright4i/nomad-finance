@@ -46,6 +46,24 @@ final class Paycheck
     }
 
     /**
+     * The check scaled to a month, half up to the cent.
+     * Weekly uses 52/12, biweekly 26/12, semimonthly 2, and monthly stays the check.
+     * An irregular cycle has no monthly amount.
+     */
+    public static function monthlyAmount(?int $paycheckMinor, string $length): ?int
+    {
+        if ($paycheckMinor === null || $paycheckMinor < 1) {
+            return null;
+        }
+        $perYear = self::PER_YEAR[$length] ?? null;
+        if ($perYear === null) {
+            return null;
+        }
+
+        return intdiv($paycheckMinor * $perYear + 6, 12);
+    }
+
+    /**
      * Hours for a monthly weekday.
      * Monday through Friday in the calendar month before the payday, times the hours per weekday, times the hourly rate.
      * One paycheck, half up. It is not split across two days. It does not assign money or post it.

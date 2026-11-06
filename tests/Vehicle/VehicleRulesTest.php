@@ -96,12 +96,15 @@ final class VehicleRulesTest extends TestCase
         self::assertSame('9.0', $second['fuel']['milesPerGallon']);
         self::assertSame(400, $second['fuel']['priceMinor']);
         self::assertNotNull($second['fuel']['costMinor']);
+        self::assertNull($this->listed('Vehicle 1')['milesPerGallon']);
 
         $this->fill(10000, 1000, $vehicle['id'], '2026-10-01');
         $this->fill(10020, 1000, $vehicle['id'], '2026-10-02');
         $this->fill(10120, 1000, $vehicle['id'], '2026-10-03');
         $opened = $this->vehicles->get($vehicle['id']);
         self::assertSame('8.0', $opened['milesPerGallon']);
+        self::assertSame('8.0', $this->listed('Vehicle 1')['milesPerGallon']);
+        self::assertSame([], $this->listed('Vehicle 1')['readings']);
         $labeled = $this->trips->get((int) $second['id'], '2026-11-03');
         self::assertSame('8.0', $labeled['fuel']['milesPerGallon']);
         self::assertSame(400, $labeled['fuel']['priceMinor']);
@@ -151,6 +154,27 @@ final class VehicleRulesTest extends TestCase
         self::assertSame('40.0', $byOdometer[10400]['milesPerGallon']);
         self::assertSame(100, $byOdometer[10500]['miles']);
         self::assertSame('40.0', $byOdometer[10500]['milesPerGallon']);
+    }
+
+    public function testTwoChargesOnOneDateAreSeparateRowsAndTheLaterChargeHasNoStretch(): void
+    {
+        $vehicle = $this->vehicles->create($this->vehicle('Vehicle 1', true));
+        $this->fill(10000, 1000, $vehicle['id'], '2026-10-01');
+        $earlier = $this->fill(10100, 1000, $vehicle['id'], '2026-11-01', 'Fuel 1');
+        $later = $this->fill(10100, 2000, $vehicle['id'], '2026-11-01', 'Fuel 2');
+        $rows = array_values(array_filter(
+            $this->vehicles->get($vehicle['id'])['readings'],
+            static fn (array $reading): bool => $reading['postedOn'] === '2026-11-01',
+        ));
+        self::assertCount(2, $rows);
+        self::assertSame($later, $rows[0]['id']);
+        self::assertSame($earlier, $rows[1]['id']);
+        self::assertSame(2000, $rows[0]['amountMinor']);
+        self::assertSame(1000, $rows[1]['amountMinor']);
+        self::assertNull($rows[0]['miles']);
+        self::assertNull($rows[0]['milesPerGallon']);
+        self::assertSame(100, $rows[1]['miles']);
+        self::assertSame('13.3', $rows[1]['milesPerGallon']);
     }
 
     public function testAMissingStarLeavesTheFuelCostEmpty(): void
