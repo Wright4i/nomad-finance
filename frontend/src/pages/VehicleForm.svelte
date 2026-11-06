@@ -1,8 +1,9 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import { formatDate, formatMinor } from '../lib/money';
+  import { formatDate, formatMinor, minorToInput, parseMajor } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import type { Vehicle } from '../lib/types';
 
@@ -28,6 +29,7 @@
   let mpgMax = $state('12.0');
   let starred = $state(false);
   let currentOdometer = $state('');
+  let fuelPrice = $state('');
   let vehicle = $state<Vehicle | null>(null);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
@@ -44,6 +46,7 @@
     mpgMax = tenthsToInput(data.vehicle.mpgMaxTenths);
     starred = data.vehicle.starred;
     currentOdometer = String(data.vehicle.currentOdometerMiles);
+    fuelPrice = data.vehicle.fuelPriceMinor == null ? '' : minorToInput(data.vehicle.fuelPriceMinor, 2);
   }
 
   onMount(() => {
@@ -64,22 +67,35 @@
     if (currentOdometer.trim() === '' || !/^\d+$/.test(currentOdometer.trim())) {
       problems.currentOdometerMiles = 'Enter the current odometer. Zero is only the reading you type.';
     }
+    const priceMinor = fuelPrice.trim() === '' ? null : parseMajor(fuelPrice, 2);
+    if (fuelPrice.trim() !== '' && (priceMinor === null || priceMinor < 1)) {
+      problems.fuelPriceMinor = 'Enter a price per gallon greater than zero, or leave it empty.';
+    }
     fields = problems;
     if (Object.keys(problems).length > 0) return;
     saving = true;
     message = '';
     try {
-      const body = { name, kind, mpgMinTenths: min, mpgMaxTenths: max, starred, currentOdometerMiles: Number(currentOdometer) };
+      const body = {
+        name,
+        kind,
+        mpgMinTenths: min,
+        mpgMaxTenths: max,
+        starred,
+        currentOdometerMiles: Number(currentOdometer),
+        fuelPriceMinor: priceMinor,
+      };
       const data = await api<{ vehicle: Vehicle }>(id ? `/api/vehicles/${id}` : '/api/vehicles', {
         method: id ? 'PATCH' : 'POST',
         body,
       });
       if (!id) {
-        follow(new MouseEvent('click'), `/settings/vehicles/${data.vehicle.id}`);
+        follow(new MouseEvent('click'), `/vehicles/${data.vehicle.id}`);
         return;
       }
       vehicle = data.vehicle;
       starred = data.vehicle.starred;
+      fuelPrice = data.vehicle.fuelPriceMinor == null ? '' : minorToInput(data.vehicle.fuelPriceMinor, 2);
       message = 'Saved.';
     } catch (err) {
       const problem = explain(err);
@@ -93,7 +109,7 @@
 
 <form class="grid gap-4 max-w-3xl" onsubmit={saveVehicle}>
   <h1 class="m-0 text-4xl">{id ? name || 'Edit vehicle' : 'New vehicle'}</h1>
-  {#if message}<p class="banner" class:teal={message === 'Saved.'} aria-live="polite">{message}</p>{/if}
+  <Note bind:message />
   <label class="field">
     <span>Name</span>
     <input name="name" bind:value={name} />
@@ -115,6 +131,14 @@
     <input name="currentOdometer" inputmode="numeric" bind:value={currentOdometer} />
     {#if fields.currentOdometerMiles}<em>{fields.currentOdometerMiles}</em>{/if}
   </label>
+  <label class="field">
+    <span>Fallback price per gallon</span>
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <input name="fuelPrice" inputmode="decimal" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
+    </span>
+    {#if fields.fuelPriceMinor}<em>{fields.fuelPriceMinor}</em>{/if}
+  </label>
   <div class="grid grid-cols-2 gap-3">
     <label class="field">
       <span class="inline-flex items-center gap-2">
@@ -133,7 +157,7 @@
   <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} onclick={() => (starred = !starred)}>{starred ? '★ Default vehicle' : '☆ Make this the default'}</button>
   <div class="flex flex-wrap gap-2">
     <button class="btn primary" type="submit" disabled={saving} aria-busy={saving}>{saving ? 'Saving…' : 'Save vehicle'}</button>
-    <a class="btn" href="/settings/vehicles" onclick={(event) => follow(event, '/settings/vehicles')}>Back</a>
+    <a class="btn" href="/vehicles" onclick={(event) => follow(event, '/vehicles')}>Back</a>
   </div>
 </form>
 

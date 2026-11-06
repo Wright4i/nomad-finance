@@ -457,13 +457,34 @@ final class TripService
 
     private function fuelPrice(): ?int
     {
-        $stmt = $this->pdo->prepare('SELECT fuel_price_minor FROM user WHERE id = ?');
+        $stmt = $this->pdo->prepare(
+            'SELECT id, fuel_price_minor FROM vehicles WHERE user_id = ? AND starred = 1'
+        );
         $stmt->execute([$this->actor->id()]);
-        $value = $stmt->fetchColumn();
-        if ($value === null || $value === false || $value === '') {
+        $vehicle = $stmt->fetch();
+        if (!is_array($vehicle)) {
             return null;
         }
-        $price = (int) $value;
+        $recent = $this->pdo->prepare(
+            'SELECT b.price_per_gallon_minor
+             FROM bills b
+             JOIN accounts a ON a.id = b.account_id
+             WHERE a.user_id = ? AND b.vehicle_id = ? AND b.type = \'fuel\'
+               AND b.status IN (\'active\', \'paused\', \'paid\')
+               AND b.price_per_gallon_minor IS NOT NULL
+             ORDER BY b.anchor_date DESC, b.id DESC
+             LIMIT 1'
+        );
+        $recent->execute([$this->actor->id(), (int) $vehicle['id']]);
+        $logged = $recent->fetchColumn();
+        if ($logged !== false && $logged !== null && (int) $logged > 0) {
+            return (int) $logged;
+        }
+        $fallback = $vehicle['fuel_price_minor'];
+        if ($fallback === null || $fallback === '') {
+            return null;
+        }
+        $price = (int) $fallback;
 
         return $price > 0 ? $price : null;
     }
@@ -502,7 +523,7 @@ final class TripService
             'SELECT b.id, b.amount_minor, b.odometer_miles, b.price_per_gallon_minor, b.vehicle_id
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
-             WHERE a.user_id = ? AND b.vehicle_id = ? AND b.type = \'fuel\' AND b.status = \'paid\'
+             WHERE a.user_id = ? AND b.vehicle_id = ? AND b.type = \'fuel\' AND b.status IN (\'active\', \'paused\', \'paid\')
              ORDER BY b.anchor_date, b.id'
         );
         $stmt->execute([$this->actor->id(), $vehicleId]);

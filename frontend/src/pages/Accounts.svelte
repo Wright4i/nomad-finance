@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
+  import Note from '../components/Note.svelte';
   import { api } from '../lib/api';
   import { formatBps, formatMinor } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
@@ -35,16 +36,16 @@
     <a class="btn primary" href="/accounts/new" onclick={(event) => { event.preventDefault(); go('/accounts/new'); }}>New account</a>
   </div>
   <button class="btn w-fit" type="button" onclick={toggle}>{includeArchived ? 'Hide archived' : 'Show archived'}</button>
-  {#if message}<p class="banner">{message}</p>{/if}
+  <Note bind:message />
   {#if ready && accounts.length === 0}
     <p class="muted">No accounts yet. A balance is a number you type.</p>
   {/if}
   {#if accounts.length > 0}
   <div class="bucket-board">
-    {#each accounts as account (account.id)}
+    {#each accounts as account, index (account.id)}
       <a
         class="bucket-tile"
-        style={`--tone: var(--tone-${account.type})`}
+        style={`--tone: var(--tone-${account.type}); --stagger: ${index}`}
         href={`/accounts/${account.id}`}
         onclick={(event) => { event.preventDefault(); go(`/accounts/${account.id}`); }}
       >

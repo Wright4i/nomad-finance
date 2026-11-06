@@ -4,7 +4,6 @@ export type User = {
   theme: 'dark' | 'light';
   role: 'owner' | 'demo' | 'user';
   horizonDays: number;
-  fuelPriceMinor: number | null;
 };
 
 export type Account = {
@@ -70,6 +69,9 @@ export type EnvelopeGroup = {
   amountMinor: number;
   shareBasisPoints: number;
   over: boolean;
+  assignedMinor: number;
+  maximumMinor: number;
+  targetMinor: number;
 };
 
 export type EnvelopeBill = {
@@ -83,6 +85,7 @@ export type EnvelopeCategory = {
   name: string;
   group: 'needs' | 'wants' | 'savings';
   role?: 'goal' | 'locked';
+  billType?: string | null;
   amountMinor: number;
   billMinor?: number;
   remainingMinor?: number;
@@ -106,6 +109,11 @@ export type EnvelopeSheet = {
   poolMinor: number;
   leftOut: { accountId: number; name: string; currency: string; exponent: number; balanceMinor: number }[];
   billLeftOut?: string[];
+  incomeMinor: number;
+  sources: {
+    income: { id: number; payor: string; length: string; amountMinor: number }[];
+    accounts: { id: number; name: string; type: string; amountMinor: number }[];
+  };
   categories: EnvelopeCategory[];
   groups: EnvelopeGroup[];
   celebrate: boolean;
@@ -297,6 +305,7 @@ export type Vehicle = {
   mpgMaxTenths: number;
   starred: boolean;
   currentOdometerMiles: number;
+  fuelPriceMinor: number | null;
   suggestedPricePerGallonMinor: number | null;
   milesPerGallon: string | null;
   readings: VehicleReading[];
@@ -398,6 +407,31 @@ export type DuePie = {
   leftOut?: string[];
 };
 
+export type PlannerWidget = 'income' | 'calendar' | 'trips' | 'accounts' | 'envelopes' | 'bills';
+
+export type PlannerPayday = {
+  payor: string;
+  on: string;
+  paycheckMinor: number | null;
+};
+
+export type PlannerStay = {
+  id: number;
+  placeName: string;
+  city: string | null;
+  region: string | null;
+  arriveOn: string;
+  departOn: string;
+  latitude: string | null;
+  longitude: string | null;
+};
+
+export type AccountTotal = {
+  type: string;
+  balanceMinor: number;
+  side: 'asset' | 'liability';
+};
+
 export type Dashboard = {
   baseCurrency: string;
   exponent: number;
@@ -416,4 +450,11 @@ export type Dashboard = {
   duePies: Record<string, DuePie[]>;
   heading: string;
   headingItalic: boolean;
+  payday: PlannerPayday | null;
+  incomeComing: Record<string, number>;
+  payorCount: number;
+  stay: PlannerStay | null;
+  accountTotals: AccountTotal[];
+  plannerOrder: PlannerWidget[];
+  plannerSpans: Record<PlannerWidget, 2 | 3 | 6>;
 };

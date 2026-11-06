@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
+  import Note from '../components/Note.svelte';
   import { api, explain } from '../lib/api';
   import { formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
   import type { EnvelopeSheet, PeriodStep } from '../lib/types';
 
@@ -21,7 +23,9 @@
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
+  let celebrateEase = $state(false);
   let ready = $state(false);
+  let sourcesDialog: HTMLDialogElement | undefined = $state();
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   let editable = $derived(sheet?.period?.editable === true);
@@ -51,17 +55,6 @@
       ready = true;
     });
   });
-
-  function choosePayor(event: Event): void {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    payCycleId = Number(value);
-    periodId = null;
-    upcoming = false;
-    message = '';
-    void load().catch((err: unknown) => {
-      message = explain(err).message;
-    });
-  }
 
   function step(target: PeriodStep | null): void {
     if (!target) return;
@@ -156,6 +149,13 @@
         method: 'PUT',
         body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, maximums, upcoming: planning },
       });
+      if (data.celebrate && !prefersReducedMotion()) {
+        celebrateEase = true;
+        await tick();
+        document.querySelectorAll('.bucket-wave').forEach((node) => node.getBoundingClientRect());
+      } else {
+        celebrateEase = data.celebrate === true;
+      }
       sheet = data;
       payCycleId = data.payCycleId;
       upcoming = data.period?.upcoming === true;
@@ -184,31 +184,53 @@
     <a class="btn primary" href="/categories/new" onclick={(event) => { event.preventDefault(); go('/categories/new'); }}>Add Bucket</a>
   </div>
   <p class="muted m-0">Assign cash from checking, savings, and cash. An assignment does not change an account balance.</p>
-  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <Note bind:message />
 
   {#if ready && sheet}
     {#if sheet.payors.length === 0}
       <p class="m-0">Add a pay cycle before assigning. <a href="/pay-cycles/new" onclick={(event) => { event.preventDefault(); go('/pay-cycles/new'); }}>New pay cycle</a></p>
     {:else}
-      <label class="field max-w-xl">
-        <span>Payor</span>
-        <select name="payCycleId" value={sheet.payCycleId ?? ''} onchange={choosePayor}>
-          {#each sheet.payors as payor (payor.id)}
-            <option value={payor.id}>{payor.payor}</option>
-          {/each}
-        </select>
-      </label>
-
       <section class="hero">
-        <p class="kicker m-0">Available to assign</p>
-        <p class="figure">{formatMinor(sheet.availableMinor, sheet.baseCurrency, sheet.exponent)}</p>
-        <p class="muted m-0" title="Checking, savings, and cash, minus what is assigned in open months.">
+        <button class="available-open" type="button" data-action="available" onclick={() => sourcesDialog?.showModal()}>
+          <p class="kicker m-0">Available to assign</p>
+          <p class="figure">{formatMinor(sheet.availableMinor, sheet.baseCurrency, sheet.exponent)}</p>
+        </button>
+        <p class="muted m-0" title="Income from every payor this month, plus checking, savings, and cash.">
           {formatMinor(sheet.assignedMinor, sheet.baseCurrency, sheet.exponent)} assigned of {formatMinor(sheet.poolMinor, sheet.baseCurrency, sheet.exponent)}
         </p>
       </section>
 
+      <dialog class="modal wide" bind:this={sourcesDialog} aria-labelledby="available-title">
+        <div class="modal-body">
+          <h2 id="available-title" class="m-0 text-2xl">Available to assign</h2>
+          <section class="grid gap-2" data-source="income">
+            <h3 class="m-0 text-lg">Income</h3>
+            {#each sheet.sources.income as row (row.id)}
+              <p class="source-row" style={`--tone: var(--tone-${row.length})`}>
+                <Glyph name={row.length} />
+                <span>{row.payor}</span>
+                <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+              </p>
+            {/each}
+          </section>
+          <section class="grid gap-2" data-source="accounts">
+            <h3 class="m-0 text-lg">Accounts</h3>
+            {#each sheet.sources.accounts as row (row.id)}
+              <p class="source-row" data-type={row.type} style={`--tone: var(--tone-${row.type})`}>
+                <Glyph name={row.type} />
+                <span>{row.name}</span>
+                <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+              </p>
+            {/each}
+          </section>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" type="button" onclick={() => sourcesDialog?.close()}>Close</button>
+        </div>
+      </dialog>
+
       {#if sheet.celebrate}
-        <p class="banner celebrate m-0">Every dollar for this month is assigned.</p>
+        <p class="celebrate m-0" aria-live="polite">Every dollar for this month is assigned.</p>
       {/if}
 
       {#if sheet.billLeftOut && sheet.billLeftOut.length > 0}
@@ -230,22 +252,37 @@
 
       {#each groups as group (group.id)}
         {@const rows = inGroup(group.id)}
+        {@const heading = sheet.groups.find((item) => item.group === group.id)}
         {#if rows.length > 0}
           <section class="grid gap-3">
-            <h2 class="group-title text-2xl" style={`--tone: var(--tone-${group.id})`}>
+            <h2 class="group-title text-2xl" data-group={group.id} style={`--tone: var(--tone-${group.id})`}>
               <Glyph name={group.id} />
-              {group.label}
+              <span class="group-name">{group.label}</span>
+              {#if heading}
+                <span class="group-sums">
+                  <span data-figure="assigned"><span>Assigned</span> <strong>{formatMinor(heading.assignedMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
+                  <span data-figure="max"><span>Max</span> <strong>{formatMinor(heading.maximumMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
+                  <span data-figure="target"><span>Target</span> <strong>{formatMinor(heading.targetMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
+                </span>
+              {/if}
             </h2>
-            <div class="bucket-board">
-            {#each rows as category (category.id)}
+            <div class="bucket-board" class:celebrate-ease={celebrateEase}>
+            {#each rows as category, index (category.id)}
               {@const hold = holdOf(category)}
+              {@const level = levelOf(category, rows)}
               {@const over = hold !== null && category.amountMinor > hold}
               <article
                 class="bucket-tile envelope-tile"
                 class:over
-                style={`--tone: var(--tone-${group.id}); --level: ${levelOf(category, rows)}`}
+                style={`--tone: var(--tone-${group.id}); --level: ${level}; --stagger: ${index}`}
               >
-                <span class="bucket-water"></span>
+                <span class="bucket-water" aria-hidden="true">
+                  {#if level > 0}
+                    <span class="bucket-wave"></span>
+                    <span class="bucket-wave"></span>
+                    <span class="bucket-wave"></span>
+                  {/if}
+                </span>
                 <span class="flex items-center gap-1">
                   <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
                   <strong>{category.name}</strong>

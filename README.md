@@ -20,6 +20,8 @@ npm run dev --prefix frontend
 
 Open http://127.0.0.1:5173. The first visit asks for your name, a password (12 characters or more), and a base currency. That creates the owner. When that base currency is USD, the owner's fallback rates start from the snapshot in `data/usd-rates.json`. A live quote for currencies on open accounts refreshes at most once a day. Demo is created at the same time, with the same fallback set. Later visits ask for a name and a password. Use demo signs in to the sample books. The demo password is `demo-books-open`.
 
+Another login is off unless `FINANCE_NEW_USER=1`. With that unset, the login page offers Unlock and Use demo, and `POST /api/users` refuses a new user. The owner and Demo still sign in. A database with no owner still shows setup.
+
 PHP listens on http://127.0.0.1:8080. Vite proxies `/api` to it.
 
 Restore Demo's sample accounts, bills, rates, and categories without changing the owner:
@@ -35,7 +37,7 @@ npm run build --prefix frontend
 composer start
 ```
 
-Open http://127.0.0.1:8080. Slim serves the built UI from `public/build`.
+Open http://127.0.0.1:8080. Slim serves the built UI from `public/build`. Leave `FINANCE_NEW_USER` unset on a public host so visitors cannot create another login. Set `FINANCE_NEW_USER=1` only when you want the New user button.
 
 ## Tests
 

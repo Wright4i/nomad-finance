@@ -12,6 +12,7 @@ use Facebook\WebDriver\WebDriverBy;
 use Facebook\WebDriver\WebDriverDimension;
 use Facebook\WebDriver\WebDriverExpectedCondition;
 use Facebook\WebDriver\WebDriverWait;
+use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -217,6 +218,117 @@ final class LogTest extends TestCase
         self::chooseVehicle('Vehicle 2');
         self::waitForField('odometer', '10800');
         self::waitForField('price', '3.50');
+    }
+
+    #[Depends('testAFuelLogOpensOnTheCurrentReadingAndShowsMpgBeforeSave')]
+    public function testASavedFuelLogAndWantLogStayUnpaid(): void
+    {
+        $before = self::fuelAccount();
+        self::driver()->get(self::$base . '/log');
+        self::waitForText('left unpaid');
+        self::waitForAccount();
+        self::waitForField('odometer', '10500');
+        self::waitForField('price', '4.00');
+        self::type('amount', '20');
+        self::replace('odometer', '10600');
+        self::click('Save log');
+        self::waitForPath('/calendar');
+
+        self::driver()->get(self::$base . '/log');
+        self::waitForText('left unpaid');
+        self::waitForAccount();
+        self::click('Want');
+        self::type('name', 'Logged Dinner');
+        self::type('amount', '15');
+        self::click('Save log');
+        self::waitForPath('/calendar');
+
+        self::driver()->get(self::$base . '/bills');
+        self::waitForText('Logged Dinner');
+        $places = self::billPlaces();
+        self::assertIsArray($places);
+        self::assertSame('Active', $places['fuel']['heading']);
+        self::assertContains('Mark paid', $places['fuel']['buttons']);
+        self::assertNotContains('Unpay', $places['fuel']['buttons']);
+        self::assertSame('Active', $places['dinner']['heading']);
+        self::assertContains('Mark paid', $places['dinner']['buttons']);
+        self::assertNotContains('Unpay', $places['dinner']['buttons']);
+
+        self::driver()->executeScript(<<<'JS'
+            const article = [...document.querySelectorAll('article')].find((node) => {
+                const title = node.querySelector('strong');
+                return title && title.textContent.trim() === 'Logged Dinner';
+            });
+            const button = [...article.querySelectorAll('button')].find((item) => item.textContent.trim() === 'Mark paid');
+            button.click();
+        JS);
+        self::wait()->until(function (): bool {
+            $places = self::billPlaces();
+
+            return is_array($places)
+                && ($places['dinner']['heading'] ?? '') === 'Paid'
+                && in_array('Unpay', $places['dinner']['buttons'], true)
+                && ($places['fuel']['heading'] ?? '') === 'Active';
+        });
+
+        $after = self::fuelAccount();
+        self::assertSame($before['balance'], $after['balance']);
+    }
+
+    /** @return array{id:int,balance:int} */
+    private static function fuelAccount(): array
+    {
+        $account = self::driver()->executeAsyncScript(<<<'JS'
+            const done = arguments[arguments.length - 1];
+            fetch('/api/accounts', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+                .then((response) => response.json())
+                .then((body) => {
+                    const fuel = body.accounts.find((item) => item.type === 'fuel');
+                    done(fuel ? { id: fuel.id, balance: fuel.balanceMinor } : { id: 0, balance: -1 });
+                })
+                .catch(() => done({ id: 0, balance: -1 }));
+        JS);
+        self::assertIsArray($account);
+        self::assertGreaterThan(0, $account['id']);
+        self::assertIsInt($account['balance']);
+
+        return ['id' => $account['id'], 'balance' => $account['balance']];
+    }
+
+    private static function waitForAccount(): void
+    {
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(
+                'const select = document.querySelector(\'select[name="accountId"]\'); return select ? select.value : "";',
+            );
+
+            return is_string($value) && $value !== '';
+        });
+    }
+
+    private static function waitForPath(string $path): void
+    {
+        self::wait()->until(function () use ($path): bool {
+            return str_contains(self::driver()->getCurrentURL(), $path);
+        });
+    }
+
+    /** @return array<string, array{heading:string,buttons:list<string>}>|null */
+    private static function billPlaces(): mixed
+    {
+        return self::driver()->executeScript(<<<'JS'
+            const place = (name) => {
+                const article = [...document.querySelectorAll('article')].find((node) => {
+                    const title = node.querySelector('strong');
+                    return title && title.textContent.trim() === name;
+                });
+                if (!article) return null;
+                const heading = article.closest('section').querySelector('h2').textContent.replace(/\s+/g, ' ').trim();
+                const buttons = [...article.querySelectorAll('button')].map((button) => button.textContent.trim());
+                return { heading, buttons };
+            };
+            return { fuel: place('Fuel'), dinner: place('Logged Dinner') };
+        JS);
     }
 
     private static function chooseVehicle(string $label): void

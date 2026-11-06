@@ -153,6 +153,11 @@
       <path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {:else if mark === 'envelope'}
       <path d="M4.5 7.5h15v9.5h-15zM4.5 8l7.5 5.2L19.5 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'sun'}
+      <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
+      <path d="M12 3.4v2.1M12 18.5v2.1M3.4 12h2.1M18.5 12h2.1M5.8 5.8l1.5 1.5M16.7 16.7l1.5 1.5M18.2 5.8l-1.5 1.5M7.3 16.7l-1.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'moon'}
+      <path d="M15.8 16.2A6.4 6.4 0 0 1 8 6.4 6.6 6.6 0 1 0 15.8 16.2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
     {:else if mark === 'settings'}
       <path d="M4 8h3.2M10.8 8H20M4 16h9.2M16.8 16H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
       <circle cx="9" cy="8" r="1.7" stroke="currentColor" stroke-width="1.8" />
@@ -161,6 +166,8 @@
       <rect x="4.5" y="4" width="15" height="16" rx="2" stroke="currentColor" stroke-width="1.8" />
       <circle cx="12.5" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
       <path d="M12.5 12h2.4M4.5 8.2h1.6M4.5 15.8h1.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'wrench'}
+      <path d="M14.7 5.1a2.9 2.9 0 0 0-3.2 4L6.3 14.3a1.7 1.7 0 0 0 2.4 2.4l5.2-5.2a2.9 2.9 0 0 0 3.9-3.6L15.4 10.3 12.6 7.5l2.1-2.4z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {/if}
   </svg>
 </span>

@@ -101,7 +101,7 @@ Retired. An assignment cannot be negative.
 _Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-Checking, savings, and cash balances, minus cash held in open assignments. A locked bucket counts its unpaid bills. Every one of those balances is included. The number can be negative.
+The income from every payor in the open month, plus the balances in checking, savings, and cash. Credit cards, loans, fuel accounts, and tracking accounts stay out. Needs is 50% of this total, Wants 30%, and Savings 20%, half up to the cent. A closed or upcoming month does not change the number. The number can be zero.
 _Avoid_: To be budgeted
 
 **Envelope**:
@@ -125,11 +125,11 @@ Retired. A posting is not split across buckets.
 _Avoid_: Line item
 
 **Logged fuel**:
-A paid one-time fuel bill named Fuel, filed on the locked Fuel bucket. It can record a vehicle, an odometer, and a price per gallon. It does not change an envelope or an account balance.
+An unpaid one-time fuel bill named Fuel, filed on the locked Fuel bucket. It can record a vehicle, an odometer, and a price per gallon. It does not change an account balance.
 _Avoid_: Fuel label, posting
 
 **Want log**:
-A paid one-time wants bill, filed on that wants type's locked bucket. It does not change an envelope or an account balance.
+An unpaid one-time wants bill, filed on that wants type's locked bucket. It does not change an account balance.
 _Avoid_: Logged fuel, posting
 
 **Vehicle**:
@@ -141,7 +141,7 @@ The miles on a vehicle now. Zero is allowed only when it is typed. A fuel log ca
 _Avoid_: Odometer, origin
 
 **Odometer**:
-The miles on one vehicle at a paid fuel bill.
+The miles on one vehicle at a fuel bill.
 _Avoid_: Trip distance, current odometer
 
 **Price per gallon**:
@@ -149,7 +149,7 @@ The price of one gallon of fuel, in cents.
 _Avoid_: Exchange rate, fallback fuel price
 
 **Fallback fuel price**:
-One price per gallon stored on the user, in cents, for a fuel label. Empty means the label shows miles only, and no cost.
+One price per gallon stored on a vehicle, in cents. A new fuel log and a trip fuel label use that vehicle's newest priced fill-up, then this price. Empty means that vehicle has no fallback.
 _Avoid_: Price per gallon, exchange rate
 
 **Fill-up**:
@@ -160,7 +160,7 @@ _Avoid_: Stretch, fuel label
 One fill-up: its miles and its gallons.
 
 **Fuel label**:
-A cost on a stay from the driving miles since the previous stay, the starred vehicle's pooled in-range miles per gallon (or the midpoint of its range), and the fallback fuel price. It assigns nothing and does not change a balance. The first stay has no cost. No starred vehicle means miles and no cost.
+A cost on a stay from the driving miles since the previous stay, the starred vehicle's pooled in-range miles per gallon (or the midpoint of its range), and that vehicle's newest priced fill-up or its fallback fuel price. It assigns nothing and does not change a balance. The first stay has no cost. No starred vehicle means miles and no cost.
 _Avoid_: Stretch, bill
 
 **Planned payment**:
@@ -285,7 +285,7 @@ Hiding an account, a goal bucket, or a paused bill without deleting it. Unarchiv
 Recording a bill's occurrence on the due date it had. A repeating bill then rolls its next due date forward. That paid occurrence stays on the original due date and counts in the paid total. The next occurrence is unpaid. The account balance stays as you last typed it. A one-off bill becomes paid and leaves the due list. Unpay removes that latest paid occurrence. A repeating bill moves back one interval and stays on the books. A one-off returns to the due list. An occurrence offers Mark paid or Unpay, not both.
 
 **Setup**:
-The first-run screen that creates the owner: name, password, a starred vehicle, and the fallback fuel price. An empty fuel price means miles only.
+The first-run screen that creates the owner: name, password, a starred vehicle, and that vehicle's fallback fuel price. An empty fuel price means miles only.
 
 **Owner**:
 The person who created the books at setup. Their accounts and bills stay theirs.

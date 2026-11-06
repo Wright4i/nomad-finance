@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { onMount } from 'svelte';
   import { api, explain } from '../lib/api';
@@ -27,6 +28,8 @@
           mpgMinTenths: vehicle.mpgMinTenths,
           mpgMaxTenths: vehicle.mpgMaxTenths,
           starred: true,
+          currentOdometerMiles: vehicle.currentOdometerMiles,
+          fuelPriceMinor: vehicle.fuelPriceMinor,
         },
       });
       const data = await api<{ vehicles: Vehicle[] }>('/api/vehicles');
@@ -40,15 +43,15 @@
 <div class="grid gap-4 max-w-xl">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <h1 class="m-0 text-4xl">Vehicles</h1>
-    <a class="btn primary" href="/settings/vehicles/new" onclick={(event) => follow(event, '/settings/vehicles/new')}>New vehicle</a>
+    <a class="btn primary" href="/vehicles/new" onclick={(event) => follow(event, '/vehicles/new')}>New vehicle</a>
   </div>
-  {#if message}<p class="banner" aria-live="polite">{message}</p>{/if}
+  <Note bind:message />
   {#if vehicles.length === 0}
     <p class="muted m-0">No vehicles yet.</p>
   {/if}
   {#each vehicles as vehicle (vehicle.id)}
     <div class="row">
-      <a class="flex items-center gap-3 min-w-0 no-underline" style={`--tone: var(--tone-${vehicle.kind})`} href={`/settings/vehicles/${vehicle.id}`} onclick={(event) => follow(event, `/settings/vehicles/${vehicle.id}`)}>
+      <a class="flex items-center gap-3 min-w-0 no-underline" style={`--tone: var(--tone-${vehicle.kind})`} href={`/vehicles/${vehicle.id}`} onclick={(event) => follow(event, `/vehicles/${vehicle.id}`)}>
         <Glyph name={vehicle.kind} />
         <span>
           <strong>{vehicle.name}</strong>

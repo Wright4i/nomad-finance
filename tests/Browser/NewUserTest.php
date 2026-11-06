@@ -129,11 +129,11 @@ final class NewUserTest extends TestCase
         self::assertSame([], self::tripNames());
         self::assertStringNotContainsString('Stay 1', self::mainText());
 
-        self::clickLink('Settings');
+        self::clickLink('Vehicles');
+        self::waitForText('Vehicle 1');
+        self::clickLinkContaining('Vehicle 1');
         self::waitForText('Fallback price per gallon');
         self::assertSame('', (string) self::driver()->findElement(WebDriverBy::name('fuelPrice'))->getAttribute('value'));
-        self::clickLinkContaining('Vehicles');
-        self::waitForText('Vehicle 1');
         self::assertStringNotContainsString('Stay 1', self::mainText());
     }
 
@@ -266,6 +266,7 @@ final class NewUserTest extends TestCase
         }
         $env['FINANCE_DB'] = self::$database;
         $env['FINANCE_RATE_FEED'] = dirname(__DIR__, 2) . '/tests/fixtures/rate-feed-usd.json';
+        $env['FINANCE_NEW_USER'] = '1';
         self::$server = proc_open(
             [PHP_BINARY, '-S', '127.0.0.1:' . $port, '-t', $root . '/public', $root . '/public/index.php'],
             [0 => ['pipe', 'r'], 1 => ['file', $log, 'a'], 2 => ['file', $log, 'a']],

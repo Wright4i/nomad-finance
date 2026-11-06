@@ -170,8 +170,6 @@ final class TripRulesTest extends TestCase
 
     public function testALaterStayCarriesAFuelLabelAndTheFirstDoesNot(): void
     {
-        $this->pdo->prepare('UPDATE user SET fuel_price_minor = 400 WHERE id = ?')->execute([$_SESSION['user_id']]);
-
         $first = $this->trips->create([
             'placeName' => 'Stay 1',
             'arriveOn' => '2026-11-20',
@@ -198,7 +196,7 @@ final class TripRulesTest extends TestCase
             ['id' => (int) $first['id'], 'latitude' => '36.1699', 'longitude' => '-115.1398'],
             ['id' => (int) $second['id'], 'latitude' => '34.0522', 'longitude' => '-118.2437'],
         ]);
-        $expected = Fuel::estimate($legs[0]['miles'], null, 400);
+        $expected = Fuel::estimate($legs[0]['miles'], null, null);
         $again = $this->trips->get((int) $second['id'], '2026-11-03');
         $opened = $this->trips->get((int) $first['id'], '2026-11-03');
 
@@ -212,11 +210,7 @@ final class TripRulesTest extends TestCase
         self::assertSame($legs[0]['miles'], $again['fuel']['miles']);
         self::assertGreaterThan(0, $again['fuel']['miles']);
         self::assertNull($again['fuel']['costMinor']);
-
-        $this->pdo->prepare('UPDATE user SET fuel_price_minor = NULL WHERE id = ?')->execute([$_SESSION['user_id']]);
-        $priced = $this->trips->get((int) $second['id'], '2026-11-03');
-        self::assertSame($expected['miles'], $priced['fuel']['miles']);
-        self::assertNull($priced['fuel']['costMinor']);
+        self::assertNull($again['fuel']['priceMinor']);
     }
 
     public function testAHandoffDayIsAllowedAndASharedNightIsNamed(): void

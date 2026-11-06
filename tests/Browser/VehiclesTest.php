@@ -97,8 +97,7 @@ final class VehiclesTest extends TestCase
         self::waitForText('Use demo');
         self::click('Use demo');
         self::waitForText('Available to assign');
-        self::clickLink('Settings');
-        self::clickLinkContaining('Vehicles');
+        self::clickLink('Vehicles');
         self::waitForText('Vehicle 1');
         self::clickLinkContaining('Vehicle 1');
         self::waitForText('Minimum mpg');
@@ -145,6 +144,168 @@ final class VehiclesTest extends TestCase
             'Oct 1, 2026',
             'Sep 15, 2026',
         ], $dates);
+
+        $labels = self::driver()->executeScript(<<<'JS'
+            return [...document.querySelectorAll('nav[aria-label="Primary"] a')].map((node) => node.textContent.trim());
+        JS);
+        self::assertIsArray($labels);
+        self::assertNotContains('Settings', $labels);
+        self::assertContains('Vehicles', $labels);
+        self::waitForText('Fallback price per gallon');
+        self::assertSame('$', self::driver()->findElement(WebDriverBy::cssSelector('.money-input .money-mark'))->getText());
+        self::assertSame('4.00', (string) self::driver()->findElement(WebDriverBy::name('fuelPrice'))->getAttribute('value'));
+        self::type('fuelPrice', '3.50');
+        self::click('Save vehicle');
+        self::waitForText('Saved.');
+        self::assertSame('3.50', (string) self::driver()->findElement(WebDriverBy::name('fuelPrice'))->getAttribute('value'));
+
+        self::assertThemePill(false);
+        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
+            WebDriverBy::cssSelector('.theme-pill button[aria-label="Day"]'),
+        ))->click();
+        self::wait()->until(function (): bool {
+            $light = self::driver()->executeScript('return document.documentElement.classList.contains("light")');
+
+            return $light === true;
+        });
+        self::assertThemePill(true);
+        self::driver()->navigate()->refresh();
+        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
+            WebDriverBy::cssSelector('.theme-pill button[aria-label="Night"]'),
+        ));
+        self::assertTrue(self::driver()->executeScript('return document.documentElement.classList.contains("light")') === true);
+        self::assertThemePill(true);
+        self::driver()->findElement(WebDriverBy::cssSelector('.theme-pill button[aria-label="Night"]'))->click();
+        self::wait()->until(function (): bool {
+            $light = self::driver()->executeScript('return document.documentElement.classList.contains("light")');
+
+            return $light === false;
+        });
+        self::assertThemePill(false);
+    }
+
+    private static function assertThemePill(bool $day): void
+    {
+        $label = $day ? 'Day' : 'Night';
+        self::wait()->until(function () use ($label): bool {
+            $opacity = self::driver()->executeScript(
+                'const icon = document.querySelector(arguments[0]); return icon ? getComputedStyle(icon).opacity : "";',
+                ['.theme-pill button[aria-label="' . $label . '"] .glyph'],
+            );
+
+            return $opacity === '1';
+        });
+        $paint = self::driver()->executeScript(<<<'JS'
+            const pill = document.querySelector('.theme-pill');
+            const buttons = pill ? [...pill.querySelectorAll('button')] : [];
+            const moon = pill?.querySelector('button[aria-label="Night"]') ?? null;
+            const sun = pill?.querySelector('button[aria-label="Day"]') ?? null;
+            const night = pill?.querySelector('.theme-slant.night') ?? null;
+            const dayFill = pill?.querySelector('.theme-slant.light') ?? null;
+            const logout = [...document.querySelectorAll('.nav-foot button')].find((node) => node.textContent.trim() === 'Log out');
+            const probe = document.createElement('div');
+            probe.style.backgroundColor = 'var(--teal)';
+            document.body.appendChild(probe);
+            const teal = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            const slant = (node) => {
+                if (!node) return 0;
+                const nums = [...getComputedStyle(node).clipPath.matchAll(/(-?[\d.]+)(?:px|%)/g)].map((match) => Number(match[1]));
+                const points = [];
+                for (let i = 0; i + 1 < nums.length; i += 2) points.push([nums[i], nums[i + 1]]);
+                let best = 0;
+                for (let i = 0; i < points.length; i += 1) {
+                    const next = points[(i + 1) % points.length];
+                    if (points[i][1] !== next[1]) best = Math.max(best, Math.abs(points[i][0] - next[0]));
+                }
+                return best;
+            };
+            const centered = (button) => {
+                if (!button) return 99;
+                const icon = button.querySelector('.glyph');
+                if (!icon) return 99;
+                const half = button.getBoundingClientRect();
+                const mark = icon.getBoundingClientRect();
+                return Math.abs((mark.left + mark.width / 2) - (half.left + half.width / 2));
+            };
+            const pillBox = pill ? pill.getBoundingClientRect() : null;
+            const outBox = logout ? logout.getBoundingClientRect() : null;
+            const moonBox = moon ? moon.getBoundingClientRect() : null;
+            const sunBox = sun ? sun.getBoundingClientRect() : null;
+            const edge = pill ? getComputedStyle(pill, '::before') : null;
+            const drawn = (style) => style && style.content !== 'none' && style.content !== 'normal';
+            const nightStyle = night ? getComputedStyle(night) : null;
+            const read = (button) => {
+                if (!button) return null;
+                const icon = button.querySelector('.glyph');
+                return {
+                    pressed: button.getAttribute('aria-pressed') === 'true',
+                    glyph: button.querySelector('svg') !== null,
+                    color: icon ? getComputedStyle(icon).color : '',
+                    opacity: icon ? getComputedStyle(icon).opacity : '',
+                    center: centered(button),
+                };
+            };
+            return {
+                teal,
+                aligned: pillBox && outBox
+                    ? Math.abs(pillBox.width - outBox.width) < 1.5 && Math.abs(pillBox.left - outBox.left) < 1.5
+                    : false,
+                sideBySide: moonBox && sunBox
+                    ? Math.abs(moonBox.top - sunBox.top) < 2 && sunBox.left >= moonBox.right - 2
+                    : false,
+                nightSlant: slant(night),
+                daySlant: slant(dayFill),
+                nightBg: night ? getComputedStyle(night).backgroundColor : '',
+                dayBg: dayFill ? getComputedStyle(dayFill).backgroundColor : '',
+                edgeBg: drawn(edge) ? edge.backgroundColor : 'none',
+                nightOutline: nightStyle ? nightStyle.outlineStyle : '',
+                nightShadow: nightStyle ? nightStyle.boxShadow : '',
+                nightBorder: nightStyle ? nightStyle.borderTopWidth : '',
+                nightClip: nightStyle ? nightStyle.clipPath : '',
+                order: buttons[0] === moon && buttons[1] === sun,
+                moon: read(moon),
+                sun: read(sun),
+            };
+        JS);
+        self::assertIsArray($paint);
+        self::assertTrue($paint['aligned']);
+        self::assertTrue($paint['sideBySide']);
+        self::assertGreaterThan(8, $paint['nightSlant']);
+        self::assertGreaterThan(8, $paint['daySlant']);
+        self::assertTrue($paint['order']);
+        self::assertIsArray($paint['moon']);
+        self::assertIsArray($paint['sun']);
+        self::assertTrue($paint['moon']['glyph']);
+        self::assertTrue($paint['sun']['glyph']);
+        self::assertLessThan(2, $paint['moon']['center']);
+        self::assertLessThan(2, $paint['sun']['center']);
+        $active = $day ? $paint['sun'] : $paint['moon'];
+        $idle = $day ? $paint['moon'] : $paint['sun'];
+        self::assertTrue($active['pressed']);
+        self::assertFalse($idle['pressed']);
+        if ($day) {
+            self::assertSame($paint['teal'], $paint['dayBg']);
+            self::assertSame('rgb(255, 255, 255)', $paint['sun']['color']);
+            self::assertSame('1', $paint['sun']['opacity']);
+            self::assertSame('rgb(0, 0, 0)', $paint['moon']['color']);
+            self::assertSame('1', $paint['moon']['opacity']);
+            self::assertSame('rgb(255, 255, 255)', $paint['nightBg']);
+            self::assertSame('none', $paint['edgeBg']);
+            self::assertSame('none', $paint['nightOutline']);
+            self::assertSame('none', $paint['nightShadow']);
+            self::assertSame('0px', $paint['nightBorder']);
+            self::assertMatchesRegularExpression('/polygon\\(\\s*0px 0px,\\s*64%/', (string) $paint['nightClip']);
+        } else {
+            self::assertSame($paint['teal'], $paint['nightBg']);
+            self::assertSame('rgb(0, 0, 0)', $paint['moon']['color']);
+            self::assertSame('rgb(0, 0, 0)', $paint['dayBg']);
+            self::assertSame('rgb(255, 255, 255)', $paint['sun']['color']);
+            self::assertSame('none', $paint['edgeBg']);
+            self::assertSame('none', $paint['nightOutline']);
+            self::assertSame('none', $paint['nightShadow']);
+            self::assertSame('0px', $paint['nightBorder']);
+        }
     }
 
     private static function colorFieldPresent(): bool

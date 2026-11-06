@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { parseMajor } from '../lib/money';
@@ -86,7 +87,7 @@
     {:else}
       <p class="m-0">This creates the only login, and the vehicle the fuel label uses. You can change the vehicle later.</p>
     {/if}
-    {#if message}<p class="banner m-0">{message}</p>{/if}
+    <Note bind:message />
     <label class="field">
       <span>Your name</span>
       <input name="name" autocomplete="name" bind:value={name} />
@@ -134,7 +135,10 @@
     </label>
     <label class="field">
       <span>Fallback price per gallon</span>
-      <input name="fuelPrice" inputmode="decimal" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
+      <span class="money-input">
+        <span class="money-mark" aria-hidden="true">$</span>
+        <input name="fuelPrice" inputmode="decimal" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
+      </span>
       {#if fields.fuelPriceMinor}<em>{fields.fuelPriceMinor}</em>{/if}
     </label>
     <button class="btn primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Create my login'}</button>

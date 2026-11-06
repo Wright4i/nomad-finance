@@ -8,6 +8,7 @@ use App\Auth\Actor;
 use App\Envelope\BillFill;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
+use App\PayCycle\PayCycleService;
 use App\PayCycle\Period;
 use App\Support\Dates;
 use App\Target\TargetService;
@@ -21,6 +22,7 @@ final class EnvelopeService
         private readonly Actor $actor,
         private readonly CurrencyCatalog $currencies,
         private readonly TargetService $targets,
+        private readonly PayCycleService $payCycles,
     ) {
     }
 
@@ -107,6 +109,12 @@ final class EnvelopeService
             $this->syncAmounts($today);
             if ($maximums !== null) {
                 $this->saveMaximums($maximums);
+            }
+            $stored = $this->pdo->prepare('SELECT period_start FROM pay_periods WHERE id = ? AND user_id = ?');
+            $stored->execute([(int) $period['id'], $this->actor->id()]);
+            $storedStart = $stored->fetchColumn();
+            if (is_string($storedStart)) {
+                $this->releaseOtherGoals((int) $period['id'], $storedStart, $amounts, $lockedIds);
             }
             $this->pdo->commit();
         } catch (Throwable $e) {
@@ -386,7 +394,8 @@ final class EnvelopeService
         ));
         $selected = $this->selectCycle($cycles, $payCycleId, $today);
         $assigned = $this->assignedOpen($today, $selected);
-        $available = $pool['minor'] - $assigned;
+        $sources = $this->sources($today);
+        $available = $this->sourceTotal($sources);
 
         $period = null;
         $categories = [];
@@ -466,6 +475,26 @@ final class EnvelopeService
             }
         }
 
+        $categories = $this->withMonthGoals(
+            $categories,
+            is_array($period) ? $period : null,
+            $selected === null ? null : (int) $selected['id'],
+        );
+        $shown = $this->withBills(
+            $this->targets->decorate(
+                array_map(static function (array $category): array {
+                    $category['remainingMinor'] = (int) ($category['amountMinor'] ?? 0);
+
+                    return $category;
+                }, $categories),
+                $today,
+                $observe,
+            ),
+            is_array($period) ? $period : null,
+            $today,
+        );
+        $incomeMinor = $this->spanIncome($selected, is_array($period) ? $period : null, $today);
+
         return [
             'baseCurrency' => $base,
             'exponent' => $this->currencies->exponent($base),
@@ -484,23 +513,204 @@ final class EnvelopeService
             'assignedMinor' => $assigned,
             'poolMinor' => $pool['minor'],
             'leftOut' => $pool['leftOut'],
-            'categories' => $this->withBills(
-                $this->targets->decorate(
-                    array_map(static function (array $category): array {
-                        $category['remainingMinor'] = (int) ($category['amountMinor'] ?? 0);
-
-                        return $category;
-                    }, $categories),
-                    $today,
-                    $observe,
-                ),
-                is_array($period) ? $period : null,
-                $today,
-            ),
+            'categories' => $shown,
             'billLeftOut' => $this->billLeftOut(is_array($period) ? $period : null, $today),
-            'groups' => $this->groups($categories),
+            'incomeMinor' => $incomeMinor,
+            'sources' => $sources,
+            'groups' => $this->headings($this->groups($categories), $shown, $available),
             'celebrate' => $celebrate,
         ];
+    }
+
+    /**
+     * Available to assign is every payor's income in the open month
+     * plus checking, savings, and cash. Those lines are the total.
+     *
+     * @return array{income: list<array{id:int,payor:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,amountMinor:int}>}
+     */
+    private function sources(string $today): array
+    {
+        $month = substr($today, 0, 7);
+        $income = [];
+        foreach ($this->payCycles->monthPay($month, $today) as $row) {
+            $id = (int) $row['id'];
+            $amount = (int) $row['paycheckMinor'];
+            if ($amount < 1) {
+                continue;
+            }
+            if (!isset($income[$id])) {
+                $income[$id] = [
+                    'id' => $id,
+                    'payor' => (string) $row['payor'],
+                    'length' => (string) $row['length'],
+                    'amountMinor' => 0,
+                ];
+            }
+            $income[$id]['amountMinor'] += $amount;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT id, name, type, balance_minor FROM accounts
+             WHERE user_id = ? AND archived_at IS NULL
+               AND type IN (\'checking\', \'savings\', \'cash\')
+               AND balance_minor > 0
+             ORDER BY name COLLATE NOCASE, id'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $rows = $stmt->fetchAll();
+        $accounts = [];
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $accounts[] = [
+                    'id' => (int) $row['id'],
+                    'name' => (string) $row['name'],
+                    'type' => (string) $row['type'],
+                    'amountMinor' => (int) $row['balance_minor'],
+                ];
+            }
+        }
+
+        return ['income' => array_values($income), 'accounts' => $accounts];
+    }
+
+    /** @param array{income: list<array{amountMinor:int}>, accounts: list<array{amountMinor:int}>} $sources */
+    private function sourceTotal(array $sources): int
+    {
+        $total = 0;
+        foreach ($sources['income'] as $row) {
+            $total += (int) $row['amountMinor'];
+        }
+        foreach ($sources['accounts'] as $row) {
+            $total += (int) $row['amountMinor'];
+        }
+
+        return $total;
+    }
+
+    /**
+     * Goal amounts for the calendar month, each stored assignment once.
+     * A preview that is not stored yet is the anchor's carry, added once.
+     *
+     * @param list<array<string, mixed>> $categories
+     * @param ?array<string, mixed> $period
+     * @return list<array<string, mixed>>
+     */
+    private function withMonthGoals(array $categories, ?array $period, ?int $anchorCycleId): array
+    {
+        if ($period === null || $anchorCycleId === null || $categories === []) {
+            return $categories;
+        }
+        $month = $this->calendarMonth((string) $period['start']);
+        $stored = $this->goalSums($month['start'], $month['end']);
+        $anchorStored = $this->anchorHasPeriod($anchorCycleId, $month['start'], $month['end']);
+        foreach ($categories as $index => $category) {
+            if (($category['role'] ?? '') === 'locked') {
+                continue;
+            }
+            $sum = $stored[(int) $category['id']] ?? 0;
+            if (!$anchorStored) {
+                $sum += max(0, (int) ($category['amountMinor'] ?? 0));
+            }
+            $categories[$index]['amountMinor'] = $sum;
+        }
+
+        return $categories;
+    }
+
+    /** @return array<int, int> */
+    private function goalSums(string $start, string $end): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT a.category_id, SUM(a.amount_minor) AS total
+             FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             JOIN categories c ON c.id = a.category_id
+             WHERE p.user_id = ? AND c.role != \'locked\' AND a.amount_minor > 0
+               AND p.period_start >= ? AND p.period_start <= ?
+             GROUP BY a.category_id'
+        );
+        $stmt->execute([$this->actor->id(), $start, $end]);
+        $sums = [];
+        while ($row = $stmt->fetch()) {
+            if (is_array($row)) {
+                $sums[(int) $row['category_id']] = (int) $row['total'];
+            }
+        }
+
+        return $sums;
+    }
+
+    private function anchorHasPeriod(int $cycleId, string $start, string $end): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT 1 FROM pay_periods
+             WHERE pay_cycle_id = ? AND user_id = ? AND period_start >= ? AND period_start <= ?
+             LIMIT 1'
+        );
+        $stmt->execute([$cycleId, $this->actor->id(), $start, $end]);
+
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /**
+     * The saved amount is the month total for that goal.
+     * Other payors' rows in the same month drop out so the sum stays that total.
+     *
+     * @param array<int, int> $amounts
+     * @param array<int, true> $lockedIds
+     */
+    private function releaseOtherGoals(int $periodId, string $start, array $amounts, array $lockedIds): void
+    {
+        $month = $this->calendarMonth($start);
+        $clear = $this->pdo->prepare(
+            'UPDATE assignments SET amount_minor = 0
+             WHERE category_id = ? AND pay_period_id IN (
+                SELECT id FROM pay_periods
+                WHERE user_id = ? AND id != ? AND period_start >= ? AND period_start <= ?
+             )'
+        );
+        foreach (array_keys($amounts) as $categoryId) {
+            if (isset($lockedIds[$categoryId])) {
+                continue;
+            }
+            $clear->execute([$categoryId, $this->actor->id(), $periodId, $month['start'], $month['end']]);
+        }
+    }
+
+    /** @return array{start:string,end:string} */
+    private function calendarMonth(string $day): array
+    {
+        $parsed = Dates::parse($day);
+
+        return [
+            'start' => $parsed->format('Y-m-01'),
+            'end' => $parsed->format('Y-m-t'),
+        ];
+    }
+
+    /**
+     * The selected payor's income for the span on screen.
+     * It is the paycheck preview for that span, including a keyed amount once.
+     *
+     * @param ?array<string, mixed> $cycle
+     * @param ?array<string, mixed> $period
+     */
+    private function spanIncome(?array $cycle, ?array $period, string $today): int
+    {
+        if ($cycle === null || $period === null) {
+            return 0;
+        }
+        $end = $period['end'] ?? null;
+
+        return $this->payCycles->incomeBetween(
+            (int) $cycle['id'],
+            (string) $period['start'],
+            is_string($end) ? $end : null,
+            $today,
+        );
     }
 
     /**
@@ -637,7 +847,7 @@ final class EnvelopeService
     private function previewCategories(?int $sourcePeriodId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT c.id, c.name, c.category_group, c.role, c.archived_at,
+            'SELECT c.id, c.name, c.category_group, c.role, c.bill_type, c.archived_at,
                     CASE WHEN a.amount_minor > 0 THEN a.amount_minor ELSE 0 END AS amount_minor,
                     COALESCE(a.filled_minor, 0) AS filled_minor
              FROM categories c
@@ -662,6 +872,7 @@ final class EnvelopeService
                 'name' => (string) $row['name'],
                 'group' => (string) $row['category_group'],
                 'role' => (string) ($row['role'] ?? 'goal'),
+                'billType' => is_string($row['bill_type'] ?? null) && $row['bill_type'] !== '' ? (string) $row['bill_type'] : null,
                 'amountMinor' => (int) $row['amount_minor'],
                 'filledMinor' => (int) $row['filled_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
@@ -673,7 +884,7 @@ final class EnvelopeService
 
     /**
      * Goal amounts in the period are the denominator. Needs is 50%, Wants 30%, Savings 20%.
-     * A locked bucket's bills stay on the tile and in available-to-assign.
+     * A locked bucket's bills stay on the tile and out of the gauges.
      *
      * @param list<array<string, mixed>> $categories
      * @return list<array{group:string,targetPercent:int,amountMinor:int,shareBasisPoints:int,over:bool}>
@@ -711,11 +922,74 @@ final class EnvelopeService
         return $listed;
     }
 
+    /**
+     * Assigned and Max are the sums for the buckets in that group for this month.
+     * Max is the saved target when one is set. A locked bucket with no saved target uses its unpaid bills.
+     * Target is that group's share of available to assign: Needs 50%, Wants 30%, Savings 20%. Half up to the cent.
+     * The gauges keep their own share of goal assignments.
+     *
+     * @param list<array<string, mixed>> $groups
+     * @param list<array<string, mixed>> $categories
+     * @return list<array<string, mixed>>
+     */
+    private function headings(array $groups, array $categories, int $availableMinor): array
+    {
+        $assigned = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        $maximum = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        foreach ($categories as $category) {
+            $group = $category['group'] ?? '';
+            if (!is_string($group) || !isset($assigned[$group])) {
+                continue;
+            }
+            $amount = (int) ($category['amountMinor'] ?? 0);
+            if ($amount > 0) {
+                $assigned[$group] += $amount;
+            }
+            $maximum[$group] += $this->bucketMaximum($category);
+        }
+        foreach ($groups as $index => $group) {
+            $name = (string) ($group['group'] ?? '');
+            $percent = (int) ($group['targetPercent'] ?? 0);
+            $groups[$index]['assignedMinor'] = $assigned[$name] ?? 0;
+            $groups[$index]['maximumMinor'] = $maximum[$name] ?? 0;
+            $groups[$index]['targetMinor'] = $availableMinor > 0 && $percent > 0
+                ? intdiv($availableMinor * $percent + 50, 100)
+                : 0;
+        }
+
+        return $groups;
+    }
+
+    /** @param array<string, mixed> $category */
+    private function bucketMaximum(array $category): int
+    {
+        $saved = null;
+        if (is_array($category['target'] ?? null)) {
+            $amount = $category['target']['amountMinor'] ?? null;
+            if (is_int($amount)) {
+                $saved = $amount;
+            }
+        }
+        if (($category['role'] ?? '') === 'locked') {
+            if ($saved !== null && $saved >= 1) {
+                return $saved;
+            }
+            $bills = (int) ($category['billMinor'] ?? 0);
+
+            return $bills > 0 ? $bills : 0;
+        }
+        if ($saved !== null && $saved >= 1) {
+            return $saved;
+        }
+
+        return 0;
+    }
+
     /** @return list<array<string, mixed>> */
     private function categories(int $periodId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT c.id, c.name, c.category_group, c.role, c.archived_at,
+            'SELECT c.id, c.name, c.category_group, c.role, c.bill_type, c.archived_at,
                     CASE WHEN a.amount_minor > 0 THEN a.amount_minor ELSE 0 END AS amount_minor,
                     COALESCE(a.filled_minor, 0) AS filled_minor
              FROM categories c
@@ -740,6 +1014,7 @@ final class EnvelopeService
                 'name' => (string) $row['name'],
                 'group' => (string) $row['category_group'],
                 'role' => (string) ($row['role'] ?? 'goal'),
+                'billType' => is_string($row['bill_type'] ?? null) && $row['bill_type'] !== '' ? (string) $row['bill_type'] : null,
                 'amountMinor' => (int) $row['amount_minor'],
                 'filledMinor' => (int) $row['filled_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
@@ -1048,13 +1323,13 @@ final class EnvelopeService
         if ($period === null) {
             return ['bills' => [], 'leftOut' => []];
         }
-        $end = $period['end'] ?? null;
+        $month = $this->calendarMonth((string) $period['start']);
         $overdue = ($period['editable'] ?? false) === true && ($period['upcoming'] ?? false) !== true;
 
         return (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
             $today,
-            (string) $period['start'],
-            is_string($end) ? $end : null,
+            $month['start'],
+            $month['end'],
             $overdue,
         );
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
@@ -140,7 +141,7 @@
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit account' : 'New account'}</h1>
   <p class="muted m-0">The balance is the amount on deposit, or the amount owed on a card or loan. It stays until you type a new one.</p>
-  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <Note bind:message />
   <label class="field">
     <span>Name</span>
     <input name="name" bind:value={name} />

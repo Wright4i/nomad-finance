@@ -597,7 +597,8 @@ final class BillService
     }
 
     /**
-     * A fuel or want log is a paid one-time bill. It does not move a balance or an assignment.
+     * A fuel or want log is an unpaid one-time bill. It does not move a balance.
+     * Mark paid comes later. An unpaid fuel log still advances the odometer.
      *
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -731,9 +732,9 @@ final class BillService
                     name, type, account_id, category_id, amount_minor, currency,
                     recurrence, anchor_date, next_due_date, last_paid_on, autopay, notes, status,
                     created_at, updated_at, vehicle_id, odometer_miles, price_per_gallon_minor
-                 ) VALUES (\'Fuel\', \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, ?, \'paid\', ?, ?, ?, ?, ?)'
+                 ) VALUES (\'Fuel\', \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, NULL, 0, ?, \'active\', ?, ?, ?, ?, ?)'
             )->execute([
-                $accountId, $categoryId, $amount, $date, $date, $date, $notes, $now, $now,
+                $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
                 $vehicleId, $odometer, $price,
             ]);
             $id = (int) $this->pdo->lastInsertId();
@@ -744,6 +745,7 @@ final class BillService
             }
             throw $e;
         }
+        $this->fill->apply($today);
 
         return $this->get($id);
     }
@@ -789,12 +791,14 @@ final class BillService
                 name, type, other_label, account_id, category_id, amount_minor, currency,
                 recurrence, anchor_date, next_due_date, last_paid_on, autopay, notes, status,
                 created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, ?, \'paid\', ?, ?)'
+             ) VALUES (?, ?, ?, ?, ?, ?, \'USD\', \'once\', ?, ?, NULL, 0, ?, \'active\', ?, ?)'
         )->execute([
-            $name, $type, $other, $accountId, $categoryId, $amount, $date, $date, $date, $notes, $now, $now,
+            $name, $type, $other, $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
         ]);
+        $id = (int) $this->pdo->lastInsertId();
+        $this->fill->apply($today);
 
-        return $this->get((int) $this->pdo->lastInsertId());
+        return $this->get($id);
     }
 
     /** @param array<string, string> $errors */

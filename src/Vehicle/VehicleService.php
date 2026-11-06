@@ -58,8 +58,8 @@ final class VehicleService
             $this->pdo->prepare(
                 'INSERT INTO vehicles (
                     user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
-                    current_odometer_miles, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    current_odometer_miles, fuel_price_minor, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $this->actor->id(),
                 $data['name'],
@@ -68,6 +68,7 @@ final class VehicleService
                 $data['mpgMaxTenths'],
                 $data['starred'],
                 $data['currentOdometerMiles'],
+                $data['fuelPrice'],
                 $now,
                 $now,
             ]);
@@ -97,7 +98,7 @@ final class VehicleService
             $this->pdo->prepare(
                 'UPDATE vehicles SET
                     name = ?, kind = ?, mpg_min_tenths = ?, mpg_max_tenths = ?, starred = ?,
-                    current_odometer_miles = ?, updated_at = ?
+                    current_odometer_miles = ?, fuel_price_minor = ?, updated_at = ?
                  WHERE id = ? AND user_id = ?'
             )->execute([
                 $data['name'],
@@ -106,6 +107,7 @@ final class VehicleService
                 $data['mpgMaxTenths'],
                 $data['starred'],
                 $data['currentOdometerMiles'],
+                $data['fuelPrice'],
                 $now,
                 $id,
                 $this->actor->id(),
@@ -141,7 +143,7 @@ final class VehicleService
     }
 
     /** @param array<string, mixed> $input
-     *  @return array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,starred:int,currentOdometerMiles:int}
+     *  @return array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,starred:int,currentOdometerMiles:int,fuelPrice:?int}
      */
     private function validate(array $input, ?int $exceptId): array
     {
@@ -183,6 +185,7 @@ final class VehicleService
                 $errors['currentOdometerMiles'] = 'The current odometer cannot sit below a fuel reading.';
             }
         }
+        $fuelPrice = $this->fuelPrice($input, $errors, $exceptId);
         if ($errors !== []) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
@@ -194,14 +197,44 @@ final class VehicleService
             'mpgMaxTenths' => $max,
             'starred' => !empty($input['starred']) ? 1 : 0,
             'currentOdometerMiles' => $current,
+            'fuelPrice' => $fuelPrice,
         ];
+    }
+
+    /** @param array<string, mixed> $input
+     *  @param array<string, string> $errors
+     */
+    private function fuelPrice(array $input, array &$errors, ?int $exceptId): ?int
+    {
+        if (!array_key_exists('fuelPriceMinor', $input)) {
+            if ($exceptId === null) {
+                return null;
+            }
+            $stmt = $this->pdo->prepare('SELECT fuel_price_minor FROM vehicles WHERE id = ? AND user_id = ?');
+            $stmt->execute([$exceptId, $this->actor->id()]);
+            $raw = $stmt->fetchColumn();
+
+            return is_numeric($raw) && (int) $raw > 0 ? (int) $raw : null;
+        }
+        $value = $input['fuelPriceMinor'];
+        if ($value === null || $value === '') {
+            return null;
+        }
+        $price = $this->asInt($value);
+        if ($price === null || $price < 1) {
+            $errors['fuelPriceMinor'] = 'Enter a price per gallon greater than zero, or leave it empty.';
+
+            return null;
+        }
+
+        return $price;
     }
 
     /**
      * Newest priced fill-up per vehicle, by fill-up date then log id.
-     * The opening price is that figure, else the fallback fuel price, else any fuel log.
+     * The opening price is that figure, else that vehicle's fallback, else blank.
      *
-     * @return array{byVehicle: array<int, int>, fallback: ?int, any: ?int}
+     * @return array<int, int>
      */
     private function fuelPriceIndex(): array
     {
@@ -209,13 +242,13 @@ final class VehicleService
             'SELECT b.vehicle_id, b.price_per_gallon_minor
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
-             WHERE a.user_id = ? AND b.type = \'fuel\' AND b.status = \'paid\'
+             WHERE a.user_id = ? AND b.type = \'fuel\' AND b.status IN (\'active\', \'paused\', \'paid\')
+               AND b.vehicle_id IS NOT NULL
                AND b.price_per_gallon_minor IS NOT NULL
              ORDER BY b.anchor_date DESC, b.id DESC'
         );
         $stmt->execute([$this->actor->id()]);
         $byVehicle = [];
-        $any = null;
         while ($row = $stmt->fetch()) {
             if (!is_array($row)) {
                 break;
@@ -224,48 +257,40 @@ final class VehicleService
             if ($price < 1) {
                 continue;
             }
-            if ($any === null) {
-                $any = $price;
+            $vehicleId = (int) $row['vehicle_id'];
+            if (!array_key_exists($vehicleId, $byVehicle)) {
+                $byVehicle[$vehicleId] = $price;
             }
-            if ($row['vehicle_id'] !== null) {
-                $vehicleId = (int) $row['vehicle_id'];
-                if (!array_key_exists($vehicleId, $byVehicle)) {
-                    $byVehicle[$vehicleId] = $price;
-                }
-            }
-        }
-        $fallbackStmt = $this->pdo->prepare('SELECT fuel_price_minor FROM user WHERE id = ?');
-        $fallbackStmt->execute([$this->actor->id()]);
-        $raw = $fallbackStmt->fetchColumn();
-        $fallback = is_numeric($raw) ? (int) $raw : null;
-        if ($fallback !== null && $fallback < 1) {
-            $fallback = null;
         }
 
-        return ['byVehicle' => $byVehicle, 'fallback' => $fallback, 'any' => $any];
+        return $byVehicle;
     }
 
-    /** @param array{byVehicle: array<int, int>, fallback: ?int, any: ?int} $prices */
-    private function openingPrice(array $prices, int $vehicleId): ?int
+    /** @param array<int, int> $prices */
+    private function openingPrice(array $prices, int $vehicleId, ?int $fallback): ?int
     {
-        if (array_key_exists($vehicleId, $prices['byVehicle'])) {
-            return $prices['byVehicle'][$vehicleId];
+        if (array_key_exists($vehicleId, $prices)) {
+            return $prices[$vehicleId];
         }
-        if ($prices['fallback'] !== null) {
-            return $prices['fallback'];
+        if ($fallback !== null && $fallback > 0) {
+            return $fallback;
         }
 
-        return $prices['any'];
+        return null;
     }
 
     /** @param array<string, mixed> $row
-     *  @param array{byVehicle: array<int, int>, fallback: ?int, any: ?int} $prices
+     *  @param array<int, int> $prices
      *  @return array<string, mixed>
      */
     private function present(array $row, bool $withReadings, array $prices): array
     {
         $min = (int) $row['mpg_min_tenths'];
         $max = (int) $row['mpg_max_tenths'];
+        $fallback = $row['fuel_price_minor'] === null ? null : (int) $row['fuel_price_minor'];
+        if ($fallback !== null && $fallback < 1) {
+            $fallback = null;
+        }
         $origin = $row['origin_odometer_miles'] === null ? null : (int) $row['origin_odometer_miles'];
         $fuelRows = $withReadings ? $this->fuelRows((int) $row['id']) : [];
         $fills = $withReadings ? Stretch::fillUps($this->stretchRows($fuelRows), $origin) : [];
@@ -280,7 +305,8 @@ final class VehicleService
             'mpgMaxTenths' => $max,
             'starred' => (int) $row['starred'] === 1,
             'currentOdometerMiles' => (int) $row['current_odometer_miles'],
-            'suggestedPricePerGallonMinor' => $this->openingPrice($prices, (int) $row['id']),
+            'fuelPriceMinor' => $fallback,
+            'suggestedPricePerGallonMinor' => $this->openingPrice($prices, (int) $row['id'], $fallback),
             'milesPerGallon' => Fuel::label($pooled),
             'readings' => $readings,
         ];
@@ -297,7 +323,7 @@ final class VehicleService
                     a.name AS account_name
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
-             WHERE a.user_id = ? AND b.vehicle_id = ? AND b.type = \'fuel\' AND b.status = \'paid\'
+             WHERE a.user_id = ? AND b.vehicle_id = ? AND b.type = \'fuel\' AND b.status IN (\'active\', \'paused\', \'paid\')
                AND (b.odometer_miles IS NOT NULL OR b.price_per_gallon_minor IS NOT NULL)
              ORDER BY b.anchor_date, b.id'
         );
@@ -350,7 +376,7 @@ final class VehicleService
 
     /**
      * One row per fill-up. Charges that share an odometer stay one reading.
-     * Newest fill-up first: paid-on date descending, then id descending.
+     * Newest fill-up first: fill-up date descending, then id descending.
      *
      * @param list<array<string, mixed>> $rows
      * @param list<array{odometerMiles:int,miles:?int,gallons:?string,milesPerGallon:?string}> $fills

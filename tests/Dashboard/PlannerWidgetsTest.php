@@ -1,0 +1,305 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Dashboard;
+
+use App\Auth\Actor;
+use App\Auth\AuthService;
+use App\Bill\Occurrences;
+use App\Database\Database;
+use App\Dashboard\DashboardService;
+use App\Dashboard\PlannerWidgets;
+use App\Demo\DemoLibrary;
+use App\Envelope\EnvelopeService;
+use App\Http\ApiException;
+use App\Money\CurrencyCatalog;
+use App\PayCycle\PayCycleService;
+use App\Target\TargetService;
+use App\Trip\Drive;
+use App\Trip\TripService;
+use PDO;
+use PHPUnit\Framework\TestCase;
+
+final class PlannerWidgetsTest extends TestCase
+{
+    private PDO $pdo;
+
+    private DashboardService $dashboard;
+
+    private AuthService $auth;
+
+    private string $path;
+
+    protected function setUp(): void
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+        $_SESSION = [];
+        $this->path = sys_get_temp_dir() . '/nomad-finance-' . bin2hex(random_bytes(4)) . '.sqlite';
+        $this->pdo = Database::connect($this->path, dirname(__DIR__, 2) . '/db/migrations');
+        $catalog = new CurrencyCatalog();
+        $actor = new Actor($this->pdo);
+        $this->auth = new AuthService($this->pdo, $catalog, new DemoLibrary($this->pdo, $catalog));
+        $this->auth->setup([
+            'name' => 'Ada',
+            'password' => 'correct horse battery',
+            'baseCurrency' => 'USD',
+        ]);
+        $this->auth->enterDemo();
+        $this->dashboard = new DashboardService(
+            $this->pdo,
+            $catalog,
+            $actor,
+            new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor), new PayCycleService($this->pdo, $actor)),
+            new PayCycleService($this->pdo, $actor),
+            new TripService($this->pdo, $actor, $catalog, new Drive(false)),
+        );
+    }
+
+    protected function tearDown(): void
+    {
+        unset($this->pdo);
+        if (is_file($this->path)) {
+            unlink($this->path);
+        }
+    }
+
+    public function testAnArrivalTodayOrTomorrowLeadsAndALaterArrivalDoesNot(): void
+    {
+        $underway = $this->stay(1, 'Underway', 'Reno', 'NV', '2026-11-01', '2026-11-10');
+        $tomorrow = $this->stay(2, 'Tomorrow', 'Bend', 'OR', '2026-11-06', '2026-11-08');
+        $later = $this->stay(3, 'Later', 'Boise', 'ID', '2026-11-07', '2026-11-09');
+        $today = $this->stay(4, 'Today', 'Tacoma', 'WA', '2026-11-05', '2026-11-07');
+
+        $lead = PlannerWidgets::stay([$underway, $tomorrow, $later], '2026-11-05');
+        self::assertNotNull($lead);
+        self::assertSame('Tomorrow', $lead['placeName']);
+        self::assertSame('Bend', $lead['city']);
+        self::assertSame('OR', $lead['region']);
+
+        $arrived = PlannerWidgets::stay([$underway, $today, $tomorrow], '2026-11-05');
+        self::assertNotNull($arrived);
+        self::assertSame('Today', $arrived['placeName']);
+
+        $covered = PlannerWidgets::stay([$underway, $later], '2026-11-05');
+        self::assertNotNull($covered);
+        self::assertSame('Underway', $covered['placeName']);
+        self::assertSame('Reno', $covered['city']);
+
+        self::assertNull(PlannerWidgets::stay([$later], '2026-11-05'));
+    }
+
+    public function testTheSoonestPaydayAndAccountTotals(): void
+    {
+        $soonest = PlannerWidgets::payday([
+            ['kind' => 'payday', 'on' => '2026-11-04', 'payor' => 'Earlier', 'paycheckMinor' => 100],
+            ['kind' => 'bill', 'on' => '2026-11-05', 'name' => 'Rent'],
+            ['kind' => 'payday', 'on' => '2026-11-05', 'payor' => 'Today', 'paycheckMinor' => 2500],
+            ['kind' => 'payday', 'on' => '2026-11-08', 'payor' => 'Later', 'paycheckMinor' => 900],
+        ], '2026-11-05');
+        self::assertSame(['payor' => 'Today', 'on' => '2026-11-05', 'paycheckMinor' => 2500], $soonest);
+
+        $totals = PlannerWidgets::accountTotals([
+            ['type' => 'checking', 'side' => 'asset', 'balanceMinor' => 100],
+            ['type' => 'checking', 'side' => 'asset', 'balanceMinor' => 50],
+            ['type' => 'savings', 'side' => 'asset', 'balanceMinor' => 400],
+            ['type' => 'credit', 'side' => 'liability', 'balanceMinor' => 40],
+            ['type' => 'loan', 'side' => 'liability', 'balanceMinor' => 500],
+            ['type' => 'other', 'side' => 'liability', 'balanceMinor' => 12],
+            ['type' => 'other', 'side' => 'asset', 'balanceMinor' => 7],
+            ['type' => 'fuel', 'side' => 'liability', 'balanceMinor' => 0],
+        ]);
+        self::assertSame(
+            ['savings', 'checking', 'other', 'fuel', 'other', 'credit', 'loan'],
+            array_column($totals, 'type'),
+        );
+        self::assertSame(
+            ['asset', 'asset', 'asset', 'liability', 'liability', 'liability', 'liability'],
+            array_column($totals, 'side'),
+        );
+        self::assertSame(400, $totals[0]['balanceMinor']);
+        self::assertSame(150, $totals[1]['balanceMinor']);
+        self::assertSame(7, $totals[2]['balanceMinor']);
+        self::assertSame('liability', $totals[4]['side']);
+        self::assertSame(12, $totals[4]['balanceMinor']);
+        self::assertSame(0, $totals[3]['balanceMinor']);
+        self::assertNotContains('cash', array_column($totals, 'type'));
+
+        $sheet = $this->dashboard->show('2026-11-05');
+        self::assertSame([
+            'payor' => 'Weekly Payor',
+            'on' => '2026-11-08',
+            'paycheckMinor' => 100000,
+        ], $sheet['payday']);
+        self::assertSame(8, $sheet['payorCount']);
+        self::assertNull($sheet['stay']);
+        self::assertSame(PlannerWidgets::ORDER, $sheet['plannerOrder']);
+        $byType = [];
+        foreach ($sheet['accountTotals'] as $row) {
+            $byType[$row['type']] = $row;
+        }
+        self::assertSame(249000, $byType['checking']['balanceMinor']);
+        self::assertSame('asset', $byType['checking']['side']);
+        self::assertSame(1020000, $byType['savings']['balanceMinor']);
+        self::assertSame(110500, $byType['cash']['balanceMinor']);
+        self::assertSame(40000, $byType['credit']['balanceMinor']);
+        self::assertSame('liability', $byType['credit']['side']);
+        self::assertSame(500000, $byType['loan']['balanceMinor']);
+        self::assertSame('liability', $byType['loan']['side']);
+        self::assertSame(8000, $byType['fuel']['balanceMinor']);
+        self::assertSame('liability', $byType['fuel']['side']);
+        $other = array_values(array_filter(
+            $sheet['accountTotals'],
+            static fn (array $row): bool => $row['type'] === 'other',
+        ));
+        self::assertSame(
+            [
+                ['type' => 'other', 'balanceMinor' => 75000, 'side' => 'asset'],
+                ['type' => 'other', 'balanceMinor' => 12000, 'side' => 'liability'],
+            ],
+            $other,
+        );
+        self::assertSame(
+            ['savings', 'checking', 'cash', 'other', 'fuel', 'other', 'credit', 'loan'],
+            array_column($sheet['accountTotals'], 'type'),
+        );
+
+        $received = ['on' => '2026-11-01', 'paycheckMinor' => 100];
+        $today = ['on' => '2026-11-05', 'paycheckMinor' => 200];
+        $later = ['on' => '2026-11-08', 'paycheckMinor' => 300];
+        $nextMonth = ['on' => '2026-12-01', 'paycheckMinor' => 400];
+        self::assertSame(500, PlannerWidgets::stillComing([$received, $today, $later, $nextMonth], '2026-11', '2026-11-05'));
+        self::assertSame(400, PlannerWidgets::stillComing([$received, $today, $later, $nextMonth], '2026-12', '2026-11-05'));
+        self::assertArrayHasKey('2026-11', $sheet['incomeComing']);
+        self::assertArrayHasKey('2026-12', $sheet['incomeComing']);
+        self::assertSame(1750000, $sheet['incomeComing']['2026-11']);
+    }
+
+    public function testASavedOrderRoundTripsAndAPartialOrderFallsBack(): void
+    {
+        $custom = ['bills', 'income', 'calendar', 'trips', 'accounts', 'envelopes'];
+        self::assertSame($custom, PlannerWidgets::order(PlannerWidgets::encode($custom)));
+        foreach (['["bills"]', '["income","nope"]', '["income","income","calendar","trips","accounts","envelopes"]', '', null, ['trips']] as $stored) {
+            $order = PlannerWidgets::order($stored);
+            self::assertSame(PlannerWidgets::ORDER, $order);
+            foreach (PlannerWidgets::ORDER as $widget) {
+                self::assertContains($widget, $order);
+            }
+        }
+
+        $owner = $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn();
+        $demo = $this->pdo->query("SELECT password_hash FROM user WHERE role = 'demo'")->fetchColumn();
+        $saved = $this->auth->updateSettings(['plannerOrder' => $custom]);
+        self::assertSame($custom, $saved['plannerOrder']);
+        self::assertSame($custom, $this->auth->current()['plannerOrder']);
+        self::assertSame(json_encode($custom), $this->pdo->query("SELECT planner_order FROM user WHERE role = 'demo'")->fetchColumn());
+        self::assertSame($owner, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn());
+        self::assertSame($demo, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'demo'")->fetchColumn());
+
+        try {
+            $this->auth->updateSettings(['plannerOrder' => ['bills']]);
+            self::fail('A partial order should be refused.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertArrayHasKey('plannerOrder', $e->fields);
+        }
+        self::assertSame($custom, $this->auth->current()['plannerOrder']);
+
+        $this->pdo->prepare('UPDATE user SET planner_order = ? WHERE role = \'demo\'')->execute(['["income","nope"]']);
+        self::assertSame(PlannerWidgets::ORDER, $this->auth->current()['plannerOrder']);
+    }
+
+    public function testAWidgetSpanIsTwoThreeOrSixAndRestores(): void
+    {
+        // Income is half beside net worth. Calendar, Trips, and Accounts are single, three across.
+        // Envelopes and Bills each take the row.
+        $defaults = [
+            'income' => 3,
+            'calendar' => 2,
+            'trips' => 2,
+            'accounts' => 2,
+            'envelopes' => 6,
+            'bills' => 6,
+        ];
+        self::assertSame([2, 3, 6], PlannerWidgets::SPAN_VALUES);
+        self::assertSame($defaults, PlannerWidgets::SPANS);
+        self::assertSame($defaults, PlannerWidgets::spans(null));
+        self::assertSame($defaults, $this->dashboard->show('2026-11-05')['plannerSpans']);
+        foreach ($defaults as $span) {
+            self::assertContains($span, [2, 3, 6]);
+        }
+
+        $custom = [
+            'income' => 6,
+            'calendar' => 2,
+            'trips' => 3,
+            'accounts' => 2,
+            'envelopes' => 2,
+            'bills' => 6,
+        ];
+        self::assertSame($custom, PlannerWidgets::spans(PlannerWidgets::encodeSpans($custom)));
+        foreach ([
+            null,
+            '',
+            '{"income":5}',
+            '{"income":2}',
+            '{"income":"6","calendar":2,"trips":2,"accounts":2,"envelopes":6,"bills":6}',
+            '[]',
+            'nope',
+            [2, 2, 2, 2, 2, 6],
+        ] as $stored) {
+            self::assertSame($defaults, PlannerWidgets::spans($stored));
+        }
+
+        $owner = $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn();
+        $demo = $this->pdo->query("SELECT password_hash FROM user WHERE role = 'demo'")->fetchColumn();
+        $saved = $this->auth->updateSettings(['plannerSpans' => $custom]);
+        self::assertSame($custom, $saved['plannerSpans']);
+        self::assertSame($custom, $this->auth->current()['plannerSpans']);
+        self::assertSame(json_encode($custom), $this->pdo->query("SELECT planner_spans FROM user WHERE role = 'demo'")->fetchColumn());
+        self::assertSame(PlannerWidgets::ORDER, $saved['plannerOrder']);
+        self::assertSame($owner, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn());
+        self::assertSame($demo, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'demo'")->fetchColumn());
+
+        $order = ['bills', 'income', 'calendar', 'trips', 'accounts', 'envelopes'];
+        $kept = $this->auth->updateSettings(['plannerOrder' => $order]);
+        self::assertSame($order, $kept['plannerOrder']);
+        self::assertSame($custom, $kept['plannerSpans']);
+
+        foreach ([
+            ['income' => 4],
+            ['income' => 1, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
+            ['income' => '6', 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
+            ['income' => 2, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6, 'net' => 3],
+            [2, 3, 6, 2, 2, 6],
+        ] as $bad) {
+            try {
+                $this->auth->updateSettings(['plannerSpans' => $bad]);
+                self::fail('An invalid span should be refused.');
+            } catch (ApiException $e) {
+                self::assertSame(422, $e->status);
+                self::assertArrayHasKey('plannerSpans', $e->fields);
+            }
+        }
+        self::assertSame($custom, $this->auth->current()['plannerSpans']);
+
+        $this->pdo->prepare('UPDATE user SET planner_spans = ? WHERE role = \'demo\'')->execute(['{"income":9}']);
+        self::assertSame($defaults, $this->auth->current()['plannerSpans']);
+        self::assertSame($order, $this->auth->current()['plannerOrder']);
+    }
+
+    /** @return array{id:int,placeName:string,city:string,region:string,arriveOn:string,departOn:string} */
+    private function stay(int $id, string $place, string $city, string $region, string $arrive, string $depart): array
+    {
+        return [
+            'id' => $id,
+            'placeName' => $place,
+            'city' => $city,
+            'region' => $region,
+            'arriveOn' => $arrive,
+            'departOn' => $depart,
+        ];
+    }
+}

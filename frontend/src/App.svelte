@@ -21,15 +21,20 @@
   import Calendar from './pages/Calendar.svelte';
   import Vehicles from './pages/Vehicles.svelte';
   import VehicleForm from './pages/VehicleForm.svelte';
-  import Settings from './pages/Settings.svelte';
 
   const view = $derived(match(route.path));
 
   $effect(() => {
     const path = route.path;
-    if (path === '/credit' || path === '/plans' || path.startsWith('/plans/')) {
+    if (path === '/credit' || path === '/plans' || path.startsWith('/plans/') || path === '/settings' || path === '/settings/rates') {
       history.replaceState({}, '', '/');
       route.path = '/';
+      return;
+    }
+    if (path === '/settings/vehicles' || path.startsWith('/settings/vehicles/')) {
+      const next = '/vehicles' + path.slice('/settings/vehicles'.length);
+      history.replaceState({}, '', next);
+      route.path = next;
     }
   });
 
@@ -80,8 +85,6 @@
         <Vehicles />
       {:else if view.name === 'vehicle-form'}
         <VehicleForm id={view.id} />
-      {:else}
-        <Settings />
       {/if}
     {/key}
   </Shell>

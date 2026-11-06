@@ -42,7 +42,7 @@ final class DashboardService
         $horizon = $this->horizonDays();
         $windowEnd = Dates::parse($today)->modify('+' . ($horizon - 1) . ' days')->format('Y-m-d');
         $stmt = $this->pdo->prepare(
-            'SELECT id, name, side, currency, balance_minor AS balanceMinor
+            'SELECT id, name, type, side, currency, balance_minor AS balanceMinor
              FROM accounts WHERE user_id = ? AND archived_at IS NULL'
         );
         $stmt->execute([$this->actor->id()]);
@@ -55,6 +55,7 @@ final class DashboardService
             $accounts[] = [
                 'id' => (int) $row['id'],
                 'name' => (string) $row['name'],
+                'type' => (string) $row['type'],
                 'side' => (string) $row['side'],
                 'currency' => (string) $row['currency'],
                 'balanceMinor' => (int) $row['balanceMinor'],
@@ -131,7 +132,58 @@ final class DashboardService
             'duePies' => $this->duePies($today),
             'heading' => $heading['text'],
             'headingItalic' => $heading['italic'],
+            'payday' => PlannerWidgets::payday($timeline, $today),
+            'incomeComing' => $this->incomeComing($today),
+            'payorCount' => count($income),
+            'stay' => PlannerWidgets::stay($listed, $today),
+            'accountTotals' => PlannerWidgets::accountTotals($accounts),
+            'plannerOrder' => $this->plannerOrder(),
+            'plannerSpans' => $this->plannerSpans(),
         ];
+    }
+
+    /**
+     * Still coming in for the month on screen and the next one.
+     * The planner switches between those two.
+     *
+     * @return array<string, int>
+     */
+    private function incomeComing(string $today): array
+    {
+        $months = [
+            substr($today, 0, 7),
+            Dates::parse($today)->modify('first day of next month')->format('Y-m'),
+        ];
+        $coming = [];
+        foreach ($months as $month) {
+            $coming[$month] = PlannerWidgets::stillComing(
+                $this->payCycles->monthPay($month, $today),
+                $month,
+                $today,
+            );
+        }
+
+        return $coming;
+    }
+
+    /** @return list<string> */
+    private function plannerOrder(): array
+    {
+        $stmt = $this->pdo->prepare('SELECT planner_order FROM user WHERE id = ?');
+        $stmt->execute([$this->actor->id()]);
+        $stored = $stmt->fetchColumn();
+
+        return PlannerWidgets::order($stored === false ? null : $stored);
+    }
+
+    /** @return array<string, int> */
+    private function plannerSpans(): array
+    {
+        $stmt = $this->pdo->prepare('SELECT planner_spans FROM user WHERE id = ?');
+        $stmt->execute([$this->actor->id()]);
+        $stored = $stmt->fetchColumn();
+
+        return PlannerWidgets::spans($stored === false ? null : $stored);
     }
 
     /** @return array<string, list<array{currency:string,exponent:int,slices:list<array{type:string,amountMinor:int}>}>> */

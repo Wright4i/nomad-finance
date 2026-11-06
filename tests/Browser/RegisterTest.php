@@ -111,19 +111,7 @@ final class RegisterTest extends TestCase
         self::click('Create my login');
         self::waitForText('Net worth');
         self::waitForMoney('$0.00');
-        self::clickLink('Settings');
-        $price = self::wait()->until(function (): string|false {
-            $value = self::driver()->executeScript(<<<'JS'
-                const input = document.querySelector('input[name="fuelPrice"]');
-                return input ? input.value : '';
-            JS);
-
-            return $value === '3.99' ? $value : false;
-        });
-        self::assertSame('3.99', $price);
-        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
-            WebDriverBy::partialLinkText('Vehicles'),
-        ))->click();
+        self::clickLink('Vehicles');
         self::waitForText('Rig 1');
         $star = self::wait()->until(WebDriverExpectedCondition::visibilityOfElementLocated(
             WebDriverBy::cssSelector('button[aria-label="Rig 1 is the default"]'),
@@ -133,6 +121,15 @@ final class RegisterTest extends TestCase
             WebDriverBy::partialLinkText('Rig 1'),
         ))->click();
         self::waitForText("8.0\u{2013}16.0 mpg");
+        $price = self::wait()->until(function (): string|false {
+            $value = self::driver()->executeScript(<<<'JS'
+                const input = document.querySelector('input[name="fuelPrice"]');
+                return input ? input.value : '';
+            JS);
+
+            return $value === '3.99' ? $value : false;
+        });
+        self::assertSame('3.99', $price);
     }
 
     #[Depends('testSetupShowsAnEmptyNetWorth')]
@@ -164,8 +161,7 @@ final class RegisterTest extends TestCase
     #[Depends('testDemoOpensTheSampleBooks')]
     public function testExchangeRatesLiveUnderSettings(): void
     {
-        self::clickLink('Settings');
-        self::waitForText('Fallback price per gallon');
+        self::assertSame([], self::driver()->findElements(WebDriverBy::linkText('Settings')));
         $body = self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText();
         self::assertStringNotContainsString('Exchange rates', $body);
         self::assertStringNotContainsString('USD', $body);

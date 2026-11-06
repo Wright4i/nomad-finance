@@ -82,17 +82,31 @@ final class LogRulesTest extends TestCase
         $logged = $this->bills->log([
             'kind' => 'fuel',
             'accountId' => $this->checkingId,
-            'amountMinor' => 400,
+            'amountMinor' => 4000,
             'vehicleId' => $vehicle['id'],
             'odometerMiles' => 1100,
+            'pricePerGallonMinor' => 400,
             'date' => '2026-11-05',
             'today' => '2026-11-05',
         ]);
-        self::assertSame('paid', $logged['status']);
+        self::assertSame('active', $logged['status']);
+        self::assertNull($logged['lastPaidOn']);
         self::assertSame('Fuel', $logged['name']);
         self::assertSame('fuel', $logged['type']);
         self::assertFalse($logged['locked']);
         self::assertSame($before, $this->balance());
+        $fed = $this->vehicles->get($vehicle['id']);
+        self::assertSame(1100, $fed['currentOdometerMiles']);
+        self::assertSame(400, $fed['suggestedPricePerGallonMinor']);
+        self::assertSame('10.0', $fed['milesPerGallon']);
+        self::assertSame(1100, $fed['readings'][0]['odometerMiles']);
+        self::assertSame(100, $fed['readings'][0]['miles']);
+        self::assertSame('10.0', $fed['readings'][0]['milesPerGallon']);
+        $paid = $this->bills->markPaid($logged['id'], ['paidOn' => '2026-11-05']);
+        self::assertSame('paid', $paid['status']);
+        self::assertSame('2026-11-05', $paid['lastPaidOn']);
+        self::assertSame($before, $this->balance());
+        self::assertSame(1100, $this->vehicles->get($vehicle['id'])['currentOdometerMiles']);
         try {
             $this->vehicles->update($vehicle['id'], [
                 'name' => 'Vehicle 1',
@@ -109,6 +123,7 @@ final class LogRulesTest extends TestCase
 
     public function testAWantLogFilesOnTheLockedBucketAndCanBeArchivedFromPaused(): void
     {
+        $before = $this->balance();
         $logged = $this->bills->log([
             'kind' => 'want',
             'type' => 'restaurants',
@@ -118,8 +133,13 @@ final class LogRulesTest extends TestCase
             'date' => '2026-11-05',
             'today' => '2026-11-05',
         ]);
-        self::assertSame('paid', $logged['status']);
+        self::assertSame('active', $logged['status']);
+        self::assertNull($logged['lastPaidOn']);
         self::assertSame('Restaurants', $logged['categoryName']);
+        self::assertSame($before, $this->balance());
+        $paid = $this->bills->markPaid($logged['id'], ['paidOn' => '2026-11-05']);
+        self::assertSame('paid', $paid['status']);
+        self::assertSame($before, $this->balance());
         $active = $this->bills->create([
             'name' => 'Phone 1',
             'type' => 'cellular',

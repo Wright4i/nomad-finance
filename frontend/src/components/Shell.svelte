@@ -1,25 +1,55 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { api } from '../lib/api';
+  import { api, explain } from '../lib/api';
   import { follow, route } from '../lib/nav.svelte.ts';
-  import { adoptUser, loadSession, session } from '../lib/session.svelte.ts';
+  import { adoptUser, applyTheme, loadSession, session } from '../lib/session.svelte.ts';
   import type { User } from '../lib/types';
   import Glyph from './Glyph.svelte';
 
   let { children }: { children: Snippet } = $props();
   let open = $state(false);
   let resetting = $state(false);
+  let savingTheme = $state(false);
   let resetDialog: HTMLDialogElement | undefined = $state();
+  let accountDialog: HTMLDialogElement | undefined = $state();
+  let accountOpen = $state(false);
+  let accountName = $state('');
+  let accountPassword = $state('');
+  let accountMessage = $state('');
+  let accountFields = $state<Record<string, string>>({});
+  let savingAccount = $state(false);
 
-  const items = [
-    { href: '/', label: 'Planner', mark: 'needs' },
-    { href: '/pay-cycles', label: 'Income', mark: 'cash' },
-    { href: '/bills', label: 'Bills', mark: 'debt' },
-    { href: '/calendar', label: 'Calendar', mark: 'monthly' },
-    { href: '/trips', label: 'Trips', mark: 'transport' },
-    { href: '/envelopes', label: 'Envelopes', mark: 'envelope' },
-    { href: '/accounts', label: 'Accounts', mark: 'vault' },
+  function openAccountDialog(node: HTMLDialogElement): { destroy: () => void } {
+    node.showModal();
+    const onClose = (): void => {
+      accountOpen = false;
+    };
+    node.addEventListener('close', onClose);
+    return {
+      destroy() {
+        node.removeEventListener('close', onClose);
+      },
+    };
+  }
+
+  const groups = [
+    [
+      { href: '/', label: 'Planner', mark: 'needs' },
+      { href: '/calendar', label: 'Calendar', mark: 'monthly' },
+      { href: '/trips', label: 'Trips', mark: 'transport' },
+    ],
+    [
+      { href: '/pay-cycles', label: 'Income', mark: 'cash' },
+      { href: '/bills', label: 'Bills', mark: 'debt' },
+      { href: '/envelopes', label: 'Envelopes', mark: 'envelope' },
+    ],
+    [
+      { href: '/accounts', label: 'Accounts', mark: 'vault' },
+      { href: '/vehicles', label: 'Vehicles', mark: 'vehicle' },
+    ],
   ];
+
+  let theme = $derived(session.user?.theme === 'light' ? 'light' : 'dark');
 
   function active(href: string): boolean {
     if (href === '/') {
@@ -31,9 +61,10 @@
         || route.path === '/categories'
         || route.path.startsWith('/categories/');
     }
-    if (href === '/settings') {
-      return route.path === '/settings'
-        || route.path.startsWith('/settings/');
+    if (href === '/vehicles') {
+      return route.path === '/vehicles'
+        || route.path.startsWith('/vehicles/')
+        || route.path.startsWith('/settings/vehicles');
     }
     return route.path === href || route.path.startsWith(`${href}/`);
   }
@@ -53,6 +84,63 @@
 
   function askReset(): void {
     resetDialog?.showModal();
+  }
+
+  async function setTheme(next: 'light' | 'dark'): Promise<void> {
+    if (!session.user || savingTheme) return;
+    const previous = session.user.theme === 'light' ? 'light' : 'dark';
+    if (previous === next) return;
+    applyTheme(next);
+    session.user = { ...session.user, theme: next };
+    savingTheme = true;
+    try {
+      const data = await api<{ user: User }>('/api/settings', {
+        method: 'PATCH',
+        body: { theme: next },
+      });
+      adoptUser(data.user);
+    } catch {
+      applyTheme(previous);
+      if (session.user) session.user = { ...session.user, theme: previous };
+    } finally {
+      savingTheme = false;
+    }
+  }
+
+  function askAccount(): void {
+    if (!session.user || session.user.role === 'demo') return;
+    accountName = session.user.name;
+    accountPassword = '';
+    accountMessage = '';
+    accountFields = {};
+    accountOpen = true;
+  }
+
+  async function saveAccount(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (!session.user || savingAccount) return;
+    savingAccount = true;
+    accountMessage = '';
+    accountFields = {};
+    try {
+      const data = await api<{ user: User }>('/api/settings', {
+        method: 'PATCH',
+        body: {
+          name: accountName,
+          password: accountPassword,
+          horizonDays: session.user.horizonDays,
+        },
+      });
+      adoptUser(data.user);
+      accountPassword = '';
+      accountDialog?.close();
+    } catch (err) {
+      const problem = explain(err);
+      accountMessage = problem.message;
+      accountFields = problem.fields;
+    } finally {
+      savingAccount = false;
+    }
   }
 
   async function resetDemo(): Promise<void> {
@@ -102,24 +190,48 @@
       New Log
     </a>
     <hr class="nav-rule" />
-    {#each items as item}
-      <a href={item.href} class:active={active(item.href)} onclick={(event) => visit(event, item.href)}>
-        <Glyph name={item.mark} mini />
-        {item.label}
-      </a>
+    {#each groups as group, index}
+      {#if index > 0}<hr class="nav-rule" />{/if}
+      {#each group as item}
+        <a href={item.href} class:active={active(item.href)} onclick={(event) => visit(event, item.href)}>
+          <Glyph name={item.mark} mini />
+          {item.label}
+        </a>
+      {/each}
     {/each}
     <div class="nav-foot">
-      <p class="px-3 text-sm muted">{session.user?.name}</p>
+      <hr class="nav-rule" />
+      {#if session.user && session.user.role !== 'demo'}
+        <button class="linkish" type="button" onclick={askAccount}>{session.user.name}</button>
+      {:else}
+        <p class="px-3 text-sm muted">{session.user?.name}</p>
+      {/if}
       {#if session.user?.role === 'demo'}
         <button class="linkish" type="button" disabled={resetting} aria-busy={resetting} onclick={askReset}>
           {resetting ? 'Resetting…' : 'Reset demo data'}
         </button>
       {/if}
       <hr class="nav-rule" />
-      <a class="linkish" href="/settings" class:active={active('/settings')} onclick={(event) => visit(event, '/settings')}>
-        <Glyph name="settings" mini />
-        Settings
-      </a>
+      <div class="theme-pill" class:light={theme === 'light'} role="group" aria-label="Theme">
+        <span class="theme-slant night" aria-hidden="true"></span>
+        <span class="theme-slant light" aria-hidden="true"></span>
+        <button
+          type="button"
+          aria-label="Night"
+          aria-pressed={theme !== 'light'}
+          onclick={() => setTheme('dark')}
+        >
+          <Glyph name="moon" mini />
+        </button>
+        <button
+          type="button"
+          aria-label="Day"
+          aria-pressed={theme === 'light'}
+          onclick={() => setTheme('light')}
+        >
+          <Glyph name="sun" mini />
+        </button>
+      </div>
       <button class="linkish" type="button" onclick={logout}>
         <span class="glyph mini" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none">
@@ -136,6 +248,31 @@
     {@render children()}
   </main>
 </div>
+
+{#if accountOpen}
+  <dialog class="modal" bind:this={accountDialog} use:openAccountDialog aria-labelledby="account-title">
+    <form onsubmit={saveAccount}>
+      <div class="modal-body">
+        <h2 id="account-title" class="m-0 text-2xl">Name and password</h2>
+        {#if accountMessage}<p class="banner m-0">{accountMessage}</p>{/if}
+        <label class="field">
+          <span>Name</span>
+          <input name="accountName" bind:value={accountName} />
+          {#if accountFields.name}<em>{accountFields.name}</em>{/if}
+        </label>
+        <label class="field">
+          <span>New password</span>
+          <input name="accountPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep the current one…" bind:value={accountPassword} />
+          {#if accountFields.password}<em>{accountFields.password}</em>{/if}
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="submit" disabled={savingAccount}>{savingAccount ? 'Saving…' : 'Save'}</button>
+        <button class="btn" type="button" onclick={() => accountDialog?.close()}>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+{/if}
 
 <dialog class="modal" bind:this={resetDialog} aria-labelledby="reset-title">
   <div class="modal-body">

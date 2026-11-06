@@ -38,8 +38,7 @@ export type View =
   | { name: 'log' }
   | { name: 'calendar' }
   | { name: 'vehicles' }
-  | { name: 'vehicle-form'; id: string | null }
-  | { name: 'settings' };
+  | { name: 'vehicle-form'; id: string | null };
 
 export function match(path: string): View {
   if (path === '/credit' || path === '/plans' || path.startsWith('/plans/')) return { name: 'dashboard' };
@@ -67,10 +66,9 @@ export function match(path: string): View {
   if (trip) return { name: 'trip-form', id: trip[1] };
   if (path === '/log') return { name: 'log' };
   if (path === '/calendar') return { name: 'calendar' };
-  if (path === '/settings/vehicles') return { name: 'vehicles' };
-  if (path === '/settings/vehicles/new') return { name: 'vehicle-form', id: null };
-  const vehicle = path.match(/^\/settings\/vehicles\/(\d+)$/);
+  if (path === '/vehicles' || path === '/settings/vehicles') return { name: 'vehicles' };
+  if (path === '/vehicles/new' || path === '/settings/vehicles/new') return { name: 'vehicle-form', id: null };
+  const vehicle = path.match(/^\/(?:settings\/)?vehicles\/(\d+)$/);
   if (vehicle) return { name: 'vehicle-form', id: vehicle[1] };
-  if (path === '/settings') return { name: 'settings' };
   return { name: 'dashboard' };
 }

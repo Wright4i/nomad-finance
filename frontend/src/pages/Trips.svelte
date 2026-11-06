@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onDestroy, onMount } from 'svelte';
   import Globe from '../components/Globe.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -340,7 +341,7 @@
     <p class="m-0">No stays yet</p>
   {/if}
 
-  {#if message}<p class="banner m-0" aria-live="polite">{message}</p>{/if}
+  <Note bind:message />
 
   <div class="stay-toolbar">
     <div class="stay-toolbar-nav">

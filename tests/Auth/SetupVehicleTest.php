@@ -51,8 +51,9 @@ final class SetupVehicleTest extends TestCase
         ]));
 
         self::assertSame('Ada', $user['name']);
-        self::assertSame(399, $user['fuelPriceMinor']);
+        self::assertArrayNotHasKey('fuelPriceMinor', $user);
         $vehicle = $this->ownerVehicle();
+        self::assertSame(399, (int) $vehicle['fuel_price_minor']);
         self::assertSame('Rig 1', $vehicle['name']);
         self::assertSame('truck', $vehicle['kind']);
         self::assertSame(1, (int) $vehicle['starred']);
@@ -73,8 +74,8 @@ final class SetupVehicleTest extends TestCase
             'mpgMaxTenths' => 120,
         ]));
 
-        self::assertNull($user['fuelPriceMinor']);
-        self::assertNull($this->pdo->query("SELECT fuel_price_minor FROM user WHERE role = 'owner'")->fetchColumn());
+        self::assertArrayNotHasKey('fuelPriceMinor', $user);
+        self::assertNull($this->ownerVehicle()['fuel_price_minor']);
         self::assertSame('Rig 1', $this->ownerVehicle()['name']);
     }
 
@@ -112,7 +113,7 @@ final class SetupVehicleTest extends TestCase
             'mpgMaxTenths' => 120,
         ]));
         self::assertSame('Ada', $user['name']);
-        self::assertSame(399, $user['fuelPriceMinor']);
+        self::assertSame(399, (int) $this->ownerVehicle()['fuel_price_minor']);
         self::assertSame(1, (int) $this->ownerVehicle()['starred']);
     }
 
@@ -176,7 +177,7 @@ final class SetupVehicleTest extends TestCase
     private function ownerVehicle(): array
     {
         $row = $this->pdo->query(
-            "SELECT v.name, v.kind, v.starred, v.mpg_min_tenths, v.mpg_max_tenths, v.current_odometer_miles
+            "SELECT v.name, v.kind, v.starred, v.mpg_min_tenths, v.mpg_max_tenths, v.current_odometer_miles, v.fuel_price_minor
              FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'owner'"
         )->fetch();
         self::assertIsArray($row);

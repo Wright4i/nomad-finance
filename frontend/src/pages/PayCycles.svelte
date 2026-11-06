@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
+  import DateField from '../components/DateField.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
@@ -128,7 +130,7 @@
     title={includeArchived ? 'Leave archived pay cycles off this list' : 'Archived pay cycles stay stored until you ask for them'}
     onclick={toggle}
   >{includeArchived ? 'Hide archived' : 'Show archived'}</button>
-  {#if message}<p class="banner">{message}</p>{/if}
+  <Note bind:message />
   {#if ready && cycles.length === 0}
     <p class="muted m-0">No pay cycles yet.</p>
   {:else if cycles.length > 0}
@@ -202,7 +204,7 @@
     {#if payrollCycle?.length === 'irregular'}
       <label class="field">
         <span>Add a date</span>
-        <input name="extraDate" placeholder="YYYY-MM-DD" bind:value={extraDate} />
+        <DateField name="extraDate" bind:value={extraDate} />
       </label>
     {/if}
   </div>

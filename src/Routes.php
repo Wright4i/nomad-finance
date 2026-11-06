@@ -62,6 +62,7 @@ final class Routes
             $group->get('/session', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                 return Json::write($response, [
                     'needsSetup' => $auth->needsSetup(),
+                    'allowNewUser' => $auth->allowsNewUser(),
                     'csrfToken' => Csrf::token(),
                     'user' => $auth->current(),
                 ]);

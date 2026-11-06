@@ -44,27 +44,27 @@ final class HorizonSettingsTest extends TestCase
         }
     }
 
-    public function testTheHorizonAndFallbackPriceSaveWithoutChangingThePassword(): void
+    public function testTheHorizonSavesWithoutChangingThePassword(): void
     {
         $opened = $this->auth->current();
         self::assertNotNull($opened);
         self::assertSame(60, $opened['horizonDays']);
-        self::assertNull($opened['fuelPriceMinor']);
+        self::assertArrayNotHasKey('fuelPriceMinor', $opened);
         $hash = $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn();
 
         $saved = $this->auth->updateSettings([
             'horizonDays' => 30,
-            'fuelPriceMinor' => 399,
+            'theme' => 'light',
         ]);
         self::assertSame('Ada', $saved['name']);
         self::assertSame('USD', $saved['baseCurrency']);
         self::assertSame(30, $saved['horizonDays']);
-        self::assertSame(399, $saved['fuelPriceMinor']);
+        self::assertSame('light', $saved['theme']);
+        self::assertArrayNotHasKey('fuelPriceMinor', $saved);
         self::assertSame($hash, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn());
 
-        $cleared = $this->auth->updateSettings(['fuelPriceMinor' => null, 'horizonDays' => '60']);
+        $cleared = $this->auth->updateSettings(['horizonDays' => '60']);
         self::assertSame(60, $cleared['horizonDays']);
-        self::assertNull($cleared['fuelPriceMinor']);
 
         try {
             $this->auth->updateSettings(['horizonDays' => 45]);
@@ -73,13 +73,6 @@ final class HorizonSettingsTest extends TestCase
             self::assertSame(422, $e->status);
             self::assertArrayHasKey('horizonDays', $e->fields);
         }
-        try {
-            $this->auth->updateSettings(['fuelPriceMinor' => 0]);
-            self::fail('A zero fuel price was saved.');
-        } catch (ApiException $e) {
-            self::assertSame(422, $e->status);
-            self::assertArrayHasKey('fuelPriceMinor', $e->fields);
-        }
         self::assertSame(60, $this->auth->current()['horizonDays']);
     }
 
@@ -87,13 +80,14 @@ final class HorizonSettingsTest extends TestCase
     {
         $demo = $this->auth->enterDemo();
         self::assertSame(60, $demo['horizonDays']);
-        self::assertSame(400, $demo['fuelPriceMinor']);
+        self::assertSame(400, (int) $this->pdo->query(
+            "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo'"
+        )->fetchColumn());
 
         $saved = $this->auth->updateSettings(['horizonDays' => 30]);
         self::assertSame('Demo', $saved['name']);
         self::assertSame('USD', $saved['baseCurrency']);
         self::assertSame(30, $saved['horizonDays']);
-        self::assertSame(400, $saved['fuelPriceMinor']);
 
         try {
             $this->auth->updateSettings(['name' => 'Someone else', 'horizonDays' => 60]);

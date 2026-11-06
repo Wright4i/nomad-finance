@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api } from '../lib/api';
@@ -266,7 +267,7 @@
 
 <div class="grid gap-4">
   <h1 class="m-0 text-4xl">Calendar</h1>
-  {#if message}<p class="banner" aria-live="polite">{message}</p>{/if}
+  <Note bind:message />
   <div class="flex flex-wrap items-center gap-2">
     <button class="btn" type="button" onclick={() => shift(-1)}>Previous month</button>
     <button class="btn" type="button" onclick={() => shift(1)}>Next month</button>

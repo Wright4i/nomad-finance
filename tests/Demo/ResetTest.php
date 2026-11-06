@@ -360,10 +360,12 @@ final class ResetTest extends TestCase
         self::assertTrue($byName['Averaged Payor']['averageOn']);
         self::assertSame(400000, $byName['Averaged Payor']['paycheckMinor']);
         self::assertSame('2026-12-15', $byName['Irregular Payor']['nextPayday']);
-        $user = $this->pdo->query("SELECT horizon_days, fuel_price_minor FROM user WHERE role = 'demo'")->fetch();
+        $user = $this->pdo->query("SELECT horizon_days FROM user WHERE role = 'demo'")->fetch();
         self::assertIsArray($user);
         self::assertSame(60, (int) $user['horizon_days']);
-        self::assertSame(400, (int) $user['fuel_price_minor']);
+        self::assertSame(400, (int) $this->pdo->query(
+            "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.name = 'Vehicle 1'"
+        )->fetchColumn());
         self::assertSame('2026-11-22', $this->pdo->query("SELECT balance_due_on FROM trips WHERE place_name = 'Stay 1'")->fetchColumn());
         self::assertSame('2026-12-01', $this->pdo->query("SELECT balance_due_on FROM trips WHERE place_name = 'Stay 2'")->fetchColumn());
         self::assertNull($this->pdo->query("SELECT rating_half_stars FROM trips WHERE place_name = 'Stay 1'")->fetchColumn());

@@ -111,7 +111,7 @@ final class PlannerHeadingTest extends TestCase
                 $pdo,
                 $catalog,
                 $actor,
-                new EnvelopeService($pdo, $actor, $catalog, new TargetService($pdo, $actor)),
+                new EnvelopeService($pdo, $actor, $catalog, new TargetService($pdo, $actor), new PayCycleService($pdo, $actor)),
                 new PayCycleService($pdo, $actor),
                 $trips,
             );

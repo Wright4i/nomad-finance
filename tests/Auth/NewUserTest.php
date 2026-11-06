@@ -29,7 +29,7 @@ final class NewUserTest extends TestCase
         $this->path = sys_get_temp_dir() . '/nomad-finance-' . bin2hex(random_bytes(4)) . '.sqlite';
         $this->pdo = Database::connect($this->path, dirname(__DIR__, 2) . '/db/migrations');
         $catalog = new CurrencyCatalog();
-        $this->auth = new AuthService($this->pdo, $catalog, new DemoLibrary($this->pdo, $catalog));
+        $this->auth = new AuthService($this->pdo, $catalog, new DemoLibrary($this->pdo, $catalog), true);
     }
 
     protected function tearDown(): void
@@ -78,14 +78,16 @@ final class NewUserTest extends TestCase
         self::assertSame('Bea', $created['name']);
         self::assertSame('user', $created['role']);
         self::assertSame('USD', $created['baseCurrency']);
-        self::assertNull($created['fuelPriceMinor']);
+        self::assertArrayNotHasKey('fuelPriceMinor', $created);
 
         $beaRow = $this->userWhere("name = 'Bea'");
         $beaId = (int) $beaRow['id'];
         self::assertNotSame($ownerId, $beaId);
         self::assertNotSame($demoId, $beaId);
         self::assertSame('user', $beaRow['role']);
-        self::assertNull($beaRow['fuel_price_minor']);
+        self::assertNull($this->pdo->query(
+            "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.name = 'Bea'"
+        )->fetchColumn());
         self::assertSame($ownerRow, $this->userWhere("role = 'owner'"));
         self::assertSame($demoRow, $this->userWhere("role = 'demo'"));
         self::assertSame($ownerBooks, $this->books($ownerId));
@@ -162,7 +164,7 @@ final class NewUserTest extends TestCase
     private function userWhere(string $where): array
     {
         $row = $this->pdo->query(
-            'SELECT id, name, password_hash, base_currency, theme, role, horizon_days, fuel_price_minor FROM user WHERE ' . $where
+            'SELECT id, name, password_hash, base_currency, theme, role, horizon_days FROM user WHERE ' . $where
         )->fetch();
         self::assertIsArray($row);
 

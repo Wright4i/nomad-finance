@@ -8,6 +8,7 @@ use App\Account\AccountService;
 use App\Auth\Actor;
 use App\Category\CategoryService;
 use App\Database\Database;
+use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\Target\TargetService;
 use App\Tests\Support\DemoSession;
@@ -52,7 +53,6 @@ final class VehicleRulesTest extends TestCase
         $fuel = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'locked' AND bill_type = 'fuel'");
         $fuel->execute([$_SESSION['user_id']]);
         $this->fuelId = (int) $fuel->fetchColumn();
-        $this->pdo->prepare('UPDATE user SET fuel_price_minor = 400 WHERE id = ?')->execute([$_SESSION['user_id']]);
     }
 
     protected function tearDown(): void
@@ -90,7 +90,7 @@ final class VehicleRulesTest extends TestCase
 
     public function testTheLabelUsesTheMidpointUntilAnInRangeFillUpExists(): void
     {
-        $vehicle = $this->vehicles->create($this->vehicle('Vehicle 1', true));
+        $vehicle = $this->vehicles->create(array_merge($this->vehicle('Vehicle 1', true), ['fuelPriceMinor' => 400]));
         $this->stay('Stay 1', '36.1699', '-115.1398', '2026-11-01', '2026-11-02');
         $second = $this->stay('Stay 2', '34.0522', '-118.2437', '2026-11-03', '2026-11-04');
         self::assertSame('9.0', $second['fuel']['milesPerGallon']);
@@ -105,6 +105,20 @@ final class VehicleRulesTest extends TestCase
         $labeled = $this->trips->get((int) $second['id'], '2026-11-03');
         self::assertSame('8.0', $labeled['fuel']['milesPerGallon']);
         self::assertSame(400, $labeled['fuel']['priceMinor']);
+    }
+
+    public function testAnUnpaidFillUpFeedsTheFuelLabel(): void
+    {
+        $vehicle = $this->vehicles->create($this->vehicle('Vehicle 1', true));
+        $this->stay('Stay 1', '36.1699', '-115.1398', '2026-11-01', '2026-11-02');
+        $second = $this->stay('Stay 2', '34.0522', '-118.2437', '2026-11-03', '2026-11-04');
+        self::assertSame('9.0', $second['fuel']['milesPerGallon']);
+        $this->fill(10000, 1000, $vehicle['id'], '2026-10-01', 'Fuel 1', 'active');
+        $this->fill(10020, 1000, $vehicle['id'], '2026-10-02', 'Fuel 1', 'active');
+        $this->fill(10120, 1000, $vehicle['id'], '2026-10-03', 'Fuel 1', 'active');
+        $labeled = $this->trips->get((int) $second['id'], '2026-11-03');
+        self::assertSame('8.0', $labeled['fuel']['milesPerGallon']);
+        self::assertCount(3, $this->vehicles->get($vehicle['id'])['readings']);
     }
 
     public function testTheFuelLogListsTheNewestFillUpFirst(): void
@@ -150,34 +164,56 @@ final class VehicleRulesTest extends TestCase
         self::assertNull($second['fuel']['priceMinor']);
     }
 
-    public function testAFuelLogOpensOnTheNewestPriceThenTheFallback(): void
+    public function testThePriceUsesThatVehiclesRecentLogThenItsFallback(): void
     {
-        $this->pdo->prepare('UPDATE user SET fuel_price_minor = 399 WHERE id = ?')->execute([$_SESSION['user_id']]);
-        $this->vehicles->create(array_merge($this->vehicle('Vehicle 1', true), ['currentOdometerMiles' => 10500]));
-        $this->vehicles->create(array_merge($this->vehicle('Vehicle 2', false), ['currentOdometerMiles' => 200]));
-        $first = $this->listed('Vehicle 1');
-        $second = $this->listed('Vehicle 2');
+        $starred = $this->vehicles->create(array_merge($this->vehicle('Vehicle 1', true), [
+            'currentOdometerMiles' => 10500,
+            'fuelPriceMinor' => 399,
+        ]));
+        $other = $this->vehicles->create(array_merge($this->vehicle('Vehicle 2', false), [
+            'currentOdometerMiles' => 200,
+            'fuelPriceMinor' => 250,
+        ]));
+        self::assertSame(399, $starred['fuelPriceMinor']);
+        self::assertSame(250, $other['fuelPriceMinor']);
 
-        $this->priced((int) $first['id'], '2026-11-01', 450);
-        $this->priced((int) $first['id'], '2026-11-01', 475);
-        $this->priced((int) $first['id'], '2026-09-01', 500);
-        $this->priced((int) $first['id'], '2026-11-18', null);
-        $this->priced((int) $first['id'], '2026-12-20', 999, 'active');
-        $this->priced(null, '2026-12-01', 510);
+        $this->priced((int) $starred['id'], '2026-11-01', 450);
+        $this->priced((int) $starred['id'], '2026-11-01', 475);
+        $this->priced((int) $other['id'], '2026-12-01', 510);
+        $this->priced(null, '2026-12-02', 999);
 
-        $opened = $this->listed('Vehicle 1');
-        self::assertSame(10500, $opened['currentOdometerMiles']);
-        self::assertSame(475, $opened['suggestedPricePerGallonMinor']);
-        self::assertSame(200, $second['currentOdometerMiles']);
-        self::assertSame(399, $this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
-
-        $this->pdo->prepare('UPDATE user SET fuel_price_minor = NULL WHERE id = ?')->execute([$_SESSION['user_id']]);
         self::assertSame(475, $this->listed('Vehicle 1')['suggestedPricePerGallonMinor']);
         self::assertSame(510, $this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
 
-        $this->pdo->exec('DELETE FROM bills');
-        self::assertNull($this->listed('Vehicle 1')['suggestedPricePerGallonMinor']);
-        self::assertNull($this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
+        $this->stay('Stay 1', '36.1699', '-115.1398', '2026-11-01', '2026-11-02');
+        $second = $this->stay('Stay 2', '34.0522', '-118.2437', '2026-11-03', '2026-11-04');
+        $labeled = $this->trips->get((int) $second['id'], '2026-11-03');
+        self::assertSame(475, $labeled['fuel']['priceMinor']);
+
+        $this->pdo->prepare('DELETE FROM bills WHERE vehicle_id = ?')->execute([$starred['id']]);
+        self::assertSame(399, $this->listed('Vehicle 1')['suggestedPricePerGallonMinor']);
+        self::assertSame(510, $this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
+        self::assertSame(399, $this->trips->get((int) $second['id'], '2026-11-03')['fuel']['priceMinor']);
+
+        $cleared = $this->vehicles->update((int) $starred['id'], array_merge($this->vehicle('Vehicle 1', true), [
+            'currentOdometerMiles' => 10500,
+            'fuelPriceMinor' => null,
+        ]));
+        self::assertNull($cleared['fuelPriceMinor']);
+        self::assertNull($cleared['suggestedPricePerGallonMinor']);
+        self::assertSame(510, $this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
+        self::assertNull($this->trips->get((int) $second['id'], '2026-11-03')['fuel']['priceMinor']);
+
+        try {
+            $this->vehicles->update((int) $starred['id'], array_merge($this->vehicle('Vehicle 1', true), [
+                'currentOdometerMiles' => 10500,
+                'fuelPriceMinor' => 0,
+            ]));
+            self::fail('A zero fallback was stored.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertArrayHasKey('fuelPriceMinor', $e->fields);
+        }
     }
 
     /** @param array<string, mixed> $overrides
@@ -210,17 +246,18 @@ final class VehicleRulesTest extends TestCase
         ]);
     }
 
-    private function fill(int $odometer, int $amount, int $vehicleId, string $day, string $name = 'Fuel 1'): int
+    private function fill(int $odometer, int $amount, int $vehicleId, string $day, string $name = 'Fuel 1', string $status = 'paid'): int
     {
         $now = gmdate('c');
+        $paidOn = $status === 'paid' ? $day : null;
         $this->pdo->prepare(
             'INSERT INTO bills (
                 name, type, account_id, category_id, amount_minor, currency,
                 recurrence, anchor_date, next_due_date, last_paid_on, autopay, status,
                 created_at, updated_at, vehicle_id, odometer_miles, price_per_gallon_minor
-             ) VALUES (?, \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, \'paid\', ?, ?, ?, ?, 400)'
+             ) VALUES (?, \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, ?, ?, ?, ?, ?, 400)'
         )->execute([
-            $name, $this->accountId, $this->fuelId, $amount, $day, $day, $day, $now, $now, $vehicleId, $odometer,
+            $name, $this->accountId, $this->fuelId, $amount, $day, $day, $paidOn, $status, $now, $now, $vehicleId, $odometer,
         ]);
 
         return (int) $this->pdo->lastInsertId();

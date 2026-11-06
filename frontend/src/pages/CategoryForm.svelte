@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -149,7 +150,7 @@
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit bucket' : 'New bucket'}</h1>
   <p class="muted m-0">Name the bucket and put it in Needs, Wants, or Savings. This screen does not assign money.</p>
-  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <Note bind:message />
   {#if locked}
     <p class="m-0">Name <strong>{name}</strong></p>
   {:else}

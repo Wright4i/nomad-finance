@@ -98,32 +98,33 @@ final class EnvelopesTest extends TestCase
         self::waitForText('Use demo');
         self::click('Use demo');
         self::waitForText('Available to assign');
-        self::waitForText('$9,941.97');
+        self::waitForText('assigned of');
         self::waitForText('Needs');
         self::waitForText('50%');
-        self::waitForText('$500.00 · 100%');
+        self::waitForText('Assigned');
+        self::waitForText('Max');
         self::waitForText('Wants');
         self::waitForText('30%');
         self::waitForText('Savings');
         self::waitForText('20%');
         $gauges = self::driver()->executeScript(<<<'JS'
             const read = (name) => {
-                const meter = document.querySelector(`[aria-label^="${name} is"]`);
-                const gauge = meter ? meter.closest('.gauge') : null;
-                const over = meter ? meter.querySelector('.gauge-over') : null;
+                const gauge = [...document.querySelectorAll('.want-gauge')].find((node) => node.innerText.startsWith(name));
                 return {
                     text: gauge ? gauge.innerText : '',
-                    over: over ? over.style.transform : '',
+                    preview: gauge ? gauge.querySelectorAll('.want-gauge-preview').length : -1,
                 };
             };
             return { needs: read('Needs'), wants: read('Wants'), savings: read('Savings') };
         JS);
         self::assertIsArray($gauges);
-        self::assertStringContainsString('Over', $gauges['needs']['text']);
-        self::assertSame('scaleX(1)', $gauges['needs']['over']);
-        self::assertStringNotContainsString('Over', $gauges['wants']['text']);
-        self::assertSame('scaleX(0)', $gauges['wants']['over']);
-        self::assertSame('scaleX(0)', $gauges['savings']['over']);
+        self::assertStringContainsStringIgnoringCase('Assigned', $gauges['needs']['text']);
+        self::assertStringContainsStringIgnoringCase('Max', $gauges['needs']['text']);
+        self::assertSame(0, $gauges['needs']['preview']);
+        self::assertStringContainsStringIgnoringCase('Assigned', $gauges['wants']['text']);
+        self::assertSame(0, $gauges['wants']['preview']);
+        self::assertStringContainsStringIgnoringCase('Assigned', $gauges['savings']['text']);
+        self::assertSame(0, $gauges['savings']['preview']);
         $planner = self::driver()->executeScript(<<<'JS'
             const envelopes = document.querySelector('[data-section="envelopes"]');
             const bills = document.querySelector('[data-section="bills"]');
@@ -138,34 +139,32 @@ final class EnvelopesTest extends TestCase
                 const box = el.getBoundingClientRect();
                 return { text: el.textContent.trim(), width: box.width, height: box.height, top: box.top, left: box.left };
             });
-            const pieBox = bills.querySelector('svg.bill-pie')?.getBoundingClientRect() ?? null;
-            const stackBox = bills.querySelector('.month-squares')?.getBoundingClientRect() ?? null;
             return {
                 envelopeText,
                 needsBeforeAvailable: folded.indexOf('needs') >= 0 && folded.indexOf('available to assign') > folded.indexOf('needs'),
-                cards: envelopes.querySelectorAll('.card').length,
+                gauges: envelopes.querySelectorAll('button.want-gauge').length,
                 rentText: rent ? rent.innerText : '',
                 billText: bills.innerText,
                 pies: bills.querySelectorAll('svg.bill-pie').length,
                 rentFill: slice ? getComputedStyle(slice).fill : '',
                 teal: teal ? getComputedStyle(teal).color : '',
                 swatch: swatch ? getComputedStyle(swatch).backgroundColor : '',
-                assignInCard: Boolean(envelopes.querySelector('article.card a[href="/envelopes"]')),
+                assign: Boolean(envelopes.querySelector('a[href="/envelopes"]')),
                 squares: monthButtons.length,
                 monthButtons,
-                pieBox: pieBox ? { top: pieBox.top, bottom: pieBox.bottom } : null,
-                stackBox: stackBox ? { top: stackBox.top, bottom: stackBox.bottom } : null,
             };
         JS);
         self::assertIsArray($planner);
         self::assertTrue($planner['needsBeforeAvailable']);
-        self::assertGreaterThanOrEqual(4, $planner['cards']);
+        self::assertSame(3, $planner['gauges']);
         self::assertStringNotContainsString('Previous period', $planner['envelopeText']);
         self::assertStringNotContainsString('Next period', $planner['envelopeText']);
         self::assertStringNotContainsString('Open period', $planner['envelopeText']);
         self::assertStringNotContainsString('Cash 3', $planner['envelopeText']);
-        self::assertStringContainsString('$9,941.97', $planner['envelopeText']);
+        self::assertMatchesRegularExpression('/Available to assign\s+\$[\d,]+\.\d{2}/', $planner['envelopeText']);
         self::assertStringContainsString('assigned of', $planner['envelopeText']);
+        preg_match('/Available to assign\s+(\$[\d,]+\.\d{2})/', $planner['envelopeText'], $availableMatch);
+        $availableText = $availableMatch[1];
         self::assertSame(1, $planner['pies']);
         self::assertStringContainsString('rent', $planner['rentText']);
         self::assertStringContainsString('$380.00', $planner['rentText']);
@@ -180,24 +179,14 @@ final class EnvelopesTest extends TestCase
         self::assertStringNotContainsString('No bills this month.', $planner['billText']);
         self::assertSame($planner['teal'], $planner['rentFill']);
         self::assertSame($planner['teal'], $planner['swatch']);
-        self::assertTrue($planner['assignInCard']);
+        self::assertFalse($planner['assign']);
         self::assertSame(2, $planner['squares']);
         self::assertSame('Current Month', $planner['monthButtons'][0]['text']);
         self::assertSame('Next Month', $planner['monthButtons'][1]['text']);
-        self::assertEqualsWithDelta($planner['monthButtons'][0]['left'], $planner['monthButtons'][1]['left'], 1);
-        self::assertGreaterThan(
-            $planner['monthButtons'][0]['top'] + $planner['monthButtons'][0]['height'],
-            $planner['monthButtons'][1]['top'],
-        );
         foreach ($planner['monthButtons'] as $button) {
-            self::assertGreaterThan(120, $button['width']);
-            self::assertEqualsWithDelta($button['width'] / 2, $button['height'], 1);
+            self::assertGreaterThan($button['height'], $button['width']);
+            self::assertLessThan(72, $button['height']);
         }
-        self::assertEqualsWithDelta(
-            ($planner['pieBox']['top'] + $planner['pieBox']['bottom']) / 2,
-            ($planner['stackBox']['top'] + $planner['stackBox']['bottom']) / 2,
-            2,
-        );
         self::click('Next Month');
         self::wait()->until(function (): bool {
             $legend = self::driver()->executeScript(<<<'JS'
@@ -215,7 +204,7 @@ final class EnvelopesTest extends TestCase
         self::waitForText('$380.00');
         self::clickLink('Envelopes');
         self::waitForText('Available to assign');
-        self::waitForText('$9,941.97');
+        self::waitForText($availableText);
         self::waitForText('Needs 1');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
@@ -226,17 +215,106 @@ final class EnvelopesTest extends TestCase
 
             return $value === '500.00';
         });
+        $headings = self::driver()->executeScript(<<<'JS'
+            const read = (name) => {
+                const heading = document.querySelector(`h2.group-title[data-group="${name}"]`);
+                const figure = (key) => {
+                    const node = heading ? heading.querySelector(`[data-figure="${key}"]`) : null;
+                    return node ? node.innerText.replace(/\s+/g, ' ').trim() : '';
+                };
+                const label = heading ? heading.querySelector('.group-name') : null;
+                const sums = heading ? heading.querySelector('.group-sums') : null;
+                const labelBox = label ? label.getBoundingClientRect() : null;
+                const sumsBox = sums ? sums.getBoundingClientRect() : null;
+                return {
+                    assigned: figure('assigned'),
+                    max: figure('max'),
+                    target: figure('target'),
+                    beside: Boolean(labelBox && sumsBox && sumsBox.left >= labelBox.right - 4 && Math.abs(sumsBox.top - labelBox.top) < 24),
+                };
+            };
+            return { needs: read('needs'), wants: read('wants'), savings: read('savings') };
+        JS);
+        self::assertIsArray($headings);
+        foreach (['needs', 'wants', 'savings'] as $group) {
+            self::assertIsArray($headings[$group]);
+            self::assertStringStartsWith('ASSIGNED $', $headings[$group]['assigned']);
+            self::assertStringStartsWith('MAX $', $headings[$group]['max']);
+            self::assertStringStartsWith('TARGET $', $headings[$group]['target']);
+            self::assertStringNotContainsString('USD', $headings[$group]['assigned'] . $headings[$group]['max'] . $headings[$group]['target']);
+            self::assertTrue($headings[$group]['beside']);
+        }
+        $hero = self::driver()->executeScript(<<<'JS'
+            const figure = document.querySelector('[data-action="available"] .figure');
+            const select = document.querySelector('select[name="payCycleId"]');
+            return { text: figure ? figure.innerText.trim() : '', payor: Boolean(select) };
+        JS);
+        self::assertIsArray($hero);
+        self::assertFalse($hero['payor']);
+        self::assertSame($availableText, $hero['text']);
+        $availableCents = self::cents($hero['text']);
+        self::assertSame('TARGET ' . self::money(intdiv($availableCents * 50 + 50, 100)), $headings['needs']['target']);
+        self::assertSame('TARGET ' . self::money(intdiv($availableCents * 30 + 50, 100)), $headings['wants']['target']);
+        self::assertSame('TARGET ' . self::money(intdiv($availableCents * 20 + 50, 100)), $headings['savings']['target']);
+        self::clickAvailable();
+        $sources = self::driver()->executeScript(<<<'JS'
+            const dialog = document.querySelector('dialog.modal[open]');
+            if (!dialog) return null;
+            const income = dialog.querySelector('[data-source="income"]');
+            const accounts = dialog.querySelector('[data-source="accounts"]');
+            const checking = dialog.querySelector('[data-type="checking"] .glyph');
+            const savings = dialog.querySelector('[data-type="savings"] .glyph');
+            return {
+                income: income ? income.innerText : '',
+                accounts: accounts ? accounts.innerText : '',
+                incomeGlyph: Boolean(income && income.querySelector('.glyph')),
+                accountGlyph: Boolean(accounts && accounts.querySelector('.glyph')),
+                checking: checking ? getComputedStyle(checking).color : '',
+                savings: savings ? getComputedStyle(savings).color : '',
+            };
+        JS);
+        self::assertIsArray($sources);
+        self::assertStringContainsString('Payor', $sources['income']);
+        self::assertStringContainsString('$', $sources['income']);
+        self::assertStringContainsString('Checking', $sources['accounts']);
+        self::assertStringContainsString('$', $sources['accounts']);
+        self::assertTrue($sources['incomeGlyph']);
+        self::assertTrue($sources['accountGlyph']);
+        self::assertNotSame('', $sources['checking']);
+        self::assertNotSame($sources['checking'], $sources['savings']);
+        self::driver()->findElement(WebDriverBy::cssSelector('dialog.modal[open] #available-title'))->click();
+        self::assertTrue(self::driver()->executeScript('return document.querySelector("dialog.modal[open] #available-title") !== null') === true);
+        self::clickBackdrop();
+        self::wait()->until(function (): bool {
+            return self::driver()->executeScript('return document.querySelector("dialog.modal[open]") === null') === true;
+        });
         $bars = self::driver()->executeScript(<<<'JS'
             const tile = (name) => [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes(name));
             const read = (name) => {
                 const row = tile(name);
                 const water = row ? row.querySelector('.bucket-water') : null;
                 const box = water ? water.getBoundingClientRect() : null;
+                const wave = water ? water.querySelector('.bucket-wave') : null;
                 const assigned = row ? row.querySelector('input[name^="amount-"]') : null;
                 const maximum = row ? row.querySelector('input[name^="maximum-"]') : null;
+                const heading = row ? row.querySelector('strong') : null;
+                const label = row ? row.querySelector('.bucket-field > span') : null;
+                const glyph = row ? row.querySelector('.glyph') : null;
                 return {
                     found: Boolean(row),
                     input: assigned !== null,
+                    nameShadow: heading ? getComputedStyle(heading).textShadow : 'none',
+                    nameStroke: heading ? getComputedStyle(heading).webkitTextStroke : '',
+                    nameColor: heading ? getComputedStyle(heading).color : '',
+                    labelShadow: label ? getComputedStyle(label).textShadow : 'none',
+                    labelStroke: label ? getComputedStyle(label).webkitTextStroke : '',
+                    labelColor: label ? getComputedStyle(label).color : '',
+                    inputShadow: assigned ? getComputedStyle(assigned).textShadow : 'none',
+                    inputStroke: assigned ? getComputedStyle(assigned).webkitTextStroke : '',
+                    inputColor: assigned ? getComputedStyle(assigned).color : '',
+                    maximumStroke: maximum ? getComputedStyle(maximum).webkitTextStroke : '',
+                    maximumColor: maximum ? getComputedStyle(maximum).color : '',
+                    glyphFilter: glyph ? getComputedStyle(glyph).filter : 'none',
                     assignedDisabled: assigned ? assigned.disabled : true,
                     assignedValue: assigned ? assigned.value : '',
                     maximumDisabled: maximum ? maximum.disabled : false,
@@ -244,7 +322,11 @@ final class EnvelopesTest extends TestCase
                     water: row ? row.style.getPropertyValue('--level') : '',
                     positioned: water ? getComputedStyle(water).position : '',
                     height: box ? box.height : 0,
-                    wave: water ? getComputedStyle(water, '::before').animationName : '',
+                    waves: water ? water.querySelectorAll('.bucket-wave').length : 0,
+                    wave: wave ? getComputedStyle(wave).animationName : '',
+                    duration: wave ? getComputedStyle(wave).animationDuration : '',
+                    timing: wave ? getComputedStyle(wave).animationTimingFunction : '',
+                    radius: wave ? getComputedStyle(wave).borderTopLeftRadius : '',
                 };
             };
             return { needs: read('Needs 1'), wants: read('Wants 1'), rent: read('Rent') };
@@ -252,10 +334,20 @@ final class EnvelopesTest extends TestCase
         self::assertIsArray($bars);
         self::assertTrue($bars['needs']['found']);
         self::assertTrue($bars['needs']['input']);
+        self::assertSame('none', $bars['needs']['nameShadow']);
+        self::assertSame('none', $bars['needs']['labelShadow']);
+        self::assertSame('none', $bars['needs']['inputShadow']);
+        self::assertHardStroke((string) $bars['needs']['nameStroke']);
+        self::assertFieldInk($bars['needs']);
+        self::assertHardIcon((string) $bars['needs']['glyphFilter']);
         self::assertFalse($bars['needs']['maximumDisabled']);
         self::assertTrue($bars['wants']['found']);
         self::assertTrue($bars['rent']['found']);
         self::assertTrue($bars['rent']['input']);
+        self::assertHardStroke((string) $bars['rent']['nameStroke']);
+        self::assertFieldInk($bars['rent']);
+        self::assertHardIcon((string) $bars['rent']['glyphFilter']);
+        self::assertFieldInkStaysWhiteInDay();
         self::assertTrue($bars['rent']['assignedDisabled']);
         self::assertSame('600.00', $bars['rent']['assignedValue']);
         self::assertFalse($bars['rent']['maximumDisabled']);
@@ -264,7 +356,13 @@ final class EnvelopesTest extends TestCase
         self::assertSame('absolute', $bars['needs']['positioned']);
         self::assertGreaterThan(0, (float) $bars['needs']['water']);
         self::assertGreaterThan(8, (float) $bars['needs']['height']);
+        self::assertSame(3, $bars['needs']['waves']);
+        self::assertSame(0, $bars['wants']['waves']);
+        self::assertSame(3, $bars['rent']['waves']);
         self::assertSame('bucket-wave', $bars['needs']['wave']);
+        self::assertSame('5s', $bars['needs']['duration']);
+        self::assertSame('ease-in-out', $bars['needs']['timing']);
+        self::assertNotSame('0px', $bars['needs']['radius']);
         self::waitForText('Nov 2026');
         self::click('Next month');
         self::waitForText('Dec 2026');
@@ -342,7 +440,8 @@ final class EnvelopesTest extends TestCase
 
             return $value === '600.00';
         });
-        self::waitForText('$9,841.97');
+        self::waitForText('$3,953.03');
+        self::waitForText($availableText);
         self::clickLink('Planner');
         self::clickLink('Bills');
         self::clickLinkContaining('One-Time Bill');
@@ -356,6 +455,132 @@ final class EnvelopesTest extends TestCase
 
             return $ready === true;
         });
+    }
+
+    private static function assertHardStroke(string $stroke): void
+    {
+        self::assertMatchesRegularExpression('/^1px rgb\(0,\s*0,\s*0\)$/', $stroke);
+    }
+
+    /** @param array<string, mixed> $row */
+    private static function assertFieldInk(array $row): void
+    {
+        self::assertSame('rgb(255, 255, 255)', $row['labelColor']);
+        self::assertSame('rgb(255, 255, 255)', $row['inputColor']);
+        self::assertSame('rgb(255, 255, 255)', $row['maximumColor']);
+        self::assertHardStroke((string) $row['labelStroke']);
+        self::assertHardStroke((string) $row['inputStroke']);
+        self::assertHardStroke((string) $row['maximumStroke']);
+        self::assertSame('none', $row['labelShadow']);
+        self::assertSame('none', $row['inputShadow']);
+    }
+
+    private static function assertFieldInkStaysWhiteInDay(): void
+    {
+        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
+            WebDriverBy::cssSelector('.theme-pill button[aria-label="Day"]'),
+        ))->click();
+        self::wait()->until(function (): bool {
+            return self::driver()->executeScript('return document.documentElement.classList.contains("light")') === true;
+        });
+        $light = self::fieldInk('Needs 1');
+        self::assertSame('1px rgb(255, 255, 255)', $light['nameStroke']);
+        self::assertNotSame('rgb(255, 255, 255)', $light['nameColor']);
+        self::assertFieldInk($light);
+        self::driver()->findElement(WebDriverBy::cssSelector('.theme-pill button[aria-label="Night"]'))->click();
+        self::wait()->until(function (): bool {
+            return self::driver()->executeScript('return document.documentElement.classList.contains("light")') === false;
+        });
+    }
+
+    /** @return array<string, string> */
+    private static function fieldInk(string $name): array
+    {
+        $ink = self::driver()->executeScript(<<<'JS'
+            const name = arguments[0];
+            const row = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes(name));
+            const heading = row ? row.querySelector('strong') : null;
+            const label = row ? row.querySelector('.bucket-field > span') : null;
+            const assigned = row ? row.querySelector('input[name^="amount-"]') : null;
+            const maximum = row ? row.querySelector('input[name^="maximum-"]') : null;
+            const read = (node, stroke) => node ? getComputedStyle(node)[stroke ? 'webkitTextStroke' : 'color'] : '';
+            return {
+                nameStroke: read(heading, true),
+                nameColor: read(heading, false),
+                labelStroke: read(label, true),
+                labelColor: read(label, false),
+                labelShadow: label ? getComputedStyle(label).textShadow : 'none',
+                inputStroke: read(assigned, true),
+                inputColor: read(assigned, false),
+                inputShadow: assigned ? getComputedStyle(assigned).textShadow : 'none',
+                maximumStroke: read(maximum, true),
+                maximumColor: read(maximum, false),
+            };
+        JS, [$name]);
+        self::assertIsArray($ink);
+
+        return array_map(static fn (mixed $value): string => (string) $value, $ink);
+    }
+
+    private static function assertHardIcon(string $filter): void
+    {
+        self::assertStringContainsString('drop-shadow', $filter);
+        self::assertMatchesRegularExpression('/rgb\(0,\s*0,\s*0\)/', $filter);
+        self::assertDoesNotMatchRegularExpression('/\dpx\s+-?\dpx\s+[1-9]/', $filter);
+        self::assertStringNotContainsString('4px', $filter);
+        self::assertStringNotContainsString('10px', $filter);
+    }
+
+    private static function clickAvailable(): void
+    {
+        $by = WebDriverBy::cssSelector('[data-action="available"]');
+        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by))->click();
+    }
+
+    private static function clickBackdrop(): void
+    {
+        $point = self::driver()->executeScript(<<<'JS'
+            const dialog = document.querySelector('dialog.modal[open]');
+            if (!dialog) return null;
+            const rect = dialog.getBoundingClientRect();
+            const x = Math.max(1, Math.floor(rect.left / 2));
+            const y = Math.max(1, Math.floor(rect.top + rect.height / 2));
+            const outside = x < rect.left || x > rect.right || y < rect.top || y > rect.bottom;
+            return { x, y, outside };
+        JS);
+        self::assertIsArray($point);
+        self::assertTrue($point['outside'] === true);
+        self::driver()->execute('actions', [
+            'actions' => [[
+                'type' => 'pointer',
+                'id' => 'mouse',
+                'parameters' => ['pointerType' => 'mouse'],
+                'actions' => [
+                    [
+                        'type' => 'pointerMove',
+                        'duration' => 0,
+                        'x' => (int) $point['x'],
+                        'y' => (int) $point['y'],
+                        'origin' => 'viewport',
+                    ],
+                    ['type' => 'pointerDown', 'button' => 0],
+                    ['type' => 'pointerUp', 'button' => 0],
+                ],
+            ]],
+        ]);
+    }
+
+    private static function cents(string $money): int
+    {
+        return (int) str_replace([',', '$', '.'], '', $money);
+    }
+
+    private static function money(int $cents): string
+    {
+        $whole = intdiv($cents, 100);
+        $frac = str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
+
+        return '$' . number_format($whole, 0, '.', ',') . '.' . $frac;
     }
 
     private static function choose(string $name, string $label): void

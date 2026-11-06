@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Globe from '../components/Globe.svelte';
@@ -192,7 +193,7 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="m-0 text-4xl">{id ? 'Edit stay' : 'New stay'}</h1>
-  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <Note bind:message />
   <label class="field">
     <span>Place</span>
     <input name="placeName" bind:value={placeName} />

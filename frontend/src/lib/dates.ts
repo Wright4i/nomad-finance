@@ -74,6 +74,32 @@ export function readDateInput(name: string): string | null {
   return input ? parseDateInput(input.value) : null;
 }
 
+/** Sunday-first cells for one month. Each day is the YYYY-MM-DD value a field stores. */
+export function monthCells(year: number, month: number): Array<string | null> {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || year < 1000 || month < 1 || month > 12) {
+    return [];
+  }
+  const leading = new Date(year, month - 1, 1).getDay();
+  const count = new Date(year, month, 0).getDate();
+  const cells: Array<string | null> = Array.from({ length: leading }, () => null);
+  const prefix = `${year}-${String(month).padStart(2, '0')}`;
+  for (let day = 1; day <= count; day += 1) {
+    cells.push(`${prefix}-${String(day).padStart(2, '0')}`);
+  }
+  return cells;
+}
+
+export function shiftYearMonth(year: number, month: number, by: number): { year: number; month: number } {
+  const date = new Date(year, month - 1 + by, 1);
+  return { year: date.getFullYear(), month: date.getMonth() + 1 };
+}
+
+export function monthOf(iso: string): { year: number; month: number } | null {
+  const parts = dateParts(iso);
+  if (!parts) return null;
+  return { year: Number(parts.year), month: parts.month };
+}
+
 function dateParts(iso: string): { year: string; month: number; day: number } | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!match) return null;

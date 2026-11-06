@@ -32,6 +32,10 @@
     selectedId = null,
     marker = null,
     satellite = false,
+    flat = false,
+    zoom = null,
+    quiet = false,
+    compact = false,
     onSelect = () => {},
     onMarker = () => {},
   }: {
@@ -40,6 +44,13 @@
     selectedId?: number | null;
     marker?: { longitude: string; latitude: string; name?: string; address?: string | null } | null;
     satellite?: boolean;
+    /** Flat mercator tiles. The trip screen stays a globe unless this is set. */
+    flat?: boolean;
+    /** Camera zoom. The planner map sits further out than the satellite pin. */
+    zoom?: number | null;
+    /** A picture of the place. Clicks pass through to the cell around the map. */
+    quiet?: boolean;
+    compact?: boolean;
     onSelect?: (id: number) => void;
     onMarker?: (latitude: string, longitude: string) => void;
   } = $props();
@@ -54,6 +65,15 @@
 
   const pinZoom = 15;
   const routeZoom = 3.4;
+  /** Further out than the satellite pin so the city and state stay in frame. */
+  const cityZoom = 8;
+
+  function viewZoom(): number {
+    if (typeof zoom === 'number') return zoom;
+    if (satellite) return pinZoom;
+    if (flat) return cityZoom;
+    return routeZoom;
+  }
 
   function basemap(): { id: string; tiles: string[]; attribution: string; maxzoom: number } {
     if (satellite) {
@@ -72,7 +92,10 @@
 
   function applyBasemap(): void {
     const choice = basemap();
-    if (host) host.dataset.basemap = choice.id;
+    if (host) {
+      host.dataset.basemap = choice.id;
+      host.dataset.projection = flat ? 'mercator' : 'globe';
+    }
     const source = map?.getSource('osm');
     if (source instanceof RasterTileSource) source.setTiles(choice.tiles);
     const paint = routePaint();
@@ -86,7 +109,7 @@
 
   function fly(longitude: number, latitude: number): void {
     if (!map) return;
-    const camera = { center: [longitude, latitude] as LngLat, zoom: satellite ? pinZoom : routeZoom };
+    const camera = { center: [longitude, latitude] as LngLat, zoom: viewZoom() };
     if (reduced()) map.jumpTo(camera);
     else map.flyTo({ ...camera, essential: true, duration: 400 });
   }
@@ -101,8 +124,8 @@
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
       const where = [item.city, item.region].filter((part) => part).join(', ');
       const title = item.placeName || 'Stay';
-      const button = document.createElement('button');
-      button.type = 'button';
+      const button = document.createElement(quiet ? 'span' : 'button');
+      if (button instanceof HTMLButtonElement) button.type = 'button';
       button.className = item.id === selectedId ? 'map-pin selected' : 'map-pin';
       button.setAttribute('aria-label', where === '' ? title : `${title}, ${where}`);
       const dot = document.createElement('span');
@@ -118,10 +141,12 @@
         label.append(place);
       }
       button.append(dot, label);
-      button.addEventListener('click', (event) => {
-        event.stopPropagation();
-        onSelect(item.id);
-      });
+      if (!quiet) {
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          onSelect(item.id);
+        });
+      }
       stayPins.push(new Marker({ element: button, anchor: 'left', offset: [-7, 0] }).setLngLat([lng, lat]).addTo(map));
     }
   }
@@ -224,11 +249,16 @@
       const lng = marker ? Number(marker.longitude) : Number.NaN;
       const lat = marker ? Number(marker.latitude) : Number.NaN;
       const known = Number.isFinite(lng) && Number.isFinite(lat);
+      const focus = pins.find((item) => item.id === selectedId) ?? pins[0];
+      const flatLng = focus ? Number(focus.longitude) : Number.NaN;
+      const flatLat = focus ? Number(focus.latitude) : Number.NaN;
+      const flatKnown = flat && Number.isFinite(flatLng) && Number.isFinite(flatLat);
+      if (host) host.dataset.projection = flat ? 'mercator' : 'globe';
       map = new Map({
         container: host,
         style: {
           version: 8,
-          projection: { type: 'globe' },
+          projection: { type: flat ? 'mercator' : 'globe' },
           sources: {
             osm: {
               type: 'raster',
@@ -240,8 +270,10 @@
           },
           layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
         },
-        center: known ? [lng, lat] : [0, 20],
-        zoom: known && satellite ? pinZoom : 1.2,
+        center: known ? [lng, lat] : flatKnown ? [flatLng, flatLat] : [0, 20],
+        zoom: known && satellite ? pinZoom : flatKnown ? viewZoom() : 1.2,
+        interactive: !quiet,
+        attributionControl: !quiet,
       });
       map.on('moveend', () => {
         if (host && map) host.dataset.zoom = map.getZoom().toFixed(2);
@@ -291,6 +323,7 @@
     pins;
     legs;
     selectedId;
+    quiet;
     if (map) {
       drawPins();
       drawLegLabels();
@@ -308,12 +341,13 @@
   $effect(() => {
     session.user?.theme;
     satellite;
+    flat;
     host;
     applyBasemap();
   });
 </script>
 
-<div class="globe" bind:this={host}></div>
+<div class="globe" class:planner-map={compact} bind:this={host}></div>
 {#if failed}
   <p class="muted m-0">The globe did not start. Typed coordinates still save.</p>
 {/if}

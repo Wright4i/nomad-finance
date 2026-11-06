@@ -49,7 +49,7 @@ final class TimelineTest extends TestCase
             $this->pdo,
             $catalog,
             $actor,
-            new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor)),
+            new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor), new PayCycleService($this->pdo, $actor)),
             new PayCycleService($this->pdo, $actor),
             new TripService($this->pdo, $actor, $catalog, new Drive(false)),
         );
@@ -121,7 +121,16 @@ final class TimelineTest extends TestCase
         self::assertNotContains('2026-12-15', $this->dates($shorter['timeline'], 'payday', 'Weekday Payor'));
         self::assertContains('2026-12-01', $this->dates($shorter['timeline'], 'payday', 'Weekday Payor'));
         self::assertSame(3996000, $shorter['incomeMinor']);
-        self::assertSame($shorter['envelopes']['poolMinor'] - $shorter['envelopes']['assignedMinor'], $shorter['envelopes']['availableMinor']);
+        $sources = 0;
+        foreach ($shorter['envelopes']['sources']['income'] as $row) {
+            $sources += (int) $row['amountMinor'];
+        }
+        foreach ($shorter['envelopes']['sources']['accounts'] as $row) {
+            $sources += (int) $row['amountMinor'];
+        }
+        self::assertSame($sources, $shorter['envelopes']['availableMinor']);
+        self::assertGreaterThan($shorter['envelopes']['poolMinor'], $shorter['envelopes']['availableMinor']);
+        self::assertNotSame($shorter['envelopes']['assignedMinor'], $shorter['envelopes']['availableMinor']);
         self::assertGreaterThan(50000, $shorter['envelopes']['assignedMinor']);
     }
 

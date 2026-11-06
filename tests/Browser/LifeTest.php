@@ -198,7 +198,9 @@ final class LifeTest extends TestCase
         self::replace('odometer', '10600');
         self::waitForText('100 miles traveled');
         self::click('Save log');
-        self::waitForText('Calendar');
+        self::wait()->until(function (): bool {
+            return str_contains(self::driver()->getCurrentURL(), '/calendar');
+        });
         self::clickLink('Accounts');
         self::waitForText('$2,490.00');
         self::clickLink('New Log');
@@ -219,7 +221,32 @@ final class LifeTest extends TestCase
         $labels = self::driver()->executeScript(<<<'JS'
             return [...document.querySelectorAll('nav[aria-label="Primary"] a')].map((node) => node.textContent.trim());
         JS);
-        self::assertSame(['New Log', 'Planner', 'Income', 'Bills', 'Calendar', 'Trips', 'Envelopes', 'Accounts', 'Settings'], $labels);
+        self::assertSame(['New Log', 'Planner', 'Calendar', 'Trips', 'Income', 'Bills', 'Envelopes', 'Accounts', 'Vehicles'], $labels);
+        $rules = self::driver()->executeScript(<<<'JS'
+            const nav = document.querySelector('nav[aria-label="Primary"]');
+            const betweenLinks = (left, right) => {
+                const nodes = [...nav.querySelectorAll('a, hr.nav-rule')];
+                const start = nodes.findIndex((node) => node.tagName === 'A' && node.textContent.trim() === left);
+                const end = nodes.findIndex((node) => node.tagName === 'A' && node.textContent.trim() === right);
+                return start >= 0 && end > start && nodes.slice(start + 1, end).some((node) => node.tagName === 'HR');
+            };
+            const foot = nav.querySelector('.nav-foot');
+            const kids = [...foot.children];
+            const demo = kids.findIndex((node) => node.textContent.trim() === 'Demo');
+            const pill = kids.findIndex((node) => node.classList.contains('theme-pill'));
+            const demoRule = kids.slice(demo + 1, pill).some((node) => node.tagName === 'HR' && node.classList.contains('nav-rule'));
+            return {
+                logPlanner: betweenLinks('New Log', 'Planner'),
+                tripsIncome: betweenLinks('Trips', 'Income'),
+                envelopesAccounts: betweenLinks('Envelopes', 'Accounts'),
+                demoPill: demoRule,
+            };
+        JS);
+        self::assertIsArray($rules);
+        self::assertTrue($rules['logPlanner']);
+        self::assertTrue($rules['tripsIncome']);
+        self::assertTrue($rules['envelopesAccounts']);
+        self::assertTrue($rules['demoPill']);
         $footer = self::driver()->executeScript(<<<'JS'
             const foot = document.querySelector('nav[aria-label="Primary"] .nav-foot');
             return [...foot.children].map((node) => [
@@ -230,10 +257,11 @@ final class LifeTest extends TestCase
             ]);
         JS);
         self::assertSame([
+            ['HR', '', false, null],
             ['P', 'Demo', false, null],
             ['BUTTON', 'Reset demo data', true, null],
             ['HR', '', false, null],
-            ['A', 'Settings', true, '/settings'],
+            ['DIV', '', false, null],
             ['BUTTON', 'Log out', true, null],
         ], $footer);
         $marks = self::driver()->executeScript(<<<'JS'
@@ -253,13 +281,13 @@ final class LifeTest extends TestCase
         self::assertSame([
             ['New Log', true, false],
             ['Planner', true, false],
-            ['Income', true, false],
-            ['Bills', true, false],
             ['Calendar', true, false],
             ['Trips', true, false],
+            ['Income', true, false],
+            ['Bills', true, false],
             ['Envelopes', true, false],
             ['Accounts', true, false],
-            ['Settings', true, true],
+            ['Vehicles', true, false],
         ], $marks['icons']);
         self::clickLink('Planner');
         self::waitForText('Current Month');
@@ -276,12 +304,19 @@ final class LifeTest extends TestCase
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($gauge))->click();
         self::waitForText('Amounts assigned in the month on screen.');
         self::click('Close');
+        self::wait()->until(function (): bool {
+            $gone = self::driver()->executeScript(<<<'JS'
+                const dialog = document.querySelector('dialog.gauge-modal');
+                if (!dialog) return true;
+                return getComputedStyle(dialog).display === 'none';
+            JS);
+
+            return $gone === true;
+        });
         self::clickLink('Calendar');
         self::waitForText('Sun');
         self::clickLink('Accounts');
-        self::clickLink('Settings');
-        $vehicles = WebDriverBy::xpath('//a[contains(., "Vehicles")]');
-        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($vehicles))->click();
+        self::clickLink('Vehicles');
         $vehicle = WebDriverBy::xpath('//a[contains(., "Vehicle 1")]');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($vehicle))->click();
         self::waitForText('Stretch mpg');

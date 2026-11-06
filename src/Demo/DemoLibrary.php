@@ -103,7 +103,7 @@ final class DemoLibrary
         $now = gmdate('c');
         SystemBuckets::ensure($this->pdo, $userId);
         $this->pdo->prepare(
-            'UPDATE user SET horizon_days = 60, fuel_price_minor = 400 WHERE id = ?'
+            'UPDATE user SET horizon_days = 60 WHERE id = ?'
         )->execute([$userId]);
         $checking = $this->account($userId, [
             'name' => 'Checking 1', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 249000,
@@ -480,8 +480,8 @@ final class DemoLibrary
         $this->pdo->prepare(
             'INSERT INTO vehicles (
                 user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
-                current_odometer_miles, origin_odometer_miles, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 1, 10500, 9800, ?, ?)'
+                current_odometer_miles, origin_odometer_miles, fuel_price_minor, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, 1, 10500, 9800, 400, ?, ?)'
         )->execute([$userId, 'Vehicle 1', 'rv', 60, 120, $now, $now]);
 
         return (int) $this->pdo->lastInsertId();

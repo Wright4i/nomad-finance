@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Auth;
 
 use App\Category\SystemBuckets;
+use App\Dashboard\PlannerWidgets;
 use App\Demo\DemoLibrary;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
@@ -19,7 +20,13 @@ final class AuthService
         private readonly PDO $pdo,
         private readonly CurrencyCatalog $currencies,
         private readonly DemoLibrary $demo,
+        private readonly bool $allowNewUser = false,
     ) {
+    }
+
+    public function allowsNewUser(): bool
+    {
+        return $this->allowNewUser;
     }
 
     public function needsSetup(): bool
@@ -27,7 +34,7 @@ final class AuthService
         return (int) $this->pdo->query("SELECT COUNT(*) FROM user WHERE role = 'owner'")->fetchColumn() === 0;
     }
 
-    /** @return ?array{name:string,baseCurrency:string,theme:string,role:string,horizonDays:int,fuelPriceMinor:?int} */
+    /** @return ?array{name:string,baseCurrency:string,theme:string,role:string,horizonDays:int,plannerOrder:list<string>,plannerSpans:array<string,int>} */
     public function current(): ?array
     {
         $id = $_SESSION['user_id'] ?? null;
@@ -36,7 +43,7 @@ final class AuthService
         }
 
         $stmt = $this->pdo->prepare(
-            'SELECT name, base_currency, theme, role, horizon_days, fuel_price_minor FROM user WHERE id = ?'
+            'SELECT name, base_currency, theme, role, horizon_days, planner_order, planner_spans FROM user WHERE id = ?'
         );
         $stmt->execute([$id]);
         $row = $stmt->fetch();
@@ -52,7 +59,8 @@ final class AuthService
             'theme' => (string) $row['theme'],
             'role' => (string) $row['role'],
             'horizonDays' => (int) $row['horizon_days'] === 30 ? 30 : 60,
-            'fuelPriceMinor' => $row['fuel_price_minor'] === null ? null : (int) $row['fuel_price_minor'],
+            'plannerOrder' => PlannerWidgets::order($row['planner_order']),
+            'plannerSpans' => PlannerWidgets::spans($row['planner_spans']),
         ];
     }
 
@@ -69,19 +77,18 @@ final class AuthService
         $this->pdo->beginTransaction();
         try {
             $this->pdo->prepare(
-                'INSERT INTO user (name, password_hash, base_currency, theme, role, fuel_price_minor, created_at)
-                 VALUES (?, ?, ?, \'dark\', \'owner\', ?, ?)'
+                'INSERT INTO user (name, password_hash, base_currency, theme, role, created_at)
+                 VALUES (?, ?, ?, \'dark\', \'owner\', ?)'
             )->execute([
                 $books['name'],
                 password_hash($books['password'], PASSWORD_DEFAULT),
                 'USD',
-                $books['fuelPrice'],
                 $now,
             ]);
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->prepare('INSERT INTO login_guard (user_id, failed_count) VALUES (?, 0)')->execute([$id]);
             SystemBuckets::ensure($this->pdo, $id);
-            $this->insertStarredVehicle($id, $books['vehicle'], $now);
+            $this->insertStarredVehicle($id, $books['vehicle'], $books['fuelPrice'], $now);
             $this->demo->ensure();
             $this->pdo->commit();
         } catch (\Throwable $e) {
@@ -104,6 +111,9 @@ final class AuthService
     /** @param array<string, mixed> $input */
     public function createUser(array $input): array
     {
+        if (!$this->allowNewUser) {
+            throw new ApiException(403, 'New users are turned off.');
+        }
         if ($this->needsSetup()) {
             throw new ApiException(409, 'Set up the app first.');
         }
@@ -114,19 +124,18 @@ final class AuthService
         $this->pdo->beginTransaction();
         try {
             $this->pdo->prepare(
-                'INSERT INTO user (name, password_hash, base_currency, theme, role, fuel_price_minor, created_at)
-                 VALUES (?, ?, ?, \'dark\', \'user\', ?, ?)'
+                'INSERT INTO user (name, password_hash, base_currency, theme, role, created_at)
+                 VALUES (?, ?, ?, \'dark\', \'user\', ?)'
             )->execute([
                 $books['name'],
                 password_hash($books['password'], PASSWORD_DEFAULT),
                 'USD',
-                $books['fuelPrice'],
                 $now,
             ]);
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->prepare('INSERT INTO login_guard (user_id, failed_count) VALUES (?, 0)')->execute([$id]);
             SystemBuckets::ensure($this->pdo, $id);
-            $this->insertStarredVehicle($id, $books['vehicle'], $now);
+            $this->insertStarredVehicle($id, $books['vehicle'], $books['fuelPrice'], $now);
             $this->pdo->commit();
         } catch (\Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -178,7 +187,7 @@ final class AuthService
         return $user;
     }
 
-    /** @return array{name:string,baseCurrency:string,theme:string,role:string,horizonDays:int,fuelPriceMinor:?int} */
+    /** @return array{name:string,baseCurrency:string,theme:string,role:string,horizonDays:int,plannerOrder:list<string>,plannerSpans:array<string,int>} */
     public function enterDemo(): array
     {
         if ($this->needsSetup()) {
@@ -237,9 +246,24 @@ final class AuthService
         $horizonDays = array_key_exists('horizonDays', $input)
             ? $this->horizonDays($input['horizonDays'])
             : $current['horizonDays'];
-        $fuelPrice = array_key_exists('fuelPriceMinor', $input)
-            ? $this->fuelPrice($input['fuelPriceMinor'])
-            : $current['fuelPriceMinor'];
+        if (array_key_exists('plannerOrder', $input)) {
+            $accepted = PlannerWidgets::accept($input['plannerOrder']);
+            if ($accepted === null) {
+                throw new ApiException(422, 'Check the highlighted fields.', ['plannerOrder' => 'Use each planner widget once.']);
+            }
+            $plannerOrder = PlannerWidgets::encode($accepted);
+        } else {
+            $plannerOrder = PlannerWidgets::encode($current['plannerOrder']);
+        }
+        if (array_key_exists('plannerSpans', $input)) {
+            $acceptedSpans = PlannerWidgets::acceptSpans($input['plannerSpans']);
+            if ($acceptedSpans === null) {
+                throw new ApiException(422, 'Check the highlighted fields.', ['plannerSpans' => 'Choose single, half, or full for each widget.']);
+            }
+            $plannerSpans = PlannerWidgets::encodeSpans($acceptedSpans);
+        } else {
+            $plannerSpans = PlannerWidgets::encodeSpans($current['plannerSpans']);
+        }
 
         $password = $input['password'] ?? null;
         $changingPassword = is_string($password) && $password !== '';
@@ -256,12 +280,12 @@ final class AuthService
         if ($changingPassword) {
             $password = $this->password($password);
             $this->pdo->prepare(
-                'UPDATE user SET name = ?, base_currency = ?, theme = ?, horizon_days = ?, fuel_price_minor = ?, password_hash = ? WHERE id = ?'
-            )->execute([$name, $currency, $theme, $horizonDays, $fuelPrice, password_hash($password, PASSWORD_DEFAULT), $id]);
+                'UPDATE user SET name = ?, base_currency = ?, theme = ?, horizon_days = ?, planner_order = ?, planner_spans = ?, password_hash = ? WHERE id = ?'
+            )->execute([$name, $currency, $theme, $horizonDays, $plannerOrder, $plannerSpans, password_hash($password, PASSWORD_DEFAULT), $id]);
         } else {
             $this->pdo->prepare(
-                'UPDATE user SET name = ?, base_currency = ?, theme = ?, horizon_days = ?, fuel_price_minor = ? WHERE id = ?'
-            )->execute([$name, $currency, $theme, $horizonDays, $fuelPrice, $id]);
+                'UPDATE user SET name = ?, base_currency = ?, theme = ?, horizon_days = ?, planner_order = ?, planner_spans = ? WHERE id = ?'
+            )->execute([$name, $currency, $theme, $horizonDays, $plannerOrder, $plannerSpans, $id]);
         }
 
         $user = $this->current();
@@ -525,13 +549,13 @@ final class AuthService
     }
 
     /** @param array{name:string,kind:string,mpgMinTenths:int,mpgMaxTenths:int,currentOdometerMiles:int} $vehicle */
-    private function insertStarredVehicle(int $userId, array $vehicle, string $now): void
+    private function insertStarredVehicle(int $userId, array $vehicle, ?int $fuelPrice, string $now): void
     {
         $this->pdo->prepare(
             'INSERT INTO vehicles (
                 user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
-                current_odometer_miles, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)'
+                current_odometer_miles, fuel_price_minor, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)'
         )->execute([
             $userId,
             $vehicle['name'],
@@ -539,6 +563,7 @@ final class AuthService
             $vehicle['mpgMinTenths'],
             $vehicle['mpgMaxTenths'],
             $vehicle['currentOdometerMiles'],
+            $fuelPrice,
             $now,
             $now,
         ]);

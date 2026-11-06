@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -204,7 +205,7 @@
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? payor || 'Edit pay cycle' : 'New pay cycle'}</h1>
   <p class="muted m-0">One payor, one cycle. There is no close button.</p>
-  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <Note bind:message />
   {#if cycle}
     <div class="grid gap-1">
       <p class="group-title text-2xl m-0" style={`--tone: var(--tone-${cycle.length})`}>

@@ -453,6 +453,33 @@ final class PayCycleService
         );
     }
 
+    /**
+     * Income for one payor across a span, in cents.
+     * The opening payday uses the paycheck preview. A keyed amount inside the span is included once.
+     * An irregular salary that is not a paycheck adds nothing.
+     */
+    public function incomeBetween(int $id, string $start, ?string $end, string $today): int
+    {
+        $cycle = $this->get($id, $today);
+        $dates = [$start => true];
+        if (is_string($end) && $end >= $start) {
+            foreach ($this->keyedDates($id) as $keyed) {
+                if ($keyed >= $start && $keyed <= $end) {
+                    $dates[$keyed] = true;
+                }
+            }
+        }
+        $total = 0;
+        foreach (array_keys($dates) as $date) {
+            $amount = $this->projected($cycle, $date);
+            if (is_int($amount) && $amount > 0) {
+                $total += $amount;
+            }
+        }
+
+        return $total;
+    }
+
     /** @return list<string> */
     public function keyedDates(int $id): array
     {

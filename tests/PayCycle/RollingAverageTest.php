@@ -53,6 +53,7 @@ final class RollingAverageTest extends TestCase
             $actor,
             $catalog,
             new TargetService($this->pdo, $actor),
+            $this->cycles,
         );
     }
 
@@ -85,7 +86,7 @@ final class RollingAverageTest extends TestCase
         $weekly = $this->cycle('Weekly Payor');
         $saved = $this->cycles->update((int) $weekly['id'], $this->hourly($weekly, true), '2026-11-04');
         self::assertTrue($saved['averageOn']);
-        $available = $this->envelopes->show('2026-11-04')['availableMinor'];
+        $pool = $this->envelopes->show('2026-11-04')['poolMinor'];
         $this->cycles->savePayroll((int) $weekly['id'], [
             'entries' => [
                 ['payday' => '2026-10-01', 'amountMinor' => 300000],
@@ -101,7 +102,7 @@ final class RollingAverageTest extends TestCase
         ], '2026-11-05');
         self::assertSame(574000, $this->cycles->projected($this->cycle('Weekly Payor'), '2026-11-15'));
         self::assertSame(443500, $this->cycles->projected($this->cycle('Weekly Payor'), '2026-12-01'));
-        self::assertSame($available, $this->envelopes->show('2026-11-04')['availableMinor']);
+        self::assertSame($pool, $this->envelopes->show('2026-11-04')['poolMinor']);
     }
 
     public function testAnEmptyAmountIsNotKeyedAndAverageStartsOff(): void

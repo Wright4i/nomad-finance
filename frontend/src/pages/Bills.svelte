@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
@@ -51,7 +52,7 @@
     <a class="btn primary" href="/bills/new" onclick={(event) => { event.preventDefault(); go('/bills/new'); }}>New bill</a>
   </div>
   <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone.</p>
-  {#if message}<p class="banner" aria-live="polite">{message}</p>{/if}
+  <Note bind:message />
 
   {#snippet group(title: string, tone: string, rows: Row[], unpay: boolean)}
     <section class="grid gap-3">

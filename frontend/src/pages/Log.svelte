@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -170,8 +171,8 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">New log</h1>
-  <p class="muted m-0">A log is a one-time bill already marked paid. It leaves the account balance and the envelopes as they are.</p>
-  {#if message}<p class="banner m-0">{message}</p>{/if}
+  <p class="muted m-0">A log is a one-time bill left unpaid. Mark it paid later. The account balance stays as you typed it.</p>
+  <Note bind:message />
   <div class="field">
     <span>Kind</span>
     <div class="flex gap-2">
@@ -213,7 +214,10 @@
     </label>
     <label class="field">
       <span>Price per gallon</span>
-      <input name="price" inputmode="decimal" bind:value={price} oninput={() => (priceTouched = true)} />
+      <span class="money-input">
+        <span class="money-mark" aria-hidden="true">$</span>
+        <input name="price" inputmode="decimal" bind:value={price} oninput={() => (priceTouched = true)} />
+      </span>
       {#if fields.pricePerGallonMinor}<em>{fields.pricePerGallonMinor}</em>{/if}
     </label>
   {:else}

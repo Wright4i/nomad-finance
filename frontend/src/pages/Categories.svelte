@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
+  import Note from '../components/Note.svelte';
   import { api, explain } from '../lib/api';
   import { formatMinor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
@@ -60,10 +61,10 @@
     title={includeArchived ? 'Leave archived buckets off this list' : 'Archived buckets stay stored until you ask for them'}
     onclick={toggle}
   >{includeArchived ? 'Hide archived' : 'Show archived'}</button>
-  {#if message}<p class="banner">{message}</p>{/if}
+  <Note bind:message />
   {#each categories as category (category.id)}
     {#if category.target?.celebrate}
-      <p class="banner celebrate m-0">{category.name} reached its target.</p>
+      <p class="celebrate m-0" aria-live="polite">{category.name} reached its target.</p>
     {/if}
   {/each}
   {#if ready}

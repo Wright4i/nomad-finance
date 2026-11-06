@@ -1,6 +1,7 @@
 <script lang="ts">
+  import Note from '../components/Note.svelte';
   import { api, explain } from '../lib/api';
-  import { adoptUser } from '../lib/session.svelte.ts';
+  import { adoptUser, session } from '../lib/session.svelte.ts';
   import type { User } from '../lib/types';
   import Setup from './Setup.svelte';
 
@@ -47,7 +48,7 @@
       <p class="brand text-6xl m-0 text-[var(--teal)]">Nomad</p>
       <p class="kicker mt-3">Welcome back</p>
     </div>
-    {#if message}<p class="banner m-0">{message}</p>{/if}
+    <Note bind:message />
     <label class="field">
       <span>Name</span>
       <input name="name" autocomplete="username" bind:value={name} />
@@ -57,9 +58,11 @@
       <input name="password" type="password" autocomplete="current-password" bind:value={password} />
     </label>
     <button class="btn primary" type="submit" disabled={saving}>{saving ? 'Checking…' : 'Unlock'}</button>
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid gap-3" class:grid-cols-2={session.allowNewUser}>
       <button class="btn" type="button" disabled={saving} onclick={useDemo}>Use demo</button>
-      <button class="btn" type="button" disabled={saving} onclick={() => (creating = true)}>New user</button>
+      {#if session.allowNewUser}
+        <button class="btn" type="button" disabled={saving} onclick={() => (creating = true)}>New user</button>
+      {/if}
     </div>
   </form>
 </div>
