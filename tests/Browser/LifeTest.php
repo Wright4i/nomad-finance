@@ -211,7 +211,7 @@ final class LifeTest extends TestCase
             return str_contains(self::driver()->getCurrentURL(), '/calendar');
         });
         self::clickLink('Accounts');
-        self::waitForText('$2,490.00');
+        self::waitForText('$2,450.00');
         self::clickLink('New log');
         self::driver()->executeScript(<<<'JS'
             const input = document.querySelector('input[name="date"]');

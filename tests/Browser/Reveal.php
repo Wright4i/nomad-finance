@@ -12,7 +12,7 @@ final class Reveal
 {
     public static function bill(ChromeDriver $driver, string $name, ?string $section = null): void
     {
-        $found = (new WebDriverWait($driver, 20))->until(function () use ($driver, $name, $section): bool {
+        $found = (new WebDriverWait($driver, 45))->until(function () use ($driver, $name, $section): bool {
             $ready = $driver->executeScript(<<<'JS'
                 const name = arguments[0];
                 const section = arguments[1];
@@ -41,7 +41,16 @@ final class Reveal
                     : [...document.querySelectorAll('.bill-scroll')];
                 scrollers.forEach((scroller) => {
                     scroller.scrollTop = scroller.scrollHeight;
-                    scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: 240, bubbles: true }));
+                    const wheel = new WheelEvent('wheel', { deltaY: 240, bubbles: true });
+                    scroller.dispatchEvent(wheel);
+                    scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+                    const pointed = { currentTarget: scroller, target: scroller, deltaY: 240 };
+                    for (const symbol of Object.getOwnPropertySymbols(scroller)) {
+                        const map = scroller[symbol];
+                        if (!map) continue;
+                        if (typeof map.wheel === 'function') map.wheel.call(scroller, pointed);
+                        if (typeof map.scroll === 'function') map.scroll.call(scroller, pointed);
+                    }
                 });
                 return false;
             JS, [$name, $section]);

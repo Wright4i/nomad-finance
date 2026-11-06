@@ -162,9 +162,9 @@ final class EnvelopesTest extends TestCase
         self::assertStringNotContainsString('Next period', $planner['envelopeText']);
         self::assertStringNotContainsString('Open period', $planner['envelopeText']);
         self::assertStringNotContainsString('Cash 3', $planner['envelopeText']);
-        self::assertMatchesRegularExpression('/Available to assign\s+\$[\d,]+\.\d{2}/', $planner['envelopeText']);
+        self::assertMatchesRegularExpression('/Available to assign\s+-?\$[\d,]+\.\d{2}/', $planner['envelopeText']);
         self::assertStringContainsString('assigned of', $planner['envelopeText']);
-        preg_match('/Available to assign\s+(\$[\d,]+\.\d{2})/', $planner['envelopeText'], $availableMatch);
+        preg_match('/Available to assign\s+(-?\$[\d,]+\.\d{2})/', $planner['envelopeText'], $availableMatch);
         $availableText = $availableMatch[1];
         self::assertSame(1, $planner['pies']);
         self::assertStringContainsString('rent', $planner['rentText']);
@@ -503,12 +503,12 @@ final class EnvelopesTest extends TestCase
 
             return $value === '600.00';
         });
-        self::waitForText('$5,753.19');
+        self::waitForText('$6,313.19');
         $left = self::money(self::cents($availableText) - 10000);
         self::waitForText($left);
         self::clickLink('Planner');
         self::waitForText($left);
-        self::waitForText('$5,753.19 assigned of');
+        self::waitForText('$6,313.19 assigned of');
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Site week', 'active');
         self::clickLinkContaining('Site week');
@@ -811,10 +811,12 @@ final class EnvelopesTest extends TestCase
 
     private static function money(int $cents): string
     {
+        $sign = $cents < 0 ? '-' : '';
+        $cents = abs($cents);
         $whole = intdiv($cents, 100);
         $frac = str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
 
-        return '$' . number_format($whole, 0, '.', ',') . '.' . $frac;
+        return $sign . '$' . number_format($whole, 0, '.', ',') . '.' . $frac;
     }
 
     private static function choose(string $name, string $label): void

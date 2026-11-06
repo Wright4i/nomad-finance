@@ -157,14 +157,22 @@ final class CalendarTest extends TestCase
         self::assertStringNotContainsString('Lost Dutchman', $total);
 
         self::setFilter('Show Stays', false);
-        self::waitForTextGone('Lost Dutchman');
+        self::wait()->until(function (): bool {
+            $gone = self::driver()->executeScript(
+                'return document.querySelector(\'.stay-chip[title="Lost Dutchman"]\') === null;',
+            );
+
+            return $gone === true;
+        });
         self::assertSame($total, self::monthTotal());
         self::clickDay('2026-11-24');
         $depart = self::dialogText();
         self::assertStringContainsString('Lost Dutchman', $depart);
         self::assertStringContainsString('Nov 20, 2026 – Nov 24, 2026', $depart);
         self::assertStringContainsString('No income this day.', $depart);
-        self::assertStringContainsString('No bills this day.', $depart);
+        self::assertStringContainsString('Cattail Cove', $depart);
+        self::assertStringContainsString('$175.00', $depart);
+        self::assertStringNotContainsString('No bills this day.', $depart);
         self::assertStringNotContainsString('No stay this day.', $depart);
         self::assertSame([...self::TREE, ...self::TREE], self::dialogPaths('Stay'));
         self::assertLessThan(strpos($depart, 'Income'), strpos($depart, 'Stay'));

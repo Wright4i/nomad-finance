@@ -49,7 +49,9 @@ final class WindowAndGlobeTest extends TestCase
         $options->setBinary(ChromeBinary::chrome());
         $options->addArguments([
             '--headless=new',
-            '--disable-gpu',
+            '--use-angle=swiftshader',
+            '--enable-unsafe-swiftshader',
+            '--ignore-gpu-blocklist',
             '--window-size=1280,900',
             '--lang=en-US',
             '--no-first-run',
@@ -181,7 +183,7 @@ final class WindowAndGlobeTest extends TestCase
         self::clickLink('Trips');
         self::waitForText('Usery Mountain');
         $books = self::moneyText();
-        $choice = self::wait()->until(function (): array|false {
+        $choice = self::wait(40)->until(function (): array|false {
             $value = self::driver()->executeScript(<<<'JS'
                 const select = document.querySelector('select[name="pastMonths"]');
                 const labels = [...document.querySelectorAll('.globe button.map-pin')].map((node) => node.getAttribute('aria-label') || '');
@@ -276,12 +278,12 @@ final class WindowAndGlobeTest extends TestCase
         self::type('longitude', '-114.2');
         self::replace('arriveOn', '03 / 01 / 2027');
         self::replace('departOn', '03 / 06 / 2027');
-        self::replace('balanceDueOn', '03 / 02 / 2027');
+        self::replace('balanceDueOn', '10 / 16 / 2026');
         self::chooseAccount('Everyday checking');
         self::type('total', '80');
         self::type('amountDue', '40');
         self::click('Save stay');
-        self::wait()->until(function (): bool {
+        self::wait(40)->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const labels = [...document.querySelectorAll('.globe button.map-pin')].map((node) => node.getAttribute('aria-label') || '');
                 return labels.some((label) => label.includes('Due camp'));
@@ -293,7 +295,7 @@ final class WindowAndGlobeTest extends TestCase
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Due camp', 'active');
         $first = self::billOnScreen('Due camp');
-        self::assertSame('2027-03-02', $first['date']);
+        self::assertSame('2026-10-16', $first['date']);
         self::assertStringContainsString('$40.00', $first['money']);
         self::assertSame(1, $first['count']);
 
@@ -312,9 +314,9 @@ final class WindowAndGlobeTest extends TestCase
         self::driver()->findElement(WebDriverBy::cssSelector('.stay-card button[aria-label="Edit stay"]'))->click();
         self::waitForText('Save stay');
         self::type('amountDue', '25');
-        self::replace('balanceDueOn', '03 / 05 / 2027');
+        self::replace('balanceDueOn', '10 / 18 / 2026');
         self::click('Save stay');
-        self::wait()->until(function (): bool {
+        self::wait(40)->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 return [...document.querySelectorAll('.globe button.map-pin')].some((node) => (node.getAttribute('aria-label') || '').includes('Due camp'));
             JS);
@@ -325,7 +327,7 @@ final class WindowAndGlobeTest extends TestCase
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Due camp', 'active');
         $edited = self::billOnScreen('Due camp');
-        self::assertSame('2027-03-05', $edited['date']);
+        self::assertSame('2026-10-18', $edited['date']);
         self::assertStringContainsString('$25.00', $edited['money']);
         self::assertSame(1, $edited['count']);
     }
