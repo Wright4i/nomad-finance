@@ -8,7 +8,7 @@
   import { go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import { targetHint } from '../lib/target';
-  import type { Category, CategoryTarget, Overspend, PayCycle } from '../lib/types';
+  import type { Category, CategoryTarget, PayCycle } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
 
@@ -16,11 +16,6 @@
     { id: 'needs', label: 'Needs' },
     { id: 'wants', label: 'Wants' },
     { id: 'savings', label: 'Savings' },
-  ] as const;
-
-  const overspends = [
-    { id: 'cover', label: 'Cover now' },
-    { id: 'carry', label: 'Carry' },
   ] as const;
 
   const targetKinds = [
@@ -31,7 +26,6 @@
 
   let name = $state('');
   let group = $state('needs');
-  let overspend = $state<Overspend>('cover');
   let role = $state<'goal' | 'locked'>('goal');
   let locked = $derived(role === 'locked');
   let targetKind = $state<'none' | CategoryTarget['kind']>('none');
@@ -54,7 +48,6 @@
       const data = await api<{ category: Category }>(`/api/categories/${id}?today=${todayISO()}`);
       name = data.category.name;
       group = data.category.group;
-      overspend = data.category.overspend;
       role = data.category.role;
       archivedAt = data.category.archivedAt;
       loadedTarget = data.category.target;
@@ -102,7 +95,7 @@
       const target = locked ? (targetAmount.trim() === '' ? null : { kind: 'balance', amountMinor: parseMajor(targetAmount, exponentOf(session.user?.baseCurrency ?? 'USD')) }) : targetBody();
       const body = locked
         ? { today: todayISO(), target }
-        : { name, group, overspend, today: todayISO(), target };
+        : { name, group, today: todayISO(), target };
       await api(path, { method, body });
       go('/categories');
     } catch (err) {
@@ -155,7 +148,7 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit bucket' : 'New bucket'}</h1>
-  <p class="muted m-0">Name the bucket and put it in Needs, Wants, or Savings. Cover now pulls a negative amount from available-to-assign. Carry keeps it in the bucket. This screen does not assign money.</p>
+  <p class="muted m-0">Name the bucket and put it in Needs, Wants, or Savings. This screen does not assign money.</p>
   {#if message}<p class="banner m-0">{message}</p>{/if}
   {#if locked}
     <p class="m-0">Name <strong>{name}</strong></p>
@@ -185,24 +178,6 @@
       {/each}
     </div>
     {#if fields.group}<em>{fields.group}</em>{/if}
-  </div>
-  <div class="field">
-    <span>Overspend</span>
-    <div class="flex flex-wrap gap-2">
-      {#each overspends as option}
-        <button
-          class="choice"
-          class:on={overspend === option.id}
-          type="button"
-          aria-pressed={overspend === option.id}
-          title={option.id === 'cover'
-            ? 'A negative amount is pulled from available-to-assign and does not enter the next month.'
-            : 'A negative amount stays in this bucket and enters the next month.'}
-          onclick={() => (overspend = option.id)}
-        >{option.label}</button>
-      {/each}
-    </div>
-    {#if fields.overspend}<em>{fields.overspend}</em>{/if}
   </div>
   {/if}
   {#if !locked}

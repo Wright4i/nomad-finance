@@ -98,7 +98,7 @@ final class EnvelopesTest extends TestCase
         self::waitForText('Use demo');
         self::click('Use demo');
         self::waitForText('Available to assign');
-        self::waitForText('$13,295.00');
+        self::waitForText('$9,941.97');
         self::waitForText('Needs');
         self::waitForText('50%');
         self::waitForText('$500.00 · 100%');
@@ -164,7 +164,7 @@ final class EnvelopesTest extends TestCase
         self::assertStringNotContainsString('Next period', $planner['envelopeText']);
         self::assertStringNotContainsString('Open period', $planner['envelopeText']);
         self::assertStringNotContainsString('Cash 3', $planner['envelopeText']);
-        self::assertStringContainsString('$13,295.00', $planner['envelopeText']);
+        self::assertStringContainsString('$9,941.97', $planner['envelopeText']);
         self::assertStringContainsString('assigned of', $planner['envelopeText']);
         self::assertSame(1, $planner['pies']);
         self::assertStringContainsString('rent', $planner['rentText']);
@@ -215,9 +215,17 @@ final class EnvelopesTest extends TestCase
         self::waitForText('$380.00');
         self::clickLink('Envelopes');
         self::waitForText('Available to assign');
-        self::waitForText('$13,295.00');
+        self::waitForText('$9,941.97');
         self::waitForText('Needs 1');
-        self::waitForText('$500.00');
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                return input ? input.value : '';
+            JS);
+
+            return $value === '500.00';
+        });
         $bars = self::driver()->executeScript(<<<'JS'
             const tile = (name) => [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes(name));
             const read = (name) => {
@@ -230,11 +238,13 @@ final class EnvelopesTest extends TestCase
                     found: Boolean(row),
                     input: assigned !== null,
                     assignedDisabled: assigned ? assigned.disabled : true,
+                    assignedValue: assigned ? assigned.value : '',
                     maximumDisabled: maximum ? maximum.disabled : false,
                     maximumValue: maximum ? maximum.value : '',
                     water: row ? row.style.getPropertyValue('--level') : '',
                     positioned: water ? getComputedStyle(water).position : '',
                     height: box ? box.height : 0,
+                    wave: water ? getComputedStyle(water, '::before').animationName : '',
                 };
             };
             return { needs: read('Needs 1'), wants: read('Wants 1'), rent: read('Rent') };
@@ -246,12 +256,15 @@ final class EnvelopesTest extends TestCase
         self::assertTrue($bars['wants']['found']);
         self::assertTrue($bars['rent']['found']);
         self::assertTrue($bars['rent']['input']);
-        self::assertFalse($bars['rent']['assignedDisabled']);
-        self::assertTrue($bars['rent']['maximumDisabled']);
+        self::assertTrue($bars['rent']['assignedDisabled']);
+        self::assertSame('600.00', $bars['rent']['assignedValue']);
+        self::assertFalse($bars['rent']['maximumDisabled']);
         self::assertSame('600.00', $bars['rent']['maximumValue']);
+        self::assertSame('1', $bars['rent']['water']);
         self::assertSame('absolute', $bars['needs']['positioned']);
         self::assertGreaterThan(0, (float) $bars['needs']['water']);
         self::assertGreaterThan(8, (float) $bars['needs']['height']);
+        self::assertSame('bucket-wave', $bars['needs']['wave']);
         self::waitForText('Nov 2026');
         self::click('Next month');
         self::waitForText('Dec 2026');
@@ -277,9 +290,16 @@ final class EnvelopesTest extends TestCase
         });
         self::click('Previous month');
         self::waitForText('Nov 2026');
-        self::waitForText('$500.00');
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                return input ? input.value : '';
+            JS);
+
+            return $value === '500.00';
+        });
         self::click('Previous month');
-        self::waitForText('Carry');
         self::waitForText('A closed month can be read.');
         $closed = self::driver()->executeScript(<<<'JS'
             const value = (name) => {
@@ -290,7 +310,7 @@ final class EnvelopesTest extends TestCase
             return { needs: value('Needs 1'), wants: value('Wants 1') };
         JS);
         self::assertSame('200.00', $closed['needs']);
-        self::assertSame('-150.00', $closed['wants']);
+        self::assertSame('0.00', $closed['wants']);
         $disabled = self::driver()->executeScript(<<<'JS'
             const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
             const input = tile ? tile.querySelector('input') : null;
@@ -298,15 +318,31 @@ final class EnvelopesTest extends TestCase
         JS);
         self::assertTrue($disabled);
         self::click('Next month');
-        self::waitForText('$500.00');
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                return input ? input.value : '';
+            JS);
+
+            return $value === '500.00';
+        });
         self::driver()->executeScript(<<<'JS'
             const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
             const input = tile.querySelector('input');
             input.value = '600.00';
             input.dispatchEvent(new Event('input', { bubbles: true }));
         JS);
-        self::waitForText('$600.00');
-        self::waitForText('$13,195.00');
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Needs 1'));
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                return input ? input.value : '';
+            JS);
+
+            return $value === '600.00';
+        });
+        self::waitForText('$9,841.97');
         self::clickLink('Planner');
         self::clickLink('Bills');
         self::clickLinkContaining('One-Time Bill');

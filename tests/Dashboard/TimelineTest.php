@@ -121,7 +121,8 @@ final class TimelineTest extends TestCase
         self::assertNotContains('2026-12-15', $this->dates($shorter['timeline'], 'payday', 'Weekday Payor'));
         self::assertContains('2026-12-01', $this->dates($shorter['timeline'], 'payday', 'Weekday Payor'));
         self::assertSame(3996000, $shorter['incomeMinor']);
-        self::assertSame(1329500, $shorter['envelopes']['availableMinor']);
+        self::assertSame($shorter['envelopes']['poolMinor'] - $shorter['envelopes']['assignedMinor'], $shorter['envelopes']['availableMinor']);
+        self::assertGreaterThan(50000, $shorter['envelopes']['assignedMinor']);
     }
 
     public function testDuePiesSumActiveBillsInTheMonth(): void

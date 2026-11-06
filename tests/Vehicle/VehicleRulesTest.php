@@ -107,6 +107,38 @@ final class VehicleRulesTest extends TestCase
         self::assertSame(400, $labeled['fuel']['priceMinor']);
     }
 
+    public function testTheFuelLogListsTheNewestFillUpFirst(): void
+    {
+        $vehicle = $this->vehicles->create($this->vehicle('Vehicle 1', true));
+        $newest = $this->fill(10500, 1000, $vehicle['id'], '2026-11-18', 'Alpha');
+        $earlierSameDay = $this->fill(10400, 1000, $vehicle['id'], '2026-11-08', 'Middle');
+        $laterSameDay = $this->fill(10300, 1000, $vehicle['id'], '2026-11-08', 'Zebra');
+        $readings = $this->vehicles->get($vehicle['id'])['readings'];
+        self::assertSame(
+            [
+                ['postedOn' => '2026-11-18', 'id' => $newest, 'odometerMiles' => 10500],
+                ['postedOn' => '2026-11-08', 'id' => $laterSameDay, 'odometerMiles' => 10300],
+                ['postedOn' => '2026-11-08', 'id' => $earlierSameDay, 'odometerMiles' => 10400],
+            ],
+            array_map(
+                static fn (array $reading): array => [
+                    'postedOn' => $reading['postedOn'],
+                    'id' => $reading['id'],
+                    'odometerMiles' => $reading['odometerMiles'],
+                ],
+                $readings,
+            ),
+        );
+        $byOdometer = [];
+        foreach ($readings as $reading) {
+            $byOdometer[$reading['odometerMiles']] = $reading;
+        }
+        self::assertSame(100, $byOdometer[10400]['miles']);
+        self::assertSame('40.0', $byOdometer[10400]['milesPerGallon']);
+        self::assertSame(100, $byOdometer[10500]['miles']);
+        self::assertSame('40.0', $byOdometer[10500]['milesPerGallon']);
+    }
+
     public function testAMissingStarLeavesTheFuelCostEmpty(): void
     {
         $this->vehicles->create($this->vehicle('Vehicle 1', false));
@@ -116,6 +148,36 @@ final class VehicleRulesTest extends TestCase
         self::assertNull($second['fuel']['milesPerGallon']);
         self::assertNull($second['fuel']['costMinor']);
         self::assertNull($second['fuel']['priceMinor']);
+    }
+
+    public function testAFuelLogOpensOnTheNewestPriceThenTheFallback(): void
+    {
+        $this->pdo->prepare('UPDATE user SET fuel_price_minor = 399 WHERE id = ?')->execute([$_SESSION['user_id']]);
+        $this->vehicles->create(array_merge($this->vehicle('Vehicle 1', true), ['currentOdometerMiles' => 10500]));
+        $this->vehicles->create(array_merge($this->vehicle('Vehicle 2', false), ['currentOdometerMiles' => 200]));
+        $first = $this->listed('Vehicle 1');
+        $second = $this->listed('Vehicle 2');
+
+        $this->priced((int) $first['id'], '2026-11-01', 450);
+        $this->priced((int) $first['id'], '2026-11-01', 475);
+        $this->priced((int) $first['id'], '2026-09-01', 500);
+        $this->priced((int) $first['id'], '2026-11-18', null);
+        $this->priced((int) $first['id'], '2026-12-20', 999, 'active');
+        $this->priced(null, '2026-12-01', 510);
+
+        $opened = $this->listed('Vehicle 1');
+        self::assertSame(10500, $opened['currentOdometerMiles']);
+        self::assertSame(475, $opened['suggestedPricePerGallonMinor']);
+        self::assertSame(200, $second['currentOdometerMiles']);
+        self::assertSame(399, $this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
+
+        $this->pdo->prepare('UPDATE user SET fuel_price_minor = NULL WHERE id = ?')->execute([$_SESSION['user_id']]);
+        self::assertSame(475, $this->listed('Vehicle 1')['suggestedPricePerGallonMinor']);
+        self::assertSame(510, $this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
+
+        $this->pdo->exec('DELETE FROM bills');
+        self::assertNull($this->listed('Vehicle 1')['suggestedPricePerGallonMinor']);
+        self::assertNull($this->listed('Vehicle 2')['suggestedPricePerGallonMinor']);
     }
 
     /** @param array<string, mixed> $overrides
@@ -148,7 +210,7 @@ final class VehicleRulesTest extends TestCase
         ]);
     }
 
-    private function fill(int $odometer, int $amount, int $vehicleId, string $day): void
+    private function fill(int $odometer, int $amount, int $vehicleId, string $day, string $name = 'Fuel 1'): int
     {
         $now = gmdate('c');
         $this->pdo->prepare(
@@ -156,9 +218,36 @@ final class VehicleRulesTest extends TestCase
                 name, type, account_id, category_id, amount_minor, currency,
                 recurrence, anchor_date, next_due_date, last_paid_on, autopay, status,
                 created_at, updated_at, vehicle_id, odometer_miles, price_per_gallon_minor
-             ) VALUES (\'Fuel 1\', \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, \'paid\', ?, ?, ?, ?, 400)'
+             ) VALUES (?, \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, \'paid\', ?, ?, ?, ?, 400)'
         )->execute([
-            $this->accountId, $this->fuelId, $amount, $day, $day, $day, $now, $now, $vehicleId, $odometer,
+            $name, $this->accountId, $this->fuelId, $amount, $day, $day, $day, $now, $now, $vehicleId, $odometer,
         ]);
+
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    private function priced(?int $vehicleId, string $day, ?int $price, string $status = 'paid'): void
+    {
+        $now = gmdate('c');
+        $this->pdo->prepare(
+            'INSERT INTO bills (
+                name, type, account_id, category_id, amount_minor, currency,
+                recurrence, anchor_date, next_due_date, last_paid_on, autopay, status,
+                created_at, updated_at, vehicle_id, odometer_miles, price_per_gallon_minor
+             ) VALUES (\'Fuel 1\', \'fuel\', ?, ?, 1000, \'USD\', \'once\', ?, ?, ?, 0, ?, ?, ?, ?, 1000, ?)'
+        )->execute([
+            $this->accountId, $this->fuelId, $day, $day, $day, $status, $now, $now, $vehicleId, $price,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function listed(string $name): array
+    {
+        foreach ($this->vehicles->list() as $vehicle) {
+            if ($vehicle['name'] === $name) {
+                return $vehicle;
+            }
+        }
+        self::fail('Missing ' . $name);
     }
 }

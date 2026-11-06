@@ -130,12 +130,16 @@ final class BillsTest extends TestCase
             if (!group) return null;
             const date = group.querySelector('.bill-date').getBoundingClientRect();
             const rule = group.querySelector('.bill-date-rule').getBoundingClientRect();
-            const cards = [...group.querySelectorAll('article')].slice(0, 2).map((card) => card.getBoundingClientRect());
+            const cards = [...group.querySelectorAll('article')].slice(0, 2).map((card) => {
+                const box = card.getBoundingClientRect();
+                const money = card.querySelector('.money');
+                return { top: box.top, left: box.left, money: money ? money.textContent.trim() : '' };
+            });
             return {
                 dateBottom: date.bottom,
                 ruleTop: rule.top,
                 ruleWidth: rule.width,
-                cards: cards.map((card) => ({ top: card.top, left: card.left })),
+                cards,
             };
         JS);
         self::assertIsArray($day);
@@ -145,6 +149,8 @@ final class BillsTest extends TestCase
         self::assertGreaterThan($day['ruleTop'], $day['cards'][0]['top']);
         self::assertEqualsWithDelta($day['cards'][0]['top'], $day['cards'][1]['top'], 2);
         self::assertGreaterThan($day['cards'][0]['left'], $day['cards'][1]['left']);
+        self::assertSame('$1,200.00', $day['cards'][0]['money']);
+        self::assertSame('$10.00', $day['cards'][1]['money']);
         self::clickLinkContaining('Other Bill');
         $kept = self::wait()->until(function (): string|false {
             $value = self::driver()->executeScript(<<<'JS'

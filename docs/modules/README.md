@@ -11,7 +11,7 @@ Build the module marked `next`. Leave `later` and `blocked` modules unbuilt unti
 | now | [Buckets](04-categories.md) | Buckets grouped as Needs, Wants, or Savings |
 | now | [Pay cycles](05-pay-cycles.md) | One pay cycle per payor |
 | now | [Envelopes](06-envelopes.md) | Assign cash in the current month |
-| now | [Rollover](07-rollover.md) | Unspent stays; overspend is covered or carried |
+| now | [Rollover](07-rollover.md) | Unspent stays; an assignment is zero or more |
 | now | [Targets](08-targets.md) | Dated goals and a balance to hold |
 | dropped | [Plans](09-plans.md) | Percent caps, removed; gauges stay on the calendar |
 | dropped | [Credit picture](10-debt.md) | Payoff picture, removed; interest, minimum due, due day, and credit limit stay |

@@ -1368,6 +1368,7 @@ a.bucket-tile:hover {
 .day {
   min-width: 0;
   min-height: 5.6rem;
+  scroll-margin-top: 5.5rem;
   padding: 0.35rem;
   border: 1px solid var(--line);
   border-radius: 0.75rem;
@@ -1382,9 +1383,74 @@ a.bucket-tile:hover {
   overflow: hidden;
 }
 
+.day:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
 .day > strong {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   justify-self: start;
   line-height: 1;
+}
+
+.day-items {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  position: relative;
+  gap: 0.28rem;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: auto;
+  scrollbar-color: var(--text) color-mix(in oklab, var(--text) 18%, transparent);
+}
+
+.day-items.day-scroll {
+  scrollbar-gutter: stable;
+}
+
+.day-items > .bill-chip {
+  flex: 0 0 auto;
+}
+
+.day-items:not(:has(.bill-chip)) {
+  display: none;
+}
+
+.day-items::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+}
+
+.day-items::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--text) 18%, transparent);
+  border-radius: 999px;
+}
+
+.day-items::-webkit-scrollbar-thumb {
+  background: var(--text);
+  border-radius: 999px;
+  min-height: 1.4rem;
+}
+
+.day-more {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 0.9rem;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.day-more svg {
+  width: 0.9rem;
+  height: 0.9rem;
 }
 
 .day.today {
@@ -1607,14 +1673,50 @@ a.bucket-tile:hover {
 }
 
 .bucket-water {
+  --bucket-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 20' preserveAspectRatio='none'%3E%3Cpath fill='%23fff' d='M0 10C15 10 15 0 30 0C45 0 45 10 60 10C75 10 75 20 90 20C105 20 105 10 120 10V20H0Z'/%3E%3C/svg%3E");
   position: absolute;
   z-index: 0;
   left: 0;
   right: 0;
   bottom: 0;
   height: calc(var(--level, 0) * 100%);
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+}
+
+.bucket-water::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% + 4.75rem);
+  height: 100%;
   background: color-mix(in oklab, var(--tone, var(--teal)) 42%, transparent);
   pointer-events: none;
+  mask-image: var(--bucket-wave), linear-gradient(#fff, #fff);
+  mask-repeat: repeat-x, no-repeat;
+  mask-size: 4.75rem 0.7rem, 100% max(0px, calc(100% - 0.7rem + 1px));
+  mask-position: 0 0, 0 calc(0.7rem - 1px);
+  mask-mode: alpha;
+  mask-composite: add;
+  animation: bucket-wave 7.5s linear infinite;
+}
+
+@keyframes bucket-wave {
+  from { transform: translateX(0); }
+  to { transform: translateX(-4.75rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bucket-water {
+    background: color-mix(in oklab, var(--tone, var(--teal)) 42%, transparent);
+  }
+
+  .bucket-water::before {
+    content: none;
+    animation: none;
+  }
 }
 
 .bucket-tile > :not(.bucket-water) {
@@ -1625,6 +1727,13 @@ a.bucket-tile:hover {
 a.bucket-tile {
   color: inherit;
   text-decoration: none;
+  aspect-ratio: auto;
+  align-self: start;
+  background: linear-gradient(
+    155deg,
+    color-mix(in oklab, var(--tone, var(--stone)) 34%, var(--bg-raise)),
+    color-mix(in oklab, var(--tone, var(--stone)) 12%, var(--bg-raise))
+  );
 }
 
 .bucket-tile.envelope-tile {
@@ -1709,5 +1818,113 @@ a.bucket-tile {
   }
   .nav a, .nav button.linkish {
     padding: 0.45rem 0.9rem;
+  }
+}
+
+.payor-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.want-gauge {
+  display: grid;
+  grid-template-columns: 4.25rem minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.want-gauge-meter {
+  position: relative;
+  height: 7.5rem;
+}
+
+.want-gauge-track {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 0.85rem;
+  background: color-mix(in oklab, var(--text) 8%, transparent);
+}
+
+.want-gauge-assigned,
+.want-gauge-preview {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: block;
+  transition: height 220ms var(--ease-out), bottom 220ms var(--ease-out);
+}
+
+.want-gauge-assigned {
+  bottom: 0;
+  height: calc(var(--assigned, 0) * 100%);
+  background: color-mix(in oklab, var(--tone-wants) 78%, transparent);
+}
+
+.want-gauge-preview {
+  bottom: calc(var(--assigned, 0) * 100%);
+  height: calc(var(--preview, 0) * 100%);
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, var(--tone-wants) 92%, white) 0 6px,
+    color-mix(in oklab, var(--tone-wants) 38%, transparent) 6px 12px
+  );
+}
+
+.want-gauge-over {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.15rem;
+  border-radius: 0.85rem 0.85rem 0.2rem 0.2rem;
+  background: var(--coral);
+  animation: want-gauge-shake 420ms var(--ease-out);
+  pointer-events: none;
+}
+
+.want-gauge-readout {
+  display: grid;
+  gap: 0.2rem;
+  align-content: end;
+  min-width: 0;
+}
+
+.want-gauge-name {
+  font-weight: 700;
+}
+
+.want-gauge-line span {
+  display: inline-block;
+  min-width: 4.6rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.want-gauge-warning {
+  color: var(--coral);
+  font-weight: 700;
+}
+
+@keyframes want-gauge-shake {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-4px); }
+  36% { transform: translateX(4px); }
+  54% { transform: translateX(-3px); }
+  72% { transform: translateX(2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .want-gauge-assigned,
+  .want-gauge-preview {
+    transition: none;
+  }
+
+  .want-gauge-over {
+    animation: none;
   }
 }

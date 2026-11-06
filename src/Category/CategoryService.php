@@ -16,8 +16,6 @@ final class CategoryService
 {
     private const GROUPS = ['needs', 'wants', 'savings'];
 
-    private const OVERSPEND = ['cover', 'carry'];
-
     public function __construct(
         private readonly PDO $pdo,
         private readonly Actor $actor,
@@ -51,15 +49,15 @@ final class CategoryService
     /** @param array<string, mixed> $input */
     public function create(array $input, ?string $today = null): array
     {
-        $data = $this->validate($input, null);
+        $data = $this->validate($input);
         $now = gmdate('c');
         $this->pdo->beginTransaction();
         try {
             SystemBuckets::ensure($this->pdo, $this->actor->id());
             $this->pdo->prepare(
-                'INSERT INTO categories (user_id, name, category_group, amount_minor, overspend, role, created_at, updated_at)
-                 VALUES (?, ?, ?, 0, ?, \'goal\', ?, ?)'
-            )->execute([$this->actor->id(), $data['name'], $data['group'], $data['overspend'], $now, $now]);
+                'INSERT INTO categories (user_id, name, category_group, amount_minor, role, created_at, updated_at)
+                 VALUES (?, ?, ?, 0, \'goal\', ?, ?)'
+            )->execute([$this->actor->id(), $data['name'], $data['group'], $now, $now]);
             $id = (int) $this->pdo->lastInsertId();
             if (array_key_exists('target', $input)) {
                 $this->targets->replace($id, $input['target']);
@@ -82,13 +80,13 @@ final class CategoryService
         if ($existing['role'] !== 'goal') {
             throw new ApiException(409, 'This bucket stays as it is.');
         }
-        $data = $this->validate($input, (string) $existing['overspend']);
+        $data = $this->validate($input);
         $now = gmdate('c');
         $this->pdo->beginTransaction();
         try {
             $this->pdo->prepare(
-                'UPDATE categories SET name = ?, category_group = ?, overspend = ?, updated_at = ? WHERE id = ? AND user_id = ?'
-            )->execute([$data['name'], $data['group'], $data['overspend'], $now, $id, $this->actor->id()]);
+                'UPDATE categories SET name = ?, category_group = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+            )->execute([$data['name'], $data['group'], $now, $id, $this->actor->id()]);
             if (array_key_exists('target', $input)) {
                 $this->targets->replace($id, $input['target']);
             }
@@ -148,9 +146,9 @@ final class CategoryService
 
     /**
      * @param array<string, mixed> $input
-     * @return array{name:string,group:string,overspend:string}
+     * @return array{name:string,group:string}
      */
-    private function validate(array $input, ?string $existingOverspend): array
+    private function validate(array $input): array
     {
         $errors = [];
         $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
@@ -165,41 +163,11 @@ final class CategoryService
             $errors['group'] = 'Choose Needs, Wants, or Savings.';
         }
 
-        if (!array_key_exists('overspend', $input)) {
-            $overspend = $existingOverspend ?? 'cover';
-        } else {
-            $overspend = is_string($input['overspend']) ? $input['overspend'] : '';
-            if (!in_array($overspend, self::OVERSPEND, true)) {
-                $errors['overspend'] = 'Choose cover now or carry.';
-                $overspend = 'cover';
-            }
-        }
-
         if ($errors !== []) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
 
-        return ['name' => $name, 'group' => $group, 'overspend' => $overspend];
-    }
-
-    /** @param array<string, mixed> $input
-     *  @param array<string, mixed> $existing
-     */
-    private function lockedChange(array $input, array $existing): bool
-    {
-        $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
-        if ($name !== '' && strcasecmp($name, (string) $existing['name']) !== 0) {
-            return true;
-        }
-        $group = strtolower(trim(is_string($input['group'] ?? null) ? $input['group'] : ''));
-        if ($group !== '' && $group !== (string) $existing['group']) {
-            return true;
-        }
-        if (array_key_exists('overspend', $input) && (string) $input['overspend'] !== (string) $existing['overspend']) {
-            return true;
-        }
-
-        return false;
+        return ['name' => $name, 'group' => $group];
     }
 
     /** @return array<string, mixed> */
@@ -225,7 +193,6 @@ final class CategoryService
             'id' => (int) $row['id'],
             'name' => $row['name'],
             'group' => $row['category_group'],
-            'overspend' => (string) ($row['overspend'] ?? 'cover'),
             'role' => (string) ($row['role'] ?? 'goal') === 'locked' ? 'locked' : 'goal',
             'billType' => $row['bill_type'] ?? null,
             'locked' => (string) ($row['role'] ?? '') === 'locked',

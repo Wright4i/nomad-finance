@@ -126,6 +126,25 @@ final class VehiclesTest extends TestCase
         self::assertSame('Vehicle 2', $saved);
         self::clickLink('Back');
         self::waitForText('Vehicle 2');
+        self::clickLinkContaining('Vehicle 1');
+        self::waitForText('Stretch mpg');
+        $dates = self::wait()->until(function (): array|false {
+            $dates = self::driver()->executeScript(<<<'JS'
+                return [...document.querySelectorAll('table tbody tr td:first-child')].map((cell) => cell.textContent.trim());
+            JS);
+            if (!is_array($dates) || ($dates[0] ?? '') !== 'Nov 18, 2026') {
+                return false;
+            }
+
+            return $dates;
+        });
+        self::assertSame([
+            'Nov 18, 2026',
+            'Nov 8, 2026',
+            'Nov 1, 2026',
+            'Oct 1, 2026',
+            'Sep 15, 2026',
+        ], $dates);
     }
 
     private static function colorFieldPresent(): bool

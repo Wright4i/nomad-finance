@@ -275,7 +275,7 @@ final class DemoLibrary
         ], $now);
 
         $this->category($userId, 'Needs 1', 'needs', $now);
-        $this->category($userId, 'Wants 1', 'wants', $now, false, 'carry');
+        $this->category($userId, 'Wants 1', 'wants', $now);
         $this->category($userId, 'Savings 1', 'savings', $now);
         $this->category($userId, 'Needed By Date 1', 'savings', $now);
         $this->category($userId, 'Target Balance 1', 'savings', $now);
@@ -377,21 +377,12 @@ final class DemoLibrary
         $needs = $this->pdo->prepare('SELECT id FROM categories WHERE user_id = ? AND name = ?');
         $needs->execute([$userId, 'Needs 1']);
         $categoryId = (int) $needs->fetchColumn();
-        $wants = $this->pdo->prepare('SELECT id FROM categories WHERE user_id = ? AND name = ?');
-        $wants->execute([$userId, 'Wants 1']);
-        $wantsId = (int) $wants->fetchColumn();
         $cycle = $this->pdo->prepare('SELECT id FROM pay_cycles WHERE user_id = ? AND payor = ?');
         $cycle->execute([$userId, 'Monthly Payor']);
         $cycleId = (int) $cycle->fetchColumn();
-        $october = $this->period($userId, $cycleId, '2026-10-01', '2026-10-31', $categoryId, 20000, $now);
-        $november = $this->period($userId, $cycleId, '2026-11-01', '2026-11-30', $categoryId, 50000, $now);
-        $assign = $this->pdo->prepare(
-            'INSERT INTO assignments (pay_period_id, category_id, amount_minor) VALUES (?, ?, ?)'
-        );
-        $assign->execute([$october, $wantsId, -15000]);
-        $assign->execute([$november, $wantsId, -15000]);
+        $this->period($userId, $cycleId, '2026-10-01', '2026-10-31', $categoryId, 20000, $now);
+        $this->period($userId, $cycleId, '2026-11-01', '2026-11-30', $categoryId, 50000, $now);
         $this->pdo->prepare('UPDATE categories SET amount_minor = 50000 WHERE id = ?')->execute([$categoryId]);
-        $this->pdo->prepare('UPDATE categories SET amount_minor = -15000 WHERE id = ?')->execute([$wantsId]);
         $this->pdo->prepare(
             'UPDATE bills SET category_id = ?
              WHERE name = ? AND account_id IN (SELECT id FROM accounts WHERE user_id = ?)'
@@ -502,13 +493,12 @@ final class DemoLibrary
         string $group,
         string $now,
         bool $archived = false,
-        string $overspend = 'cover',
     ): void {
         $this->pdo->prepare(
             'INSERT INTO categories (
-                user_id, name, category_group, amount_minor, overspend, archived_at, created_at, updated_at
-             ) VALUES (?, ?, ?, 0, ?, ?, ?, ?)'
-        )->execute([$userId, $name, $group, $overspend, $archived ? $now : null, $now, $now]);
+                user_id, name, category_group, amount_minor, archived_at, created_at, updated_at
+             ) VALUES (?, ?, ?, 0, ?, ?, ?)'
+        )->execute([$userId, $name, $group, $archived ? $now : null, $now, $now]);
     }
 
     private function payCycle(

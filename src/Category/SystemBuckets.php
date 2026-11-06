@@ -13,8 +13,8 @@ final class SystemBuckets
     {
         $now = gmdate('c');
         $insert = $pdo->prepare(
-            'INSERT INTO categories (user_id, name, category_group, amount_minor, overspend, role, bill_type, created_at, updated_at)
-             SELECT ?, ?, ?, 0, \'cover\', \'locked\', ?, ?, ?
+            'INSERT INTO categories (user_id, name, category_group, amount_minor, role, bill_type, created_at, updated_at)
+             SELECT ?, ?, ?, 0, \'locked\', ?, ?, ?
              WHERE NOT EXISTS (
                 SELECT 1 FROM categories WHERE user_id = ? AND role = \'locked\' AND bill_type = ?
              )'

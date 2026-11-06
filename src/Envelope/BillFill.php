@@ -307,9 +307,8 @@ final class BillFill
                 'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
                  SELECT ?, a.category_id, a.amount_minor, a.filled_minor
                  FROM assignments a
-                 JOIN categories c ON c.id = a.category_id
                  WHERE a.pay_period_id = ?
-                   AND (a.amount_minor > 0 OR (a.amount_minor < 0 AND c.overspend = \'carry\'))'
+                   AND a.amount_minor > 0'
             )->execute([$id, $previousId]);
         }
 
@@ -344,7 +343,7 @@ final class BillFill
                     break;
                 }
                 $id = (int) $row['category_id'];
-                $sums[$id] = ($sums[$id] ?? 0) + (int) $row['amount_minor'];
+                $sums[$id] = ($sums[$id] ?? 0) + max(0, (int) $row['amount_minor']);
             }
         }
         $current = $this->pdo->prepare('SELECT id, amount_minor FROM categories WHERE user_id = ?');

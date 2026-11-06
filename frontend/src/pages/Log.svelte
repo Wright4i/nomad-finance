@@ -4,9 +4,10 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
-  import { parseMajor, todayISO } from '../lib/money';
+  import { formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
-  import type { Account, Category, Vehicle } from '../lib/types';
+  import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from '../lib/types';
+  import { lockedBucketMaxMinor, wantGaugeLevels } from '../lib/wantGauge';
 
   const wantTypes = [
     'restaurants', 'entertainment', 'subscriptions', 'shopping', 'travel',
@@ -25,6 +26,8 @@
   let postedOn = $state(todayISO());
   let odometer = $state('');
   let price = $state('');
+  let odometerTouched = $state(false);
+  let priceTouched = $state(false);
   let notes = $state('');
   let fields = $state<Record<string, string>>({});
   let message = $state('');
@@ -38,6 +41,53 @@
       : null,
   );
   let fuelAccounts = $derived(accounts.filter((item) => item.type === 'fuel' && item.archivedAt === null));
+  let mpg = $derived(liveMpg(miles, amount, price));
+  let sheet = $state<EnvelopeSheet | null>(null);
+
+  let wantBucket = $derived.by((): EnvelopeCategory | null => {
+    if (!sheet) return null;
+    const match = categories.find((item) => item.locked && item.billType === wantType);
+    if (!match) return null;
+    return sheet.categories.find((item) => item.id === match.id) ?? null;
+  });
+  let wantAssignedMinor = $derived(wantBucket?.amountMinor ?? 0);
+  let wantMaxMinor = $derived(
+    wantBucket ? lockedBucketMaxMinor(wantBucket.target?.amountMinor, wantBucket.billMinor ?? wantBucket.amountMinor) : 0,
+  );
+  let wantTypedMinor = $derived.by(() => {
+    if (!sheet) return 0;
+    const parsed = parseMajor(amount, sheet.exponent);
+    return parsed !== null && parsed > 0 ? parsed : 0;
+  });
+  let wantLevels = $derived(wantGaugeLevels(wantAssignedMinor, wantMaxMinor, wantTypedMinor));
+
+  function applyVehicle(current: Vehicle | null): void {
+    if (!current) return;
+    if (!odometerTouched) odometer = String(current.currentOdometerMiles);
+    if (!priceTouched) {
+      price = current.suggestedPricePerGallonMinor == null
+        ? ''
+        : minorToInput(current.suggestedPricePerGallonMinor, 2);
+    }
+  }
+
+  function chooseVehicle(event: Event): void {
+    const select = event.currentTarget;
+    if (!(select instanceof HTMLSelectElement)) return;
+    applyVehicle(vehicles.find((item) => String(item.id) === select.value) ?? null);
+  }
+
+  function liveMpg(traveled: number | null, amountText: string, priceText: string): string | null {
+    if (traveled === null) return null;
+    const amountMinor = parseMajor(amountText, 2);
+    const priceMinor = parseMajor(priceText, 2);
+    if (amountMinor === null || amountMinor < 1 || priceMinor === null || priceMinor < 1) return null;
+    if (traveled === 0) return '0.0';
+    const gallonsMilli = Math.trunc((amountMinor * 1000 + Math.trunc(priceMinor / 2)) / priceMinor);
+    if (gallonsMilli <= 0) return null;
+    const tenths = Math.trunc((traveled * 10000 + Math.trunc(gallonsMilli / 2)) / gallonsMilli);
+    return `${Math.trunc(tenths / 10)}.${tenths % 10}`;
+  }
 
   onMount(async () => {
     try {
@@ -50,9 +100,13 @@
       vehicles = vehicleData.vehicles;
       categories = categoryData.categories;
       const starred = vehicles.find((item) => item.starred) ?? vehicles[0];
-      if (starred) vehicleId = String(starred.id);
+      if (starred) {
+        vehicleId = String(starred.id);
+        applyVehicle(starred);
+      }
       const fuel = accounts.find((item) => item.type === 'fuel');
       if (fuel) accountId = String(fuel.id);
+      sheet = await api<EnvelopeSheet>(`/api/envelopes?today=${todayISO()}`).catch(() => null);
     } catch (err) {
       message = explain(err).message;
     }
@@ -142,7 +196,7 @@
   {#if kind === 'fuel'}
     <label class="field">
       <span>Vehicle</span>
-      <select name="vehicleId" bind:value={vehicleId}>
+      <select name="vehicleId" bind:value={vehicleId} onchange={chooseVehicle}>
         <option value="">Choose a vehicle</option>
         {#each vehicles as item}
           <option value={String(item.id)}>{item.name}</option>
@@ -152,13 +206,14 @@
     </label>
     <label class="field">
       <span>Odometer</span>
-      <input name="odometer" inputmode="numeric" bind:value={odometer} />
+      <input name="odometer" inputmode="numeric" bind:value={odometer} oninput={() => (odometerTouched = true)} />
       {#if miles !== null}<span class="muted" data-miles={miles}>{miles} miles traveled</span>{/if}
+      {#if mpg !== null}<span class="muted" data-mpg={mpg}>{mpg} mpg</span>{/if}
       {#if fields.odometerMiles}<em>{fields.odometerMiles}</em>{/if}
     </label>
     <label class="field">
       <span>Price per gallon</span>
-      <input name="price" inputmode="decimal" bind:value={price} />
+      <input name="price" inputmode="decimal" bind:value={price} oninput={() => (priceTouched = true)} />
       {#if fields.pricePerGallonMinor}<em>{fields.pricePerGallonMinor}</em>{/if}
     </label>
   {:else}
@@ -166,7 +221,10 @@
       <span>Type</span>
       <div class="flex flex-wrap gap-2">
         {#each wantTypes as option}
-          <button class="choice" class:on={wantType === option} type="button" onclick={() => (wantType = option)}>{option}</button>
+          <button class="choice" class:on={wantType === option} type="button" style={`--tone: var(--tone-${option})`} onclick={() => (wantType = option)}>
+            <Glyph name={option} mini />
+            {option}
+          </button>
         {/each}
       </div>
     </div>
@@ -176,6 +234,40 @@
       <input name="name" bind:value={name} />
       {#if fields.name}<em>{fields.name}</em>{/if}
     </label>
+    {#if wantBucket && sheet}
+      <div
+        class="want-gauge"
+        class:over={wantLevels.over}
+        class:neutral={wantLevels.neutral}
+        data-want-gauge
+        data-bucket={wantBucket.name}
+        data-assigned-minor={wantAssignedMinor}
+        data-max-minor={wantMaxMinor}
+        data-over={wantLevels.over ? '1' : '0'}
+        data-neutral={wantLevels.neutral ? '1' : '0'}
+        style={`--assigned: ${wantLevels.assignedLevel}; --preview: ${wantLevels.previewLevel}`}
+      >
+        <div class="want-gauge-meter">
+          <div class="want-gauge-track">
+            <span class="want-gauge-assigned"></span>
+            <span class="want-gauge-preview"></span>
+          </div>
+          {#if wantLevels.over}
+            {#key wantLevels.overMinor}
+              <span class="want-gauge-over"></span>
+            {/key}
+          {/if}
+        </div>
+        <div class="want-gauge-readout">
+          <p class="want-gauge-name m-0">{wantBucket.name}</p>
+          <p class="want-gauge-line m-0"><span>Assigned</span> <strong>{formatMinor(wantAssignedMinor, sheet.baseCurrency, sheet.exponent)}</strong></p>
+          <p class="want-gauge-line m-0"><span>Max</span> <strong>{formatMinor(wantMaxMinor, sheet.baseCurrency, sheet.exponent)}</strong></p>
+          {#if wantLevels.over}
+            <p class="want-gauge-warning m-0">Over <strong>{formatMinor(wantLevels.overMinor, sheet.baseCurrency, sheet.exponent)}</strong></p>
+          {/if}
+        </div>
+      </div>
+    {/if}
   {/if}
   <label class="field">
     <span>Amount</span>

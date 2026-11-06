@@ -56,6 +56,7 @@ final class CalendarTest extends TestCase
         $options->addArguments([
             '--headless=new',
             '--disable-gpu',
+            '--disable-features=OverlayScrollbar',
             '--window-size=1280,900',
             '--lang=en-US',
             '--no-first-run',
@@ -302,6 +303,80 @@ final class CalendarTest extends TestCase
         self::assertSame('1', self::compact($desktop['label']));
     }
 
+    #[Depends('testStaysFiltersAndTheDayDialog')]
+    public function testCrowdedDayShowsThreeItemsAndKeepsTheNumber(): void
+    {
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+        self::clickLink('Calendar');
+        self::openMonth('2026-11');
+        self::setFilter('Show Income', true);
+        self::setFilter('Show Stays', true);
+        self::setFilter('Show Paid Bills', true);
+        self::setFilter('Show Unpaid Bills', true);
+        self::waitForText('Stay 1');
+        self::waitForText('Weekly Payor');
+        self::wait()->until(function (): bool {
+            $first = self::dayWindow('2026-11-01');
+            $stay = self::dayWindow('2026-11-20');
+
+            return $first['chips'] > 3
+                && $first['chipHeight'] > 24
+                && $first['visible'] === 3
+                && $first['arrow'] === true
+                && $stay['chips'] > 3
+                && $stay['visible'] === 3
+                && $stay['arrow'] === true;
+        });
+
+        $quiet = self::dayWindow('2026-11-19');
+        self::assertGreaterThan(0, $quiet['chips']);
+        self::assertLessThanOrEqual(3, $quiet['chips']);
+        self::assertFalse($quiet['arrow']);
+        self::assertSame($quiet['chips'], $quiet['visible']);
+
+        foreach (self::dayArrows() as $row) {
+            if ($row['chips'] > 3) {
+                self::assertTrue($row['arrow'], $row['date'] . ' shows a down arrow');
+            } else {
+                self::assertFalse($row['arrow'], $row['date'] . ' hides the down arrow');
+            }
+        }
+
+        $scrolled = self::scrollDay('2026-11-01');
+        self::assertSame('auto', $scrolled['overflowY']);
+        self::assertGreaterThan($scrolled['clientHeight'], $scrolled['scrollHeight']);
+        self::assertGreaterThan(0, $scrolled['scrollTop']);
+        self::assertGreaterThanOrEqual(4, $scrolled['scrollbar'], 'scrollbar ' . $scrolled['scrollbar'] . ' css ' . $scrolled['barWidth']);
+        self::assertTrue($scrolled['atEnd']);
+        self::assertLessThan(2.0, $scrolled['numberDelta']);
+        self::assertGreaterThan(0.0, $scrolled['numberFromCell']);
+        self::assertLessThan(20.0, $scrolled['numberFromCell']);
+        self::assertFalse($scrolled['numberInsideList']);
+        self::assertSame('M12 5v11M7.5 12.5 12 17.5 16.5 12.5', $scrolled['arrow']);
+
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(390, 844));
+        self::wait()->until(function (): bool {
+            $phone = self::dayWindow('2026-11-01');
+
+            return $phone['chips'] > 3 && $phone['visible'] === 3 && $phone['arrow'] === true;
+        });
+        $phoneScroll = self::scrollDay('2026-11-01');
+        self::assertSame('auto', $phoneScroll['overflowY']);
+        self::assertGreaterThan(0, $phoneScroll['scrollTop']);
+        self::assertGreaterThanOrEqual(4, $phoneScroll['scrollbar']);
+        self::assertLessThan(2.0, $phoneScroll['numberDelta']);
+        self::assertGreaterThan(0.0, $phoneScroll['numberFromCell']);
+        self::assertLessThan(24.0, $phoneScroll['numberFromCell']);
+
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+        self::assertSame(1, self::chipCount('2026-11-01', 'Weekly Payor'));
+        self::assertSame(1, self::chipCount('2026-11-01', 'Averaged Payor'));
+        self::clickDay('2026-11-01');
+        self::assertStringContainsString('Averaged Payor', self::dialogText());
+        self::assertStringContainsString('Weekly Payor', self::dialogText());
+        self::click('Close');
+    }
+
     private static function compact(string $value): string
     {
         $collapsed = preg_replace('/\s+/u', '', str_replace("\u{00A0}", '', $value));
@@ -362,9 +437,142 @@ final class CalendarTest extends TestCase
         throw new RuntimeException('Could not reach ' . $month);
     }
 
+    /** @return array{chips:int,chipHeight:int,visible:int,arrow:bool,overflowY:string,scrollHeight:int,clientHeight:int,scrollbar:int} */
+    private static function dayWindow(string $iso): array
+    {
+        $value = self::driver()->executeScript(
+            <<<'JS'
+                const day = document.querySelector(`.day[data-date="${arguments[0]}"]`);
+                if (!day) return null;
+                const list = day.querySelector('.day-items');
+                if (list) list.scrollTop = 0;
+                const chips = list ? [...list.querySelectorAll('.bill-chip')] : [];
+                const listRect = list ? list.getBoundingClientRect() : null;
+                const visible = listRect ? chips.filter((chip) => {
+                    const rect = chip.getBoundingClientRect();
+                    if (rect.height <= 0) return false;
+                    const shown = Math.min(rect.bottom, listRect.bottom) - Math.max(rect.top, listRect.top);
+                    return shown >= rect.height - 1;
+                }).length : 0;
+                const styles = list ? getComputedStyle(list) : null;
+                return {
+                    chips: chips.length,
+                    chipHeight: chips[0] ? chips[0].offsetHeight : 0,
+                    visible,
+                    arrow: Boolean(day.querySelector('.day-more')),
+                    overflowY: styles ? styles.overflowY : '',
+                    scrollHeight: list ? list.scrollHeight : 0,
+                    clientHeight: list ? list.clientHeight : 0,
+                    scrollbar: list ? list.offsetWidth - list.clientWidth : 0,
+                };
+            JS,
+            [$iso],
+        );
+        if (!is_array($value)) {
+            return [
+                'chips' => 0,
+                'chipHeight' => 0,
+                'visible' => 0,
+                'arrow' => false,
+                'overflowY' => '',
+                'scrollHeight' => 0,
+                'clientHeight' => 0,
+                'scrollbar' => 0,
+            ];
+        }
+
+        return [
+            'chips' => (int) $value['chips'],
+            'chipHeight' => (int) $value['chipHeight'],
+            'visible' => (int) $value['visible'],
+            'arrow' => $value['arrow'] === true,
+            'overflowY' => is_string($value['overflowY']) ? $value['overflowY'] : '',
+            'scrollHeight' => (int) $value['scrollHeight'],
+            'clientHeight' => (int) $value['clientHeight'],
+            'scrollbar' => (int) $value['scrollbar'],
+        ];
+    }
+
+    /** @return list<array{date:string,chips:int,arrow:bool}> */
+    private static function dayArrows(): array
+    {
+        $value = self::driver()->executeScript(<<<'JS'
+            return [...document.querySelectorAll('.day[data-date]')].map((day) => {
+                const list = day.querySelector('.day-items');
+                return {
+                    date: day.getAttribute('data-date') || '',
+                    chips: list ? list.querySelectorAll('.bill-chip').length : 0,
+                    arrow: Boolean(day.querySelector('.day-more')),
+                };
+            });
+        JS);
+        self::assertIsArray($value);
+        $rows = [];
+        foreach ($value as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $rows[] = [
+                'date' => is_string($row['date'] ?? null) ? $row['date'] : '',
+                'chips' => (int) ($row['chips'] ?? 0),
+                'arrow' => ($row['arrow'] ?? false) === true,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** @return array{overflowY:string,scrollHeight:int,clientHeight:int,scrollTop:int,scrollbar:int,atEnd:bool,numberDelta:float,numberFromCell:float,arrow:string,numberInsideList:bool} */
+    private static function scrollDay(string $iso): array
+    {
+        $value = self::driver()->executeScript(
+            <<<'JS'
+                const day = document.querySelector(`.day[data-date="${arguments[0]}"]`);
+                const list = day.querySelector('.day-items');
+                const number = day.querySelector('strong');
+                const arrow = day.querySelector('.day-more svg path');
+                day.scrollIntoView({ block: 'center', inline: 'nearest' });
+                const beforeNumber = number.getBoundingClientRect().top;
+                list.scrollTop = list.scrollHeight;
+                const afterNumber = number.getBoundingClientRect().top;
+                const cellTop = day.getBoundingClientRect().top;
+                const paint = getComputedStyle(list, '::-webkit-scrollbar');
+                return {
+                    overflowY: getComputedStyle(list).overflowY,
+                    scrollHeight: list.scrollHeight,
+                    clientHeight: list.clientHeight,
+                    scrollTop: list.scrollTop,
+                    scrollbar: list.offsetWidth - list.clientWidth,
+                    barWidth: paint.width,
+                    atEnd: list.scrollTop + list.clientHeight >= list.scrollHeight - 2,
+                    numberDelta: Math.abs(afterNumber - beforeNumber),
+                    numberFromCell: afterNumber - cellTop,
+                    arrow: arrow ? arrow.getAttribute('d') || '' : '',
+                    numberInsideList: list.contains(number),
+                };
+            JS,
+            [$iso],
+        );
+        self::assertIsArray($value);
+
+        return [
+            'overflowY' => is_string($value['overflowY']) ? $value['overflowY'] : '',
+            'scrollHeight' => (int) $value['scrollHeight'],
+            'clientHeight' => (int) $value['clientHeight'],
+            'scrollTop' => (int) $value['scrollTop'],
+            'scrollbar' => (int) $value['scrollbar'],
+            'barWidth' => is_string($value['barWidth'] ?? null) ? $value['barWidth'] : '',
+            'atEnd' => $value['atEnd'] === true,
+            'numberDelta' => (float) $value['numberDelta'],
+            'numberFromCell' => (float) $value['numberFromCell'],
+            'arrow' => is_string($value['arrow']) ? $value['arrow'] : '',
+            'numberInsideList' => $value['numberInsideList'] === true,
+        ];
+    }
+
     private static function clickDay(string $iso): void
     {
-        $by = WebDriverBy::cssSelector('button.day[data-date="' . $iso . '"]');
+        $by = WebDriverBy::cssSelector('.day[data-date="' . $iso . '"] strong');
         $element = self::wait()->until(WebDriverExpectedCondition::presenceOfElementLocated($by));
         self::driver()->executeScript(
             'arguments[0].scrollIntoView({block:"center", inline:"nearest"})',
@@ -416,9 +624,9 @@ final class CalendarTest extends TestCase
                 });
                 return named || paint;
             };
-            const income = chip('button.day[data-date="2026-11-01"] .income-chip[title="Weekly Payor"]');
-            const bill = chip('button.day[data-date="2026-11-19"] .bill-chip[title="Travel Bill"]');
-            const stay = chip('button.day[data-date="2026-11-20"] .stay-chip[title="Stay 1"]');
+            const income = chip('.day[data-date="2026-11-01"] .income-chip[title="Weekly Payor"]');
+            const bill = chip('.day[data-date="2026-11-19"] .bill-chip[title="Travel Bill"]');
+            const stay = chip('.day[data-date="2026-11-20"] .stay-chip[title="Stay 1"]');
             const stays = document.querySelectorAll('.stay-chip');
             const billFill = bill ? token(getComputedStyle(bill).backgroundColor) : '';
             probe.remove();
@@ -441,14 +649,14 @@ final class CalendarTest extends TestCase
 
     private static function chipFill(string $date, string $title): string
     {
-        return self::paintToken('button.day[data-date="' . $date . '"] .bill-chip[title="' . $title . '"]', 'backgroundColor');
+        return self::paintToken('.day[data-date="' . $date . '"] .bill-chip[title="' . $title . '"]', 'backgroundColor');
     }
 
     private static function chipCount(string $date, string $title): int
     {
         $value = self::driver()->executeScript(
             'return document.querySelectorAll(arguments[0]).length;',
-            ['button.day[data-date="' . $date . '"] .bill-chip[title="' . $title . '"]'],
+            ['.day[data-date="' . $date . '"] .bill-chip[title="' . $title . '"]'],
         );
 
         return is_int($value) ? $value : 0;
@@ -465,7 +673,7 @@ final class CalendarTest extends TestCase
                 if (!icon || !name) return false;
                 return getComputedStyle(icon).color === getComputedStyle(name).color;
             JS,
-            ['button.day[data-date="' . $date . '"] .bill-chip[title="' . $title . '"]'],
+            ['.day[data-date="' . $date . '"] .bill-chip[title="' . $title . '"]'],
         );
 
         return $value === true;
@@ -623,8 +831,8 @@ final class CalendarTest extends TestCase
             const columns = getComputedStyle(month).gridTemplateColumns.split(' ').filter(Boolean).length;
             const heads = [...document.querySelectorAll('.month-head')];
             const pads = [...document.querySelectorAll('.month-pad')].filter((node) => getComputedStyle(node).display !== 'none').length;
-            const days = [...document.querySelectorAll('button.day')].map((node) => node.getAttribute('data-date'));
-            const label = document.querySelector('button.day strong') ? document.querySelector('button.day strong').innerText : '';
+            const days = [...document.querySelectorAll('.day')].map((node) => node.getAttribute('data-date'));
+            const label = document.querySelector('.day strong') ? document.querySelector('.day strong').innerText : '';
             return {
                 columns,
                 headHidden: heads.length > 0 && heads.every((node) => getComputedStyle(node).display === 'none'),

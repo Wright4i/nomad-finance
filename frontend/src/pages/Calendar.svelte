@@ -127,6 +127,68 @@
     return billMarks(date).filter((mark) => calendarBillShown(mark.status, mark.kind, showPaidBills, showUnpaidBills));
   }
 
+  function dayItemCount(date: string): number {
+    return (showStays ? dayStays(date).length : 0)
+      + (showIncome ? incomeMarks(date).length : 0)
+      + visibleBills(date).length;
+  }
+
+  function fitThree(node: HTMLElement, count: number) {
+    let items = count;
+    let frame = 0;
+
+    const apply = () => {
+      const chips = [...node.querySelectorAll(':scope > .bill-chip')].filter((chip): chip is HTMLElement => chip instanceof HTMLElement);
+      if (items <= 3 || chips.length <= 3) {
+        if (node.style.maxHeight !== '') node.style.maxHeight = '';
+        return;
+      }
+      const first = chips[0];
+      const third = chips[2];
+      const height = Math.ceil(third.offsetTop + third.offsetHeight - first.offsetTop);
+      if (height < 1) return;
+      const current = node.style.maxHeight === '' ? NaN : parseFloat(node.style.maxHeight);
+      if (Number.isNaN(current) || Math.abs(current - height) > 1) node.style.maxHeight = `${height}px`;
+    };
+
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(apply);
+    };
+
+    const resize = new ResizeObserver(schedule);
+    const watch = () => {
+      resize.disconnect();
+      resize.observe(node);
+      for (const chip of node.querySelectorAll(':scope > .bill-chip')) resize.observe(chip);
+    };
+    const mutations = new MutationObserver(() => {
+      watch();
+      schedule();
+    });
+    const keepScrollbarClick = (event: MouseEvent) => {
+      if (event.offsetX > node.clientWidth || event.offsetY > node.clientHeight) event.stopPropagation();
+    };
+    mutations.observe(node, { childList: true });
+    node.addEventListener('click', keepScrollbarClick);
+    watch();
+    schedule();
+
+    return {
+      update(next: number) {
+        items = next;
+        watch();
+        schedule();
+      },
+      destroy() {
+        cancelAnimationFrame(frame);
+        resize.disconnect();
+        mutations.disconnect();
+        node.removeEventListener('click', keepScrollbarClick);
+      },
+    };
+  }
+
   let shown = $derived(cells(month).flatMap((date) => (date === null ? [] : [...incomeMarks(date), ...billMarks(date)])));
 
   let totals = $derived.by(() => {
@@ -250,38 +312,46 @@
         {/each}
         {#each cells(month) as date, index (`${month}-${index}`)}
           {#if date}
-            <button
+            {@const count = dayItemCount(date)}
+            <div
               class="day"
               class:today={date === todayISO()}
-              type="button"
+              role="button"
+              tabindex="0"
               data-date={date}
               aria-current={date === todayISO() ? 'date' : undefined}
               onclick={() => choose(date)}
+              onkeydown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                choose(date);
+              }}
             >
               <strong><span class="day-week">{weekdayName(date)}&nbsp;</span>{Number(date.slice(8))}</strong>
-              {#if showStays}
-                {#each dayStays(date) as trip (trip.id)}
-                  <span class="bill-chip stay-chip" title={trip.placeName}>
-                    <span class="bill-chip-line">
-                      <Glyph name="tree" mini />
-                      <span class="bill-chip-name">{trip.placeName}</span>
+              <span class="day-items" class:day-scroll={count > 3} use:fitThree={count}>
+                {#if showStays}
+                  {#each dayStays(date) as trip (trip.id)}
+                    <span class="bill-chip stay-chip" title={trip.placeName}>
+                      <span class="bill-chip-line">
+                        <Glyph name="tree" mini />
+                        <span class="bill-chip-name">{trip.placeName}</span>
+                      </span>
+                      <span class="bill-chip-amount">{stayCaption(trip)}</span>
                     </span>
-                    <span class="bill-chip-amount">{stayCaption(trip)}</span>
-                  </span>
-                {/each}
-              {/if}
-              {#if showIncome}
-                {#each incomeMarks(date) as mark (`${date}-income-${mark.id}`)}
-                  <span class="bill-chip income-chip" title={mark.name}>
-                    <span class="bill-chip-line">
-                      <Glyph name={mark.type} mini />
-                      <span class="bill-chip-name">{mark.name}</span>
+                  {/each}
+                {/if}
+                {#if showIncome}
+                  {#each incomeMarks(date) as mark (`${date}-income-${mark.id}`)}
+                    <span class="bill-chip income-chip" title={mark.name}>
+                      <span class="bill-chip-line">
+                        <Glyph name={mark.type} mini />
+                        <span class="bill-chip-name">{mark.name}</span>
+                      </span>
+                      <span class="bill-chip-amount money">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</span>
                     </span>
-                    <span class="bill-chip-amount money">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</span>
-                  </span>
-                {/each}
-              {/if}
-              {#each visibleBills(date) as mark (`${date}-${mark.kind}-${mark.id}`)}
+                  {/each}
+                {/if}
+                {#each visibleBills(date) as mark (`${date}-${mark.kind}-${mark.id}`)}
                   <span class="bill-chip" class:paid-chip={calendarBillColor(mark.status, mark.kind) === '--lilac'} title={mark.name}>
                     <span class="bill-chip-line">
                       <Glyph name={mark.type} mini />
@@ -290,7 +360,15 @@
                     <span class="bill-chip-amount money">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</span>
                   </span>
                 {/each}
-            </button>
+              </span>
+              {#if count > 3}
+                <span class="day-more" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M12 5v11M7.5 12.5 12 17.5 16.5 12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+              {/if}
+            </div>
           {:else}
             <span class="month-pad"></span>
           {/if}

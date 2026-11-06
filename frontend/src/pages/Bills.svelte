@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
+  import { billDays } from '../lib/billDays';
   import { formatDate, formatMinor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import type { Bill } from '../lib/types';
@@ -42,19 +43,6 @@
       .map((bill) => ({ ...bill, shownOn: bill.lastPaidOn ?? bill.nextDueDate })),
   ]);
 
-  function byDate(rows: Row[]): { date: string; bills: Row[] }[] {
-    const sorted = [...rows].sort((left, right) => left.shownOn.localeCompare(right.shownOn) || left.name.localeCompare(right.name) || left.id - right.id);
-    const days: { date: string; bills: Row[] }[] = [];
-    for (const bill of sorted) {
-      const last = days[days.length - 1];
-      if (!last || last.date !== bill.shownOn) {
-        days.push({ date: bill.shownOn, bills: [bill] });
-      } else {
-        last.bills.push(bill);
-      }
-    }
-    return days;
-  }
 </script>
 
 <div class="grid gap-5">
@@ -72,7 +60,7 @@
         {title}
       </h2>
       {#if rows.length === 0}<p class="muted m-0">None.</p>{/if}
-      {#each byDate(rows) as day (day.date)}
+      {#each billDays(rows) as day (day.date)}
         <div class="bill-day">
           <h3 class="bill-date m-0">{formatDate(day.date)}</h3>
           <hr class="bill-date-rule" />

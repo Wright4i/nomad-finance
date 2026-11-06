@@ -88,12 +88,11 @@
               <span>
                 <strong>{category.name}</strong>
                 <span class="block muted text-sm">
-                  {category.overspend === 'carry' ? 'Carry' : 'Cover now'}
                   {#if category.amountMinor !== 0}
-                    · {formatMinor(category.amountMinor, session.user?.baseCurrency ?? 'USD')}
+                    {formatMinor(category.amountMinor, session.user?.baseCurrency ?? 'USD')}
                   {/if}
                   {#if category.target}
-                    · {targetHint(category.target, session.user?.baseCurrency ?? 'USD')}
+                    {category.amountMinor !== 0 ? ' · ' : ''}{targetHint(category.target, session.user?.baseCurrency ?? 'USD')}
                   {/if}
                 </span>
                 {#if category.archivedAt}<span class="block muted text-sm">archived</span>{/if}

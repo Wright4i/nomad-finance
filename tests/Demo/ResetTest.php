@@ -289,10 +289,8 @@ final class ResetTest extends TestCase
         self::assertSame('needs', $byName['Needs 1']['group']);
         self::assertNull($byName['Needs 1']['archivedAt']);
         self::assertSame(50000, $byName['Needs 1']['amountMinor']);
-        self::assertSame('cover', $byName['Needs 1']['overspend']);
         self::assertSame('wants', $byName['Wants 1']['group']);
-        self::assertSame('carry', $byName['Wants 1']['overspend']);
-        self::assertSame(-15000, $byName['Wants 1']['amountMinor']);
+        self::assertSame(0, $byName['Wants 1']['amountMinor']);
         self::assertSame('savings', $byName['Savings 1']['group']);
         self::assertSame('needs', $byName['Archived Category']['group']);
         self::assertNotNull($byName['Archived Category']['archivedAt']);

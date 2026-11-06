@@ -131,40 +131,43 @@
   {#if message}<p class="banner">{message}</p>{/if}
   {#if ready && cycles.length === 0}
     <p class="muted m-0">No pay cycles yet.</p>
+  {:else if cycles.length > 0}
+    <div class="payor-columns">
+      {#each cycles as cycle (cycle.id)}
+        <article class="card stripe grid gap-1" style={`--tone: var(--tone-${cycle.length})`}>
+          <a
+            class="flex items-center gap-3 no-underline"
+            href={`/pay-cycles/${cycle.id}`}
+            onclick={(event) => { event.preventDefault(); go(`/pay-cycles/${cycle.id}`); }}
+          >
+            <Glyph name={cycle.length} />
+            <span>
+              <strong>{cycle.payor}</strong>
+              {#if cycle.archivedAt}<span class="block muted text-sm">archived</span>{/if}
+            </span>
+          </a>
+          <p class="group-title text-xl m-0" style={`--tone: var(--tone-${cycle.length})`}>{span(cycle)}</p>
+          <button class="btn w-fit" type="button" onclick={() => void openPayroll(cycle)}>Payroll</button>
+          <p class="m-0">
+            {cycle.payKind === 'salary' ? 'Salary' : cycle.payKind === 'hourly' ? 'Hourly' : 'Fixed'}
+            {#if cycle.paycheckMinor !== null}
+              · {formatMinor(cycle.paycheckMinor, session.user?.baseCurrency ?? 'USD')}
+            {:else if cycle.payKind === 'salary'}
+              · not split into a paycheck
+            {:else}
+              · enter a rate
+            {/if}
+          </p>
+          <p class="muted m-0">Based on payday {formatDate(cycle.payday)}.</p>
+          {#if cycle.rollsOn}
+            <p class="muted m-0">Rolls on {formatDate(cycle.rollsOn)}.</p>
+          {:else}
+            <p class="muted m-0">Stays open until you type the next payday.</p>
+          {/if}
+        </article>
+      {/each}
+    </div>
   {/if}
-  {#each cycles as cycle (cycle.id)}
-    <article class="card stripe grid gap-1" style={`--tone: var(--tone-${cycle.length})`}>
-      <a
-        class="flex items-center gap-3 no-underline"
-        href={`/pay-cycles/${cycle.id}`}
-        onclick={(event) => { event.preventDefault(); go(`/pay-cycles/${cycle.id}`); }}
-      >
-        <Glyph name={cycle.length} />
-        <span>
-          <strong>{cycle.payor}</strong>
-          {#if cycle.archivedAt}<span class="block muted text-sm">archived</span>{/if}
-        </span>
-      </a>
-      <p class="group-title text-xl m-0" style={`--tone: var(--tone-${cycle.length})`}>{span(cycle)}</p>
-      <button class="btn w-fit" type="button" onclick={() => void openPayroll(cycle)}>Payroll</button>
-      <p class="m-0">
-        {cycle.payKind === 'salary' ? 'Salary' : cycle.payKind === 'hourly' ? 'Hourly' : 'Fixed'}
-        {#if cycle.paycheckMinor !== null}
-          · {formatMinor(cycle.paycheckMinor, session.user?.baseCurrency ?? 'USD')}
-        {:else if cycle.payKind === 'salary'}
-          · not split into a paycheck
-        {:else}
-          · enter a rate
-        {/if}
-      </p>
-      <p class="muted m-0">Based on payday {formatDate(cycle.payday)}.</p>
-      {#if cycle.rollsOn}
-        <p class="muted m-0">Rolls on {formatDate(cycle.rollsOn)}.</p>
-      {:else}
-        <p class="muted m-0">Stays open until you type the next payday.</p>
-      {/if}
-    </article>
-  {/each}
 </div>
 
 <dialog class="modal wide" bind:this={payrollDialog} aria-labelledby="payroll-title">

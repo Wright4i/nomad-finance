@@ -2,7 +2,7 @@
 
 Status: now
 
-Each payor has one pay cycle. A payor is a named source of pay. A second paycheck from the same payor is an edit to a cash balance inside that payor's period. Another payor gets another cycle. Archiving hides the payor and keeps the cycle.
+Each payor has one pay cycle. A payor is a named source of pay. A second paycheck from the same payor is an edit to a cash balance inside that payor's period. Another payor gets another cycle. Archiving hides the payor and keeps the cycle. The list shows those payor cards two across. A card alone on the last row stays in the first column.
 
 | Field | Rule |
 | --- | --- |

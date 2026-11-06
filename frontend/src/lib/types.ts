@@ -51,8 +51,6 @@ export type Bill = {
   pricePerGallonMinor?: number | null;
 };
 
-export type Overspend = 'cover' | 'carry';
-
 export type CategoryTarget = {
   kind: 'needed' | 'balance';
   amountMinor: number | null;
@@ -85,7 +83,6 @@ export type EnvelopeCategory = {
   name: string;
   group: 'needs' | 'wants' | 'savings';
   role?: 'goal' | 'locked';
-  overspend: Overspend;
   amountMinor: number;
   billMinor?: number;
   remainingMinor?: number;
@@ -170,7 +167,6 @@ export type Category = {
   role: 'goal' | 'locked';
   billType: string | null;
   locked: boolean;
-  overspend: Overspend;
   fuel: boolean;
   amountMinor: number;
   archivedAt: string | null;
@@ -301,6 +297,7 @@ export type Vehicle = {
   mpgMaxTenths: number;
   starred: boolean;
   currentOdometerMiles: number;
+  suggestedPricePerGallonMinor: number | null;
   milesPerGallon: string | null;
   readings: VehicleReading[];
 };

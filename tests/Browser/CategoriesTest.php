@@ -104,8 +104,6 @@ final class CategoriesTest extends TestCase
         self::waitForText('Needs 1');
         self::waitForText('Wants 1');
         self::waitForText('Savings 1');
-        self::waitForText('Cover now');
-        self::waitForText('Carry');
         self::waitForText('Needed By Date 1');
         self::waitForText('Set aside $300.00 a month · 4 months until Feb 1, 2027');
         self::waitForText('Still $500.00 to hold');
@@ -114,8 +112,8 @@ final class CategoriesTest extends TestCase
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const name = document.querySelector('input[name="name"]');
-                const button = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Carry');
-                return name && name.value === 'Wants 1' && button && button.getAttribute('aria-pressed') === 'true';
+                const carry = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Carry');
+                return name && name.value === 'Wants 1' && !carry;
             JS);
 
             return $ready === true;
@@ -261,7 +259,21 @@ final class CategoriesTest extends TestCase
         $cards = self::driver()->executeScript(<<<'JS'
             const tiles = [...document.querySelectorAll('a.bucket-tile')].slice(0, 2).map((tile) => {
                 const rect = tile.getBoundingClientRect();
-                return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+                const style = getComputedStyle(tile);
+                const kids = [...tile.children];
+                const content = kids.reduce((sum, child) => sum + child.getBoundingClientRect().height, 0);
+                const pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+                const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+                const gap = parseFloat(style.rowGap || style.gap || '0');
+                const expected = content + pad + border + (kids.length > 1 ? gap * (kids.length - 1) : 0);
+                return {
+                    top: rect.top,
+                    left: rect.left,
+                    width: rect.width,
+                    height: rect.height,
+                    expected,
+                    background: style.backgroundImage,
+                };
             });
             return tiles;
         JS);
@@ -269,22 +281,49 @@ final class CategoriesTest extends TestCase
         self::assertCount(2, $cards);
         self::assertEqualsWithDelta($cards[0]['top'], $cards[1]['top'], 2);
         self::assertGreaterThan($cards[0]['left'], $cards[1]['left']);
-        self::assertEqualsWithDelta($cards[0]['width'], $cards[0]['height'], 2);
+        self::assertGreaterThan(8, abs($cards[0]['width'] - $cards[0]['height']));
+        self::assertEqualsWithDelta($cards[0]['expected'], $cards[0]['height'], 4);
+        self::assertIsString($cards[0]['background']);
+        self::assertStringContainsString('linear-gradient', $cards[0]['background']);
         self::clickLinkContaining('Checking 2');
         self::click('Unarchive');
         self::waitForText('Checking 1');
         self::waitForText('Checking 2');
         $accountColors = self::driver()->executeScript(<<<'JS'
+            const linkFor = (name) => [...document.querySelectorAll('a.bucket-tile')].find((node) => node.textContent.includes(name));
             const color = (name) => {
-                const link = [...document.querySelectorAll('a')].find((node) => node.textContent.includes(name));
+                const link = linkFor(name);
                 const mark = link ? link.querySelector('.glyph') : null;
                 return mark ? getComputedStyle(mark).color : '';
             };
-            return [color('Checking 1'), color('Savings 1'), color('Card 1'), color('Cash 1'), color('Loan 1')];
+            const wash = (name) => {
+                const link = linkFor(name);
+                return link ? getComputedStyle(link).backgroundImage : '';
+            };
+            const money = (name) => {
+                const link = linkFor(name);
+                const amount = link ? link.querySelector('.money') : null;
+                return amount ? getComputedStyle(amount).color : '';
+            };
+            return {
+                glyphs: [color('Checking 1'), color('Savings 1'), color('Card 1'), color('Cash 1'), color('Loan 1')],
+                washes: [wash('Checking 1'), wash('Savings 1'), wash('Card 1'), wash('Cash 1'), wash('Loan 1')],
+                asset: money('Checking 1'),
+                card: money('Card 1'),
+                loan: money('Loan 1'),
+            };
         JS);
         self::assertIsArray($accountColors);
-        self::assertCount(5, $accountColors);
-        self::assertSame(5, count(array_unique($accountColors)));
+        self::assertCount(5, $accountColors['glyphs']);
+        self::assertSame(5, count(array_unique($accountColors['glyphs'])));
+        self::assertCount(5, $accountColors['washes']);
+        self::assertSame(5, count(array_unique($accountColors['washes'])));
+        foreach ($accountColors['washes'] as $wash) {
+            self::assertIsString($wash);
+            self::assertStringContainsString('linear-gradient', $wash);
+        }
+        self::assertNotSame($accountColors['asset'], $accountColors['card']);
+        self::assertSame($accountColors['card'], $accountColors['loan']);
         $account = self::driver()->executeScript(<<<'JS'
             const link = [...document.querySelectorAll('a')].find((node) => node.textContent.includes('Checking 2'));
             return link ? !link.innerText.toLowerCase().includes('archived') : false;

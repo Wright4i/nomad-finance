@@ -77,7 +77,7 @@ A budget bucket in one group: Needs, Wants, or Savings. The amount it holds is w
 _Avoid_: Bill type, account type, envelope
 
 **Locked bucket**:
-One bucket for one bill type, in that type's group. Other and misc are one each. Its name, group, and overspend stay fixed. It holds no amount to set. It cannot be archived or edited. A bill files there unless the form points it at a manual bucket in the same group. A fuel bill cannot.
+One bucket for one bill type, in that type's group. Other and misc are one each. Its name and group stay fixed. Its assignment is the unpaid bills for the month, and its maximum starts at that amount. It cannot be archived or edited. A bill files there unless the form points it at a manual bucket in the same group. A fuel bill cannot.
 _Avoid_: Default bucket, Fuel Bucket, goal bucket
 
 **Goal bucket**:
@@ -85,7 +85,7 @@ A bucket a person creates. It can hold a target, and a bill of the same group ca
 _Avoid_: Locked bucket
 
 **Target**:
-A goal on one bucket: an amount needed by a date, or an amount to hold. It compares with the bucket amount. A locked bucket has no target.
+A goal on one bucket: an amount needed by a date, or an amount to hold. It compares with the bucket amount. A locked bucket's maximum is an amount to hold.
 _Avoid_: Plan, budget
 
 **Bill amount**:
@@ -93,15 +93,15 @@ The one amount on a bill, in cents. The envelope stores that same amount.
 _Avoid_: Vendor amount, balance
 
 **Assignment**:
-Cash held in a bucket for one month on the envelopes screen. Bills fill part of it. Cash typed above or below that part stays. A negative amount is overspending. It leaves the account balance as you last typed it.
+Cash held in a bucket for one month on the envelopes screen. Zero or more. A locked bucket's assignment is the unpaid bills for that month. It leaves the account balance as you last typed it.
 _Avoid_: Posting, transaction
 
 **Overspend**:
-How a bucket covers a negative assignment. Cover now pulls it from available-to-assign while the month is open. Carry keeps it in the bucket and brings it into the next month.
-_Avoid_: Debt, posting
+Retired. An assignment cannot be negative.
+_Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-Checking, savings, and cash balances, minus cash held in open assignments. A positive assignment counts. Cover now counts a negative assignment as that amount pulled out. Carry does not. Every one of those balances is included. The number can be negative.
+Checking, savings, and cash balances, minus cash held in open assignments. A locked bucket counts its unpaid bills. Every one of those balances is included. The number can be negative.
 _Avoid_: To be budgeted
 
 **Envelope**:

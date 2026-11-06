@@ -101,6 +101,29 @@ final class PayCycleTest extends TestCase
         self::clickLink('Income');
         self::waitForText('Weekly Payor');
         self::waitForText('Averaged Payor');
+        $cards = self::driver()->executeScript(<<<'JS'
+            const cards = [...document.querySelectorAll('.payor-columns article')].map((card) => {
+                const rect = card.getBoundingClientRect();
+                return { top: rect.top, left: rect.left, width: rect.width };
+            });
+            return {
+                count: cards.length,
+                first: cards[0] ?? null,
+                second: cards[1] ?? null,
+                third: cards[2] ?? null,
+                last: cards[cards.length - 1] ?? null,
+            };
+        JS);
+        self::assertIsArray($cards);
+        self::assertGreaterThan(2, $cards['count']);
+        self::assertEqualsWithDelta($cards['first']['top'], $cards['second']['top'], 2);
+        self::assertGreaterThan($cards['first']['left'], $cards['second']['left']);
+        self::assertGreaterThan($cards['first']['top'], $cards['third']['top']);
+        self::assertEqualsWithDelta($cards['first']['left'], $cards['third']['left'], 2);
+        if ($cards['count'] % 2 === 1) {
+            self::assertEqualsWithDelta($cards['first']['left'], $cards['last']['left'], 2);
+            self::assertEqualsWithDelta($cards['first']['width'], $cards['last']['width'], 2);
+        }
         self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Averaged Payor")]//button[normalize-space()="Payroll"]'))->click();
         self::waitForText('Payroll · Averaged Payor');
         self::waitForText('$4,000.00');

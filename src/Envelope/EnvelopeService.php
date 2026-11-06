@@ -96,7 +96,7 @@ final class EnvelopeService
             foreach ($ids as $categoryId) {
                 $keptRow = $prior[$categoryId] ?? ['amount' => 0, 'filled' => 0];
                 $amount = isset($lockedIds[$categoryId])
-                    ? ($amounts[$categoryId] ?? $keptRow['amount'])
+                    ? max(0, $keptRow['amount'])
                     : ($amounts[$categoryId] ?? 0);
                 $portion = $keptRow['filled'];
                 if ($amount === 0 && $portion === 0) {
@@ -315,9 +315,8 @@ final class EnvelopeService
                 'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
                  SELECT ?, a.category_id, a.amount_minor, a.filled_minor
                  FROM assignments a
-                 JOIN categories c ON c.id = a.category_id
                  WHERE a.pay_period_id = ?
-                   AND (a.amount_minor > 0 OR (a.amount_minor < 0 AND c.overspend = \'carry\'))'
+                   AND a.amount_minor > 0'
             )->execute([$id, $previousId]);
         }
 
@@ -349,7 +348,7 @@ final class EnvelopeService
                     continue;
                 }
                 $id = (int) $row['category_id'];
-                $sums[$id] = ($sums[$id] ?? 0) + (int) $row['amount_minor'];
+                $sums[$id] = ($sums[$id] ?? 0) + max(0, (int) $row['amount_minor']);
             }
         }
 
@@ -381,13 +380,13 @@ final class EnvelopeService
     {
         $base = $this->actor->baseCurrency();
         $pool = $this->pool();
-        $assigned = $this->assignedOpen($today);
-        $available = $pool['minor'] - $assigned;
         $cycles = array_values(array_filter(
             $this->cycles(),
             static fn (array $cycle): bool => $cycle['archived_at'] === null,
         ));
         $selected = $this->selectCycle($cycles, $payCycleId, $today);
+        $assigned = $this->assignedOpen($today, $selected);
+        $available = $pool['minor'] - $assigned;
 
         $period = null;
         $categories = [];
@@ -572,17 +571,18 @@ final class EnvelopeService
         return (int) $stmt->fetchColumn();
     }
 
-    private function assignedOpen(string $today): int
+    /** @param ?array<string, mixed> $billCycle */
+    private function assignedOpen(string $today, ?array $billCycle): int
     {
         $total = 0;
         foreach ($this->cycles() as $cycle) {
             $open = $this->openSpan($cycle, $today);
             $stmt = $this->pdo->prepare(
-                'SELECT a.amount_minor, c.overspend
+                'SELECT a.amount_minor
                  FROM assignments a
                  JOIN pay_periods p ON p.id = a.pay_period_id
                  JOIN categories c ON c.id = a.category_id
-                 WHERE p.pay_cycle_id = ? AND p.period_start = ?'
+                 WHERE p.pay_cycle_id = ? AND p.period_start = ? AND c.role != \'locked\' AND a.amount_minor > 0'
             );
             $stmt->execute([(int) $cycle['id'], $open['start']]);
             $rows = $stmt->fetchAll();
@@ -593,37 +593,52 @@ final class EnvelopeService
                 if (!is_array($row)) {
                     continue;
                 }
-                $total += self::spoken((int) $row['amount_minor'], (string) $row['overspend']);
+                $total += (int) $row['amount_minor'];
+            }
+        }
+        if ($billCycle !== null) {
+            $total += $this->lockedBills($billCycle, $today);
+        }
+
+        return $total;
+    }
+
+    /** @param array<string, mixed> $cycle */
+    private function lockedBills(array $cycle, string $today): int
+    {
+        $open = $this->openSpan($cycle, $today);
+        $end = $open['end'] ?? null;
+        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            $open['start'],
+            is_string($end) ? $end : null,
+            true,
+        );
+        $locked = [];
+        $stmt = $this->pdo->prepare('SELECT id FROM categories WHERE user_id = ? AND role = \'locked\'');
+        $stmt->execute([$this->actor->id()]);
+        while ($id = $stmt->fetchColumn()) {
+            $locked[(int) $id] = true;
+        }
+        $total = 0;
+        foreach ($picture['bills'] as $categoryId => $bills) {
+            if (!isset($locked[(int) $categoryId])) {
+                continue;
+            }
+            foreach ($bills as $bill) {
+                $total += (int) $bill['amountMinor'];
             }
         }
 
         return $total;
     }
 
-    /**
-     * A positive assignment is cash held in the category.
-     * Cover now pulls a negative amount out of available-to-assign.
-     * Carry leaves that negative in the category.
-     */
-    private static function spoken(int $amount, string $overspend): int
-    {
-        if ($amount >= 0) {
-            return $amount;
-        }
-
-        return $overspend === 'cover' ? -$amount : 0;
-    }
-
     /** @return list<array<string, mixed>> */
     private function previewCategories(?int $sourcePeriodId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT c.id, c.name, c.category_group, c.role, c.overspend, c.archived_at,
-                    CASE
-                        WHEN a.amount_minor > 0 THEN a.amount_minor
-                        WHEN a.amount_minor < 0 AND c.overspend = \'carry\' THEN a.amount_minor
-                        ELSE 0
-                    END AS amount_minor,
+            'SELECT c.id, c.name, c.category_group, c.role, c.archived_at,
+                    CASE WHEN a.amount_minor > 0 THEN a.amount_minor ELSE 0 END AS amount_minor,
                     COALESCE(a.filled_minor, 0) AS filled_minor
              FROM categories c
              LEFT JOIN assignments a ON a.category_id = c.id AND a.pay_period_id = ?
@@ -647,7 +662,6 @@ final class EnvelopeService
                 'name' => (string) $row['name'],
                 'group' => (string) $row['category_group'],
                 'role' => (string) ($row['role'] ?? 'goal'),
-                'overspend' => (string) $row['overspend'],
                 'amountMinor' => (int) $row['amount_minor'],
                 'filledMinor' => (int) $row['filled_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
@@ -658,8 +672,8 @@ final class EnvelopeService
     }
 
     /**
-     * Positive amounts in the period are the denominator. Needs is 50%, Wants 30%, Savings 20%.
-     * A negative assignment is overspending and does not fill a gauge.
+     * Goal amounts in the period are the denominator. Needs is 50%, Wants 30%, Savings 20%.
+     * A locked bucket's bills stay on the tile and in available-to-assign.
      *
      * @param list<array<string, mixed>> $categories
      * @return list<array{group:string,targetPercent:int,amountMinor:int,shareBasisPoints:int,over:bool}>
@@ -669,6 +683,9 @@ final class EnvelopeService
         $targets = ['needs' => 50, 'wants' => 30, 'savings' => 20];
         $amounts = ['needs' => 0, 'wants' => 0, 'savings' => 0];
         foreach ($categories as $category) {
+            if (($category['role'] ?? '') === 'locked') {
+                continue;
+            }
             $group = $category['group'] ?? '';
             if (!is_string($group) || !isset($amounts[$group])) {
                 continue;
@@ -698,8 +715,8 @@ final class EnvelopeService
     private function categories(int $periodId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT c.id, c.name, c.category_group, c.role, c.overspend, c.archived_at,
-                    COALESCE(a.amount_minor, 0) AS amount_minor,
+            'SELECT c.id, c.name, c.category_group, c.role, c.archived_at,
+                    CASE WHEN a.amount_minor > 0 THEN a.amount_minor ELSE 0 END AS amount_minor,
                     COALESCE(a.filled_minor, 0) AS filled_minor
              FROM categories c
              LEFT JOIN assignments a ON a.category_id = c.id AND a.pay_period_id = ?
@@ -723,7 +740,6 @@ final class EnvelopeService
                 'name' => (string) $row['name'],
                 'group' => (string) $row['category_group'],
                 'role' => (string) ($row['role'] ?? 'goal'),
-                'overspend' => (string) $row['overspend'],
                 'amountMinor' => (int) $row['amount_minor'],
                 'filledMinor' => (int) $row['filled_minor'],
                 'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
@@ -820,8 +836,8 @@ final class EnvelopeService
                 $errors[$key] = 'Each bucket is listed once.';
                 continue;
             }
-            if ($amount === null) {
-                $errors[$key] = 'Enter an amount.';
+            if ($amount === null || $amount < 0) {
+                $errors[$key] = 'Enter an amount of zero or more.';
                 continue;
             }
             $amounts[$categoryId] = $amount;
@@ -896,7 +912,8 @@ final class EnvelopeService
         );
         foreach ($maximums as $categoryId => $amount) {
             $role->execute([$categoryId, $this->actor->id()]);
-            if ((string) $role->fetchColumn() !== 'goal') {
+            $roleName = (string) $role->fetchColumn();
+            if ($roleName !== 'goal' && $roleName !== 'locked') {
                 continue;
             }
             $existing->execute([$categoryId, $this->actor->id()]);
@@ -997,18 +1014,18 @@ final class EnvelopeService
     private function withBills(array $categories, ?array $period, string $today): array
     {
         $picture = $this->billPicture($period, $today);
-        $live = is_array($period)
-            && (($period['editable'] ?? false) === true || ($period['upcoming'] ?? false) === true);
         foreach ($categories as $index => $category) {
             $list = $picture['bills'][(int) $category['id']] ?? [];
             $categories[$index]['bills'] = $list;
             $bills = 0;
-            if ($live) {
-                foreach ($list as $bill) {
-                    $bills += (int) $bill['amountMinor'];
-                }
+            foreach ($list as $bill) {
+                $bills += (int) $bill['amountMinor'];
             }
             $categories[$index]['billMinor'] = $bills;
+            if (($category['role'] ?? '') === 'locked') {
+                $categories[$index]['amountMinor'] = $bills;
+                $categories[$index]['remainingMinor'] = $bills;
+            }
         }
 
         return $categories;
@@ -1028,16 +1045,17 @@ final class EnvelopeService
      */
     private function billPicture(?array $period, string $today): array
     {
-        if ($period === null || (($period['editable'] ?? false) !== true && ($period['upcoming'] ?? false) !== true)) {
+        if ($period === null) {
             return ['bills' => [], 'leftOut' => []];
         }
         $end = $period['end'] ?? null;
+        $overdue = ($period['editable'] ?? false) === true && ($period['upcoming'] ?? false) !== true;
 
         return (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
             $today,
             (string) $period['start'],
             is_string($end) ? $end : null,
-            ($period['upcoming'] ?? false) !== true,
+            $overdue,
         );
     }
 
