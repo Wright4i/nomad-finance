@@ -141,6 +141,10 @@ final class Drive
     /** @return array{meters:float,coordinates:list<array{0:float,1:float}>}|null */
     private function fetchRoad(string $url): ?array
     {
+        $remembered = $this->rememberedRoad($url);
+        if ($remembered !== null) {
+            return $remembered;
+        }
         $context = stream_context_create([
             'http' => [
                 'timeout' => 4,
@@ -156,7 +160,60 @@ final class Drive
         } catch (\JsonException) {
             return null;
         }
+        $road = is_array($decoded) ? self::geometry($decoded) : null;
+        if ($road !== null) {
+            $this->rememberRoad($url, $road);
+        }
 
-        return is_array($decoded) ? self::geometry($decoded) : null;
+        return $road;
+    }
+
+    /** @return array{meters:float,coordinates:list<array{0:float,1:float}>}|null */
+    private function rememberedRoad(string $url): ?array
+    {
+        $path = self::roadCachePath($url);
+        if (!is_file($path) || filemtime($path) < time() - 86400) {
+            return null;
+        }
+        $raw = @file_get_contents($path);
+        if (!is_string($raw)) {
+            return null;
+        }
+        try {
+            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        return self::geometry([
+            'code' => 'Ok',
+            'routes' => [[
+                'distance' => $decoded['meters'] ?? null,
+                'geometry' => ['coordinates' => $decoded['coordinates'] ?? null],
+            ]],
+        ]);
+    }
+
+    /** @param array{meters:float,coordinates:list<array{0:float,1:float}>} $road */
+    private function rememberRoad(string $url, array $road): void
+    {
+        $path = self::roadCachePath($url);
+        $encoded = json_encode($road);
+        if (!is_string($encoded)) {
+            return;
+        }
+        $temporary = $path . '.tmp';
+        if (@file_put_contents($temporary, $encoded) === false) {
+            return;
+        }
+        @rename($temporary, $path);
+    }
+
+    private static function roadCachePath(string $url): string
+    {
+        return sys_get_temp_dir() . '/nomad-road-' . hash('sha256', $url) . '.json';
     }
 }

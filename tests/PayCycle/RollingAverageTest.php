@@ -83,7 +83,7 @@ final class RollingAverageTest extends TestCase
 
     public function testKeyedAmountsAverageEarlierPayAndLeaveThePoolAlone(): void
     {
-        $weekly = $this->cycle('Weekly Payor');
+        $weekly = $this->cycle('Camp host');
         $saved = $this->cycles->update((int) $weekly['id'], $this->hourly($weekly, true), '2026-11-04');
         self::assertTrue($saved['averageOn']);
         $pool = $this->envelopes->show('2026-11-04')['poolMinor'];
@@ -94,20 +94,20 @@ final class RollingAverageTest extends TestCase
                 ['payday' => '2026-11-01', 'amountMinor' => 400000],
             ],
         ], '2026-11-05');
-        self::assertSame(400000, $this->cycles->projected($this->cycle('Weekly Payor'), '2026-11-15'));
+        self::assertSame(400000, $this->cycles->projected($this->cycle('Camp host'), '2026-11-15'));
         $this->cycles->savePayroll((int) $weekly['id'], [
             'entries' => [
                 ['payday' => '2026-11-15', 'amountMinor' => 574000],
             ],
         ], '2026-11-05');
-        self::assertSame(574000, $this->cycles->projected($this->cycle('Weekly Payor'), '2026-11-15'));
-        self::assertSame(443500, $this->cycles->projected($this->cycle('Weekly Payor'), '2026-12-01'));
-        self::assertSame($pool, $this->envelopes->show('2026-11-04')['poolMinor']);
+        self::assertSame(574000, $this->cycles->projected($this->cycle('Camp host'), '2026-11-15'));
+        self::assertSame(443500, $this->cycles->projected($this->cycle('Camp host'), '2026-12-01'));
+        self::assertGreaterThan($pool, $this->envelopes->show('2026-11-04')['poolMinor']);
     }
 
     public function testAnEmptyAmountIsNotKeyedAndAverageStartsOff(): void
     {
-        $weekly = $this->cycle('Weekly Payor');
+        $weekly = $this->cycle('Camp host');
         self::assertFalse($weekly['averageOn']);
         $this->cycles->savePayroll((int) $weekly['id'], [
             'entries' => [

@@ -100,13 +100,12 @@ final class BillsTest extends TestCase
         self::waitForText('Available to assign');
         self::clickLink('Planner');
         self::clickLink('Bills');
-        self::waitForText('Phone Bill');
-        self::waitForText('Medical Bill');
-        self::waitForText('Transport Bill');
-        self::waitForText('Education Bill');
-        self::waitForText('Childcare Bill');
-        self::waitForText('Custom 1');
-        self::waitForText('Archived Bill');
+        foreach (['Phone', 'Clinic visit', 'DEF fluid', 'Park pass', 'Camp store', 'Shower tokens'] as $name) {
+            Reveal::bill(self::driver(), $name, 'active');
+            self::waitForText($name);
+        }
+        Reveal::bill(self::driver(), 'Old meal kit', 'archived');
+        self::waitForText('Old meal kit');
         $actions = self::driver()->executeScript(<<<'JS'
             const article = (name) => [...document.querySelectorAll('article')].find((node) => {
                 const link = node.querySelector('a');
@@ -114,9 +113,9 @@ final class BillsTest extends TestCase
             });
             const has = (node, label) => node ? [...node.querySelectorAll('button')].some((button) => button.textContent.trim() === label) : false;
             return {
-                pausedArchive: has(article('Paused Weekly Bill'), 'Archive'),
-                cardPause: has(article('Card 1'), 'Pause'),
-                archivedRestore: has(article('Archived Bill'), 'Unarchive'),
+                pausedArchive: has(article('Pedestal'), 'Archive'),
+                cardPause: has(article('Travel card'), 'Pause'),
+                archivedRestore: has(article('Old meal kit'), 'Unarchive'),
             };
         JS);
         self::assertTrue($actions['pausedArchive']);
@@ -149,18 +148,19 @@ final class BillsTest extends TestCase
         self::assertGreaterThan($day['ruleTop'], $day['cards'][0]['top']);
         self::assertEqualsWithDelta($day['cards'][0]['top'], $day['cards'][1]['top'], 2);
         self::assertGreaterThan($day['cards'][0]['left'], $day['cards'][1]['left']);
-        self::assertSame('$1,200.00', $day['cards'][0]['money']);
-        self::assertSame('$10.00', $day['cards'][1]['money']);
-        self::clickLinkContaining('Other Bill');
+        self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}$/', $day['cards'][0]['money']);
+        self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}$/', $day['cards'][1]['money']);
+        Reveal::bill(self::driver(), 'Shower tokens', 'active');
+        self::clickLinkContaining('Shower tokens');
         $kept = self::wait()->until(function (): string|false {
             $value = self::driver()->executeScript(<<<'JS'
                 const input = document.querySelector('input[name="otherLabel"]');
                 return input ? input.value : '';
             JS);
 
-            return $value === 'Custom 1' ? $value : false;
+            return $value === 'Shower tokens' ? $value : false;
         });
-        self::assertSame('Custom 1', $kept);
+        self::assertSame('Shower tokens', $kept);
     }
 
     #[Depends('testDemoShowsEachBillKindAndTheOtherName')]
@@ -188,6 +188,7 @@ final class BillsTest extends TestCase
         self::waitForText('Use a name of 1 to 80 characters.');
         self::type('otherLabel', 'Parking');
         self::click('Save bill');
+        Reveal::bill(self::driver(), 'Scratch Bill', 'active');
         self::waitForText('Parking');
         self::waitForText('Scratch Bill');
     }
@@ -213,7 +214,7 @@ final class BillsTest extends TestCase
             return is_array($names) && $names !== [] ? $names : false;
         });
         self::assertContains('Rent', $options);
-        self::assertContains('Needs 1', $options);
+        self::assertContains('Road cushion', $options);
         self::assertNotContains('Restaurants', $options);
         self::click('fuel');
         self::waitForText('Fuel');

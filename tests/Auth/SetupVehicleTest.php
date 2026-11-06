@@ -61,7 +61,7 @@ final class SetupVehicleTest extends TestCase
         self::assertSame(160, (int) $vehicle['mpg_max_tenths']);
         self::assertSame(12000, (int) $vehicle['current_odometer_miles']);
         self::assertSame(1, (int) $this->pdo->query("SELECT COUNT(*) FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'owner'")->fetchColumn());
-        self::assertSame('Vehicle 1', $this->pdo->query("SELECT v.name FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo'")->fetchColumn());
+        self::assertSame('Bunkhouse', $this->pdo->query("SELECT v.name FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.starred = 1")->fetchColumn());
     }
 
     public function testAnEmptyFuelPriceStoresMilesOnly(): void
@@ -150,6 +150,48 @@ final class SetupVehicleTest extends TestCase
         } catch (ApiException $e) {
             self::assertSame(422, $e->status);
             self::assertArrayHasKey('vehicleName', $e->fields);
+        }
+
+        self::assertTrue($this->auth->needsSetup());
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM user')->fetchColumn());
+    }
+
+    public function testSetupAcceptsTheCampgroundKinds(): void
+    {
+        foreach (['utv', 'atv', 'golf cart', 'dirt bike'] as $kind) {
+            $_SESSION = [];
+            $path = sys_get_temp_dir() . '/nomad-finance-' . bin2hex(random_bytes(4)) . '.sqlite';
+            $pdo = Database::connect($path, dirname(__DIR__, 2) . '/db/migrations');
+            $auth = new AuthService($pdo, new CurrencyCatalog(), new DemoLibrary($pdo, new CurrencyCatalog()));
+            $auth->setup($this->books('Ada', [
+                'vehicleName' => 'Rig 1',
+                'kind' => $kind,
+                'mpgMinTenths' => 80,
+                'mpgMaxTenths' => 160,
+            ]));
+            self::assertSame($kind, $pdo->query(
+                "SELECT v.kind FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'owner'"
+            )->fetchColumn());
+            unset($pdo);
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+
+    public function testSetupRefusesAnUnknownKind(): void
+    {
+        try {
+            $this->auth->setup($this->books('Ada', [
+                'vehicleName' => 'Rig 1',
+                'kind' => 'boat',
+                'mpgMinTenths' => 60,
+                'mpgMaxTenths' => 120,
+            ]));
+            self::fail('An unknown kind was stored.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertSame('Choose a kind.', $e->fields['kind']);
         }
 
         self::assertTrue($this->auth->needsSetup());

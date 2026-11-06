@@ -4,13 +4,16 @@
   import Globe from '../components/Globe.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
+  import { paintLeg } from '../lib/legPaint';
   import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { PAST_MONTHS_DEFAULT, pastMonthChoices, stayDrawn } from '../lib/pastMonths';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { DriveLeg, Trip } from '../lib/types';
 
   let trips = $state<Trip[]>([]);
   let legs = $state<DriveLeg[]>([]);
+  let pastMonths = $state(PAST_MONTHS_DEFAULT);
   let index = $state(0);
   let message = $state('');
   let month = $state(todayISO().slice(0, 7));
@@ -35,6 +38,19 @@
 
   let selected = $derived(trips[index] ?? null);
   let selectedLeg = $derived(selected ? legs.find((item) => item.toId === selected.id) : undefined);
+  let drawnTrips = $derived(trips.filter((trip) => stayDrawn(trip.departOn, todayISO(), pastMonths)));
+  let drawnIds = $derived(new Set(drawnTrips.map((trip) => trip.id)));
+  let drawnLegs = $derived(
+    legs
+      .filter((leg) => drawnIds.has(leg.fromId) && drawnIds.has(leg.toId))
+      .map((leg) => {
+        const fromTrip = trips.find((trip) => trip.id === leg.fromId);
+        const toTrip = trips.find((trip) => trip.id === leg.toId);
+        const from = fromTrip ? ([Number(fromTrip.longitude), Number(fromTrip.latitude)] as [number, number]) : null;
+        const to = toTrip ? ([Number(toTrip.longitude), Number(toTrip.latitude)] as [number, number]) : null;
+        return paintLeg(leg, from, to);
+      }),
+  );
 
   function stayColor(trip: Trip, tripIndex: number): string {
     if ((stayColors as readonly string[]).includes(trip.color)) return trip.color;
@@ -243,6 +259,7 @@
   function persistRating(trip: Trip, halfStars: number, comment: string): Promise<void> {
     const epoch = ++ratingEpoch;
     const job = ratingQueue.then(async () => {
+      if (epoch !== ratingEpoch) return;
       const data = await api<{ trip: Trip }>(`/api/trips/${trip.id}`, {
         method: 'PATCH',
         body: tripBody(trip, halfStars, comment),
@@ -421,21 +438,41 @@
     {/if}
   </div>
 
-  <Globe
-    pins={trips.map((trip, tripIndex) => ({
-      id: trip.id,
-      latitude: trip.latitude,
-      longitude: trip.longitude,
-      placeName: trip.placeName,
-      stayNumber: tripIndex + 1,
-      city: trip.city,
-      region: trip.region,
-    }))}
-    legs={legs.map((leg) => ({ miles: leg.miles, coordinates: leg.coordinates }))}
-    selectedId={selected?.id ?? null}
-    locateToken={locateToken}
-    onSelect={choose}
-  />
+  <div class="globe-stage">
+    <label class="globe-past">
+      <span>Past months</span>
+      <select
+        name="pastMonths"
+        aria-label="Past months"
+        value={pastMonths}
+        onchange={(event) => {
+          pastMonths = Number(event.currentTarget.value);
+        }}
+      >
+        {#each pastMonthChoices as months (months)}
+          <option value={months}>{months}</option>
+        {/each}
+      </select>
+    </label>
+    <Globe
+      pins={drawnTrips.map((trip) => {
+        const tripIndex = trips.findIndex((item) => item.id === trip.id);
+        return {
+          id: trip.id,
+          latitude: trip.latitude,
+          longitude: trip.longitude,
+          placeName: trip.placeName,
+          stayNumber: tripIndex + 1,
+          city: trip.city,
+          region: trip.region,
+        };
+      })}
+      legs={drawnLegs}
+      selectedId={selected?.id ?? null}
+      locateToken={locateToken}
+      onSelect={choose}
+    />
+  </div>
 
   {#if selected}
     <section class="grid gap-2">

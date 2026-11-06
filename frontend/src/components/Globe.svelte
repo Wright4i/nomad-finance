@@ -3,12 +3,13 @@
   import { GeoJSONSource, Map, Marker, RasterTileSource, setWorkerUrl } from 'maplibre-gl';
   import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
   import 'maplibre-gl/dist/maplibre-gl.css';
+  import { basemapId } from '../lib/basemap';
   import {
     cartoAttribution,
-    darkMatterTiles,
     positronTiles,
     satelliteAttribution,
     satelliteTiles,
+    voyagerTiles,
   } from '../lib/carto';
   import type { LngLat } from '../lib/route';
   import { session } from '../lib/session.svelte.ts';
@@ -24,7 +25,13 @@
     city?: string | null;
     region?: string | null;
   };
-  type Leg = { miles: number; coordinates: [number, number][] };
+  type Leg = {
+    miles: number | null;
+    coordinates: [number, number][];
+    segments?: [number, number][][];
+    dashed?: boolean;
+    airplane?: boolean;
+  };
 
   let {
     pins = [],
@@ -81,18 +88,20 @@
   }
 
   function basemap(): { id: string; tiles: string[]; attribution: string; maxzoom: number } {
-    if (satellite) {
-      return { id: 'satellite', tiles: satelliteTiles, attribution: satelliteAttribution, maxzoom: 19 };
+    const id = basemapId(session.user?.theme, satellite);
+    if (id === 'satellite') {
+      return { id, tiles: satelliteTiles, attribution: satelliteAttribution, maxzoom: 19 };
     }
-    if (session.user?.theme === 'light') {
-      return { id: 'positron', tiles: positronTiles, attribution: cartoAttribution, maxzoom: 20 };
+    if (id === 'voyager') {
+      return { id, tiles: voyagerTiles, attribution: cartoAttribution, maxzoom: 20 };
     }
-    return { id: 'dark-matter', tiles: darkMatterTiles, attribution: cartoAttribution, maxzoom: 20 };
+    return { id: 'positron', tiles: positronTiles, attribution: cartoAttribution, maxzoom: 20 };
   }
 
+  /** Dark teal reads on Positron and on Voyager. Satellite keeps the bright line. */
   function routePaint(): { outline: string; line: string } {
-    if (!satellite && session.user?.theme === 'light') return { outline: '#134e4a', line: '#0f766e' };
-    return { outline: '#d7fff6', line: '#3ee0c5' };
+    if (satellite) return { outline: '#d7fff6', line: '#3ee0c5' };
+    return { outline: '#f4fffc', line: '#0f766e' };
   }
 
   function applyBasemap(): void {
@@ -106,6 +115,8 @@
     const paint = routePaint();
     if (map?.getLayer('route-outline')) map.setPaintProperty('route-outline', 'line-color', paint.outline);
     if (map?.getLayer('route')) map.setPaintProperty('route', 'line-color', paint.line);
+    if (map?.getLayer('flight-outline')) map.setPaintProperty('flight-outline', 'line-color', paint.outline);
+    if (map?.getLayer('flight')) map.setPaintProperty('flight', 'line-color', paint.line);
   }
 
   function reduced(): boolean {
@@ -168,17 +179,30 @@
     if (!map) return;
     for (const item of legPins) item.remove();
     legPins = [];
+    let flights = 0;
     for (const leg of legs) {
       if (leg.coordinates.length < 2) continue;
       const at = leg.coordinates[Math.floor(leg.coordinates.length / 2)];
+      if (leg.airplane || leg.dashed) {
+        flights += 1;
+        const badge = document.createElement('span');
+        badge.className = 'map-flight';
+        badge.dataset.line = 'dashed';
+        badge.setAttribute('aria-label', 'Flight');
+        badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>';
+        legPins.push(new Marker({ element: badge, anchor: 'center' }).setLngLat(at).addTo(map));
+        continue;
+      }
+      if (leg.miles == null) continue;
       const label = document.createElement('span');
       label.className = 'map-leg';
       label.textContent = `${leg.miles} mi`;
       legPins.push(new Marker({ element: label, anchor: 'center' }).setLngLat(at).addTo(map));
     }
+    if (host) host.dataset.flights = String(flights);
   }
 
-  function routeData(): {
+  function lineData(dashed: boolean): {
     type: 'FeatureCollection';
     features: {
       type: 'Feature';
@@ -187,18 +211,26 @@
     }[];
   } {
     const features = legs
-      .filter((leg) => leg.coordinates.length >= 2)
-      .map((leg) => ({
-        type: 'Feature' as const,
-        properties: {},
-        geometry: { type: 'LineString' as const, coordinates: leg.coordinates },
-      }));
+      .filter((leg) => leg.coordinates.length >= 2 && Boolean(leg.dashed) === dashed)
+      .flatMap((leg) => {
+        const parts = leg.segments && leg.segments.length > 0 ? leg.segments : [leg.coordinates];
+        return parts
+          .filter((coordinates) => coordinates.length >= 2)
+          .map((coordinates) => ({
+            type: 'Feature' as const,
+            properties: {},
+            geometry: { type: 'LineString' as const, coordinates },
+          }));
+      });
     return { type: 'FeatureCollection', features };
   }
 
   function drawRoute(): void {
-    if (!map || !map.getSource('route')) return;
-    (map.getSource('route') as GeoJSONSource).setData(routeData());
+    if (!map) return;
+    const road = map.getSource('route');
+    const flight = map.getSource('flight');
+    if (road instanceof GeoJSONSource) road.setData(lineData(false));
+    if (flight instanceof GeoJSONSource) flight.setData(lineData(true));
   }
 
   function markerLabel(): HTMLDivElement {
@@ -308,6 +340,22 @@
           source: 'route',
           layout: line,
           paint: { 'line-color': paint.line, 'line-width': 4 },
+        });
+        const dash = { 'line-cap': 'butt' as const, 'line-join': 'round' as const };
+        map.addSource('flight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'flight-outline',
+          type: 'line',
+          source: 'flight',
+          layout: dash,
+          paint: { 'line-color': paint.outline, 'line-width': 6, 'line-dasharray': [2, 2] },
+        });
+        map.addLayer({
+          id: 'flight',
+          type: 'line',
+          source: 'flight',
+          layout: dash,
+          paint: { 'line-color': paint.line, 'line-width': 3, 'line-dasharray': [2, 2] },
         });
         applyBasemap();
         drawPins();

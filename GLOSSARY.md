@@ -58,11 +58,11 @@ The price of a trip, in cents. Saving it does not change an account balance.
 _Avoid_: Bill
 
 **Amount due**:
-The part of the lodging still to pay, usually on arrival. It does not change an account balance.
+The part of the lodging still to pay, usually on arrival. It does not change an account balance. Greater than zero, with a balance-due date, it is one lodging bill on that date.
 _Avoid_: Balance, total
 
 **Balance-due date**:
-The date a trip's amount due is expected, prefilled with arrival.
+The date a trip's amount due is expected, prefilled with arrival. That date is the lodging bill's due date.
 _Avoid_: Next due date, due day, horizon
 
 **Deposit**:
@@ -73,11 +73,11 @@ The kind of reminder, and it belongs to one group. Needs holds lodging, rent, el
 _Avoid_: Bucket
 
 **Bucket**:
-A budget bucket in one group: Needs, Wants, or Savings. The amount it holds is what is assigned to it in open months. The screen says bucket. The stored name stays category.
+A budget bucket in one group: Needs, Wants, or Savings. The amount it holds is what is assigned to it in open months. The screen says bucket. Routes say bucket.
 _Avoid_: Bill type, account type, envelope
 
 **Locked bucket**:
-One bucket for one bill type, in that type's group. Other and misc are one each. Its name and group stay fixed. Its assignment is the unpaid bills for the month, and its maximum starts at that amount. It cannot be archived or edited. A bill files there unless the form points it at a manual bucket in the same group. A fuel bill cannot.
+One bucket for one bill type, in that type's group. Other and misc are one each. Its name and group stay fixed. Its assignment starts at the bills for the month. That amount can be typed higher, and it cannot be lower than those bills. Its maximum starts at the bills. It cannot be archived or edited. A bill files there unless the form points it at a manual bucket in the same group. A fuel bill cannot.
 _Avoid_: Default bucket, Fuel Bucket, goal bucket
 
 **Goal bucket**:
@@ -93,7 +93,7 @@ The one amount on a bill, in cents. The envelope stores that same amount.
 _Avoid_: Vendor amount, balance
 
 **Assignment**:
-Cash held in a bucket for one month on the envelopes screen. Zero or more. A locked bucket's assignment is the unpaid bills for that month. It leaves the account balance as you last typed it.
+Cash held in a bucket for one month on the Budget screen. Zero or more. A new month starts empty, and recurring bills are the exception. A locked bucket cannot be assigned less than its bills. It leaves the account balance as you last typed it.
 _Avoid_: Posting, transaction
 
 **Overspend**:
@@ -101,7 +101,7 @@ Retired. An assignment cannot be negative.
 _Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-The income from every payor in the open month, plus the balances in checking, savings, and cash. Credit cards, loans, fuel accounts, and tracking accounts stay out. Needs is 50% of this total, Wants 30%, and Savings 20%, half up to the cent. A closed or upcoming month does not change the number. The number can be zero.
+Income still coming in this month, plus every asset account except savings, minus what the buckets already hold. A payday before today is left out. Savings accounts, credit cards, loans, fuel accounts, and tracking accounts stay out. The line under the number is what is already assigned of that income plus those accounts. Needs is 50% of that income plus those accounts, Wants 30%, and Savings 20%, half up to the cent. A closed or upcoming month does not change the number. The number can be zero, and it can be negative when the buckets hold more than that income and those accounts.
 _Avoid_: To be budgeted
 
 **Envelope**:
@@ -110,7 +110,7 @@ _Avoid_: Bucket, posting
 
 **Plan**:
 Retired from the books. The gauges stay on the calendar.
-_Avoid_: Budget, envelope
+_Avoid_: Envelope
 
 **Percent cap**:
 Retired from the books.
@@ -131,6 +131,14 @@ _Avoid_: Fuel label, posting
 **Want log**:
 An unpaid one-time wants bill, filed on that wants type's locked bucket. It does not change an account balance.
 _Avoid_: Logged fuel, posting
+
+**Need log**:
+An unpaid one-time needs bill, filed on that needs type's locked bucket. Fuel is not one of those types. It does not change an account balance.
+_Avoid_: Logged fuel, want log
+
+**Saving log**:
+An unpaid one-time savings bill, filed on that savings type's locked bucket. It does not change an account balance.
+_Avoid_: Want log, posting
 
 **Vehicle**:
 A named odometer: a kind, a current odometer, and a minimum and maximum miles per gallon. At most one vehicle is starred. The fuel label uses that one.
@@ -265,7 +273,7 @@ _Avoid_: Average payroll
 The other day of the month a semimonthly pay cycle uses. The payday supplies the first day.
 
 **Open period**:
-The span of the pay cycle that contains today. It starts on a payday and ends the day before the next one. An irregular cycle with no next payday stays open. Envelopes calls that span the current month and the following span the next month.
+The span of the pay cycle that contains today. It starts on a payday and ends the day before the next one. An irregular cycle with no next payday stays open. Budget calls that span the current month and the following span the next month.
 _Avoid_: Horizon
 
 **Horizon**:

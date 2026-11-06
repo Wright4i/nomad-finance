@@ -240,6 +240,28 @@ final class VehicleRulesTest extends TestCase
         }
     }
 
+    public function testAVehicleAcceptsEachKind(): void
+    {
+        foreach (['car', 'truck', 'motorcycle', 'rv', 'semi', 'utv', 'atv', 'golf cart', 'dirt bike'] as $kind) {
+            $created = $this->vehicles->create(array_merge($this->vehicle('Kind ' . $kind, false), ['kind' => $kind]));
+            self::assertSame($kind, $created['kind']);
+        }
+
+        $updated = $this->vehicles->update(
+            (int) $this->listed('Kind rv')['id'],
+            array_merge($this->vehicle('Kind rv', false), ['kind' => 'dirt bike']),
+        );
+        self::assertSame('dirt bike', $updated['kind']);
+
+        try {
+            $this->vehicles->create(array_merge($this->vehicle('Boat', false), ['kind' => 'boat']));
+            self::fail('An unknown kind was stored.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertSame('Choose a kind.', $e->fields['kind']);
+        }
+    }
+
     /** @param array<string, mixed> $overrides
      *  @return array<string, mixed>
      */

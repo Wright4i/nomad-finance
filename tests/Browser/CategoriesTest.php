@@ -98,38 +98,39 @@ final class CategoriesTest extends TestCase
         self::waitForText('Use demo');
         self::click('Use demo');
         self::waitForText('Available to assign');
-        self::clickLink('Envelopes');
+        self::clickLink('Budget');
         self::clickLink('Add bucket');
         self::clickLink('Cancel');
-        self::waitForText('Needs 1');
-        self::waitForText('Wants 1');
-        self::waitForText('Savings 1');
-        self::waitForText('Needed By Date 1');
-        self::waitForText('Set aside $300.00 a month · 4 months until Feb 1, 2027');
-        self::waitForText('Still $500.00 to hold');
+        self::waitForText('Road cushion');
+        self::waitForText('Fun money');
+        self::waitForText('Next rig');
+        self::waitForText('Tires');
+        self::waitForTextGone('Set aside $300.00 a month');
+        self::waitForTextGone('Still $500.00 to hold');
         self::waitForTextGone('Wishlist');
-        self::clickLinkContaining('Wants 1');
+        self::clickLinkContaining('Fun money');
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const name = document.querySelector('input[name="name"]');
                 const carry = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Carry');
-                return name && name.value === 'Wants 1' && !carry;
+                return name && name.value === 'Fun money' && !carry;
             JS);
 
             return $ready === true;
         });
-        self::clickLink('Envelopes');
+        self::clickLink('Budget');
         self::clickLink('Add bucket');
         self::clickLink('Cancel');
-        self::waitForText('Buckets');
-        self::waitForText('Needs 1');
-        self::waitForTextGone('Archived Category');
+        self::assertSame('/budget', (string) parse_url(self::driver()->getCurrentURL(), PHP_URL_PATH));
+        self::waitForTextGone('Save bucket');
+        self::waitForText('Road cushion');
+        self::waitForTextGone('Old gym');
         $colors = self::driver()->executeScript(<<<'JS'
             const color = (label) => {
-                const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === label);
+                const heading = document.querySelector(`h2[data-group="${label}"]`);
                 return heading ? getComputedStyle(heading).color : '';
             };
-            return [color('Needs'), color('Wants'), color('Savings')];
+            return [color('needs'), color('wants'), color('savings')];
         JS);
         self::assertIsArray($colors);
         self::assertCount(3, $colors);
@@ -138,32 +139,27 @@ final class CategoriesTest extends TestCase
         self::assertNotSame($colors[0], $colors[2]);
         self::assertNotSame($colors[1], $colors[2]);
 
-        self::clickLinkContaining('Needed By Date 1');
+        self::clickLinkContaining('Tires');
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const name = document.querySelector('input[name="name"]');
-                const button = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Needed by date');
+                const dated = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Needed by date');
                 const date = document.querySelector('input[name="targetDate"]');
-                const amount = document.querySelector('input[name="targetAmount"]');
-                const cycle = document.querySelector('select[name="payCycleId"]');
-                const selected = cycle && cycle.selectedOptions[0] ? cycle.selectedOptions[0].textContent : '';
                 const wishlist = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Wishlist');
-                return name && name.value === 'Needed By Date 1'
-                    && button && button.getAttribute('aria-pressed') === 'true'
-                    && !wishlist
-                    && date && date.value === '02 / 01 / 2027'
-                    && amount && amount.value === '1200.00'
-                    && selected.includes('Monthly Payor');
+                return name && name.value === 'Tires'
+                    && !dated
+                    && !date
+                    && !wishlist;
             JS);
 
             return $ready === true;
         });
-        self::clickLink('Envelopes');
+        self::clickLink('Budget');
         self::clickLink('Add bucket');
         self::clickLink('Cancel');
-        self::waitForText('Savings 1');
+        self::waitForText('Next rig');
 
-        $button = self::driver()->findElement(WebDriverBy::linkText('New bucket'));
+        $button = self::driver()->findElement(WebDriverBy::linkText('Add bucket'));
         $resting = $button->getCSSValue('background-color');
         self::driver()->action()->moveToElement($button)->perform();
         $hovered = self::wait()->until(function () use ($button, $resting): string|false {
@@ -174,15 +170,15 @@ final class CategoriesTest extends TestCase
         self::assertIsString($hovered);
 
         self::click('Show archived');
-        self::waitForText('Archived Category');
+        self::waitForText('Old gym');
         self::click('Hide archived');
-        self::waitForTextGone('Archived Category');
+        self::waitForTextGone('Old gym');
     }
 
     #[Depends('testDemoListsOneCategoryInEachGroup')]
     public function testANewGoalHasNoFuelCheckboxAndADefaultOnlyEditsTheAmount(): void
     {
-        self::clickLink('New bucket');
+        self::clickLink('Add bucket');
         $fuel = self::driver()->executeScript(
             'return document.querySelector(\'input[name="fuel"]\') === null;',
         );
@@ -199,26 +195,27 @@ final class CategoriesTest extends TestCase
 
             return $ready === true;
         });
-        self::clickLink('Envelopes');
+        self::clickLink('Budget');
         self::clickLink('Add bucket');
         self::clickLink('Cancel');
-        self::waitForText('Buckets');
+        self::assertSame('/budget', (string) parse_url(self::driver()->getCurrentURL(), PHP_URL_PATH));
+        self::waitForTextGone('Save bucket');
     }
 
     #[Depends('testDemoListsOneCategoryInEachGroup')]
     public function testANewCategoryCanBeArchivedFromAModal(): void
     {
-        self::clickLink('New bucket');
+        self::clickLink('Add bucket');
         self::type('name', 'Trip 1');
         self::click('Wants');
         self::click('Save bucket');
         self::waitForText('Trip 1');
         $placed = self::driver()->executeScript(<<<'JS'
             const section = (label) => {
-                const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === label);
-                return heading ? heading.closest('section').innerText : '';
+                const heading = document.querySelector(`h2[data-group="${label}"]`);
+                return heading && heading.closest('section') ? heading.closest('section').innerText : '';
             };
-            return section('Wants').includes('Trip 1') && !section('Needs').includes('Trip 1');
+            return section('wants').includes('Trip 1') && !section('needs').includes('Trip 1');
         JS);
         self::assertTrue($placed === true);
 
@@ -229,7 +226,7 @@ final class CategoriesTest extends TestCase
         self::waitForTextGone('Archive this bucket?');
         self::click('Archive');
         self::click('Archive bucket');
-        self::waitForText('Needs 1');
+        self::waitForText('Road cushion');
         self::waitForTextGone('Trip 1');
         self::click('Show archived');
         self::waitForText('Trip 1');
@@ -245,7 +242,7 @@ final class CategoriesTest extends TestCase
     {
         self::clickLinkContaining('Trip 1');
         self::click('Unarchive');
-        self::waitForText('Wants 1');
+        self::waitForText('Fun money');
         self::waitForText('Trip 1');
         $category = self::driver()->executeScript(<<<'JS'
             const link = [...document.querySelectorAll('a')].find((node) => node.textContent.includes('Trip 1'));
@@ -255,9 +252,9 @@ final class CategoriesTest extends TestCase
 
         self::clickLink('Accounts');
         self::click('Show archived');
-        self::waitForText('Checking 2');
+        self::waitForText('Closed checking');
         $cards = self::driver()->executeScript(<<<'JS'
-            const tiles = [...document.querySelectorAll('a.bucket-tile')].slice(0, 2).map((tile) => {
+            const tiles = [...document.querySelectorAll('a.bucket-tile')].map((tile) => {
                 const rect = tile.getBoundingClientRect();
                 const style = getComputedStyle(tile);
                 const kids = [...tile.children];
@@ -266,29 +263,73 @@ final class CategoriesTest extends TestCase
                 const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
                 const gap = parseFloat(style.rowGap || style.gap || '0');
                 const expected = content + pad + border + (kids.length > 1 ? gap * (kids.length - 1) : 0);
+                const clipped = kids.some((child) => {
+                    const box = child.getBoundingClientRect();
+                    return box.top < rect.top - 1
+                        || box.bottom > rect.bottom + 1
+                        || child.scrollHeight > child.clientHeight + 2
+                        || child.scrollWidth > child.clientWidth + 2;
+                });
                 return {
                     top: rect.top,
                     left: rect.left,
                     width: rect.width,
                     height: rect.height,
                     expected,
+                    clipped,
+                    aspect: style.aspectRatio,
+                    name: tile.querySelector('strong')?.innerText || '',
+                    money: tile.querySelector('.money')?.innerText || '',
                     background: style.backgroundImage,
                 };
             });
-            return tiles;
+            const rows = [];
+            for (const tile of tiles) {
+                const row = rows.find((item) => Math.abs(item.top - tile.top) < 2);
+                if (row) row.tiles.push(tile);
+                else rows.push({ top: tile.top, tiles: [tile] });
+            }
+            return {
+                first: tiles.slice(0, 2),
+                rows: rows.map((row) => {
+                    const heights = row.tiles.map((tile) => tile.height);
+                    return {
+                        count: row.tiles.length,
+                        spread: Math.max(...heights) - Math.min(...heights),
+                        clipped: row.tiles.some((tile) => tile.clipped),
+                        short: row.tiles.some((tile) => tile.height + 4 < tile.expected),
+                    };
+                }),
+            };
         JS);
         self::assertIsArray($cards);
-        self::assertCount(2, $cards);
-        self::assertEqualsWithDelta($cards[0]['top'], $cards[1]['top'], 2);
-        self::assertGreaterThan($cards[0]['left'], $cards[1]['left']);
-        self::assertGreaterThan(8, abs($cards[0]['width'] - $cards[0]['height']));
-        self::assertEqualsWithDelta($cards[0]['expected'], $cards[0]['height'], 4);
-        self::assertIsString($cards[0]['background']);
-        self::assertStringContainsString('linear-gradient', $cards[0]['background']);
-        self::clickLinkContaining('Checking 2');
+        $first = $cards['first'];
+        self::assertIsArray($first);
+        self::assertCount(2, $first);
+        self::assertEqualsWithDelta($first[0]['top'], $first[1]['top'], 2);
+        self::assertGreaterThan($first[0]['left'], $first[1]['left']);
+        self::assertSame('auto', $first[0]['aspect']);
+        self::assertGreaterThanOrEqual($first[0]['expected'] - 4, $first[0]['height']);
+        self::assertNotSame('', $first[0]['name']);
+        self::assertNotSame('', $first[0]['money']);
+        self::assertIsString($first[0]['background']);
+        self::assertStringContainsString('linear-gradient', $first[0]['background']);
+        $matchedRow = false;
+        self::assertIsArray($cards['rows']);
+        foreach ($cards['rows'] as $row) {
+            self::assertIsArray($row);
+            self::assertFalse($row['clipped']);
+            self::assertFalse($row['short']);
+            if ($row['count'] >= 2) {
+                $matchedRow = true;
+                self::assertLessThan(2, $row['spread']);
+            }
+        }
+        self::assertTrue($matchedRow);
+        self::clickLinkContaining('Closed checking');
         self::click('Unarchive');
-        self::waitForText('Checking 1');
-        self::waitForText('Checking 2');
+        self::waitForText('Everyday checking');
+        self::waitForText('Closed checking');
         $accountColors = self::driver()->executeScript(<<<'JS'
             const linkFor = (name) => [...document.querySelectorAll('a.bucket-tile')].find((node) => node.textContent.includes(name));
             const color = (name) => {
@@ -306,11 +347,11 @@ final class CategoriesTest extends TestCase
                 return amount ? getComputedStyle(amount).color : '';
             };
             return {
-                glyphs: [color('Checking 1'), color('Savings 1'), color('Card 1'), color('Cash 1'), color('Loan 1')],
-                washes: [wash('Checking 1'), wash('Savings 1'), wash('Card 1'), wash('Cash 1'), wash('Loan 1')],
-                asset: money('Checking 1'),
-                card: money('Card 1'),
-                loan: money('Loan 1'),
+                glyphs: [color('Everyday checking'), color('Emergency fund'), color('Travel card'), color('Wallet'), color('Solar loan')],
+                washes: [wash('Everyday checking'), wash('Emergency fund'), wash('Travel card'), wash('Wallet'), wash('Solar loan')],
+                asset: money('Everyday checking'),
+                card: money('Travel card'),
+                loan: money('Solar loan'),
             };
         JS);
         self::assertIsArray($accountColors);
@@ -325,7 +366,7 @@ final class CategoriesTest extends TestCase
         self::assertNotSame($accountColors['asset'], $accountColors['card']);
         self::assertSame($accountColors['card'], $accountColors['loan']);
         $account = self::driver()->executeScript(<<<'JS'
-            const link = [...document.querySelectorAll('a')].find((node) => node.textContent.includes('Checking 2'));
+            const link = [...document.querySelectorAll('a')].find((node) => node.textContent.includes('Closed checking'));
             return link ? !link.innerText.toLowerCase().includes('archived') : false;
         JS);
         self::assertTrue($account === true);
@@ -334,7 +375,7 @@ final class CategoriesTest extends TestCase
     #[Depends('testUnarchivePutsTheNameBack')]
     public function testABlankNameStaysOnTheForm(): void
     {
-        self::driver()->get(self::$base . '/categories/new');
+        self::driver()->get(self::$base . '/buckets/new');
         self::click('Save bucket');
         self::waitForText('Use a name of 1 to 80 characters.');
     }
@@ -344,7 +385,9 @@ final class CategoriesTest extends TestCase
     {
         self::driver()->get(self::$base . '/bills');
         self::waitForText('Pause');
-        self::waitForText('Paid One-Time Bill');
+        Reveal::bill(self::driver(), 'Urgent care', 'paid');
+        self::waitForText('Urgent care');
+        Reveal::bill(self::driver(), 'Estimated tax', 'active');
         self::waitForTextGone('Stop reminding');
         $billColors = self::driver()->executeScript(<<<'JS'
             const heading = (label) => {
@@ -356,30 +399,30 @@ final class CategoriesTest extends TestCase
                 const glyph = link ? link.querySelector('.glyph') : null;
                 return glyph ? getComputedStyle(glyph).color : '';
             };
-            return [heading('Active'), heading('Paused'), heading('Paid'), mark('Tax Bill'), mark('Recurring Monthly Bill'), mark('Recurring Yearly Bill')];
+            return [heading('Active'), heading('Paused'), heading('Paid'), mark('Estimated tax'), mark('Streaming'), mark('Health share')];
         JS);
         self::assertIsArray($billColors);
         self::assertCount(6, $billColors);
         self::assertSame(6, count(array_unique($billColors)));
-        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Paid One-Time Bill")]//button[normalize-space()="Unpay"]'))->click();
+        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Unpay"]'))->click();
         $moved = self::wait()->until(function (): bool {
             $placed = self::driver()->executeScript(<<<'JS'
                 const section = (label) => {
                     const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === label);
                     return heading && heading.closest('section') ? heading.closest('section').innerText : '';
                 };
-                return section('Active').includes('Paid One-Time Bill') && !section('Paid').includes('Paid One-Time Bill');
+                return section('Active').includes('Urgent care') && !section('Paid').includes('Urgent care');
             JS);
 
             return $placed === true;
         });
         self::assertTrue($moved);
-        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Paid One-Time Bill")]//button[normalize-space()="Pause"]'))->click();
+        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Pause"]'))->click();
         $paused = self::wait()->until(function (): bool {
             $placed = self::driver()->executeScript(<<<'JS'
                 const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === 'Paused');
                 const section = heading && heading.closest('section') ? heading.closest('section').innerText : '';
-                return section.includes('Paid One-Time Bill');
+                return section.includes('Urgent care');
             JS);
 
             return $placed === true;
@@ -396,11 +439,11 @@ final class CategoriesTest extends TestCase
         self::type('password', self::PASSWORD);
         self::click('Unlock');
         self::waitForText('Net worth');
-        self::clickLink('Envelopes');
+        self::clickLink('Budget');
         self::clickLink('Add bucket');
         self::clickLink('Cancel');
         self::waitForText('Rent');
-        self::waitForTextGone('Needs 1');
+        self::waitForTextGone('Road cushion');
         self::waitForTextGone('Trip 1');
     }
 

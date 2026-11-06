@@ -74,7 +74,7 @@
     try {
       const [data, categoryData] = await Promise.all([
         api<{ accounts: Account[] }>('/api/accounts?includeArchived=1'),
-        api<{ categories: Category[] }>('/api/categories'),
+        api<{ categories: Category[] }>('/api/buckets'),
       ]);
       categories = categoryData.categories;
       accounts = data.accounts.filter((item) => item.archivedAt === null || (id && String(item.id) === accountId));

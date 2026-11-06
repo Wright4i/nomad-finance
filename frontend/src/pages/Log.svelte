@@ -10,18 +10,26 @@
   import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from '../lib/types';
   import { lockedBucketMaxMinor, wantGaugeLevels } from '../lib/wantGauge';
 
-  const wantTypes = [
-    'restaurants', 'entertainment', 'subscriptions', 'shopping', 'travel',
-    'memberships', 'software', 'pets', 'misc',
-  ];
+  const typesByKind = {
+    need: [
+      'lodging', 'rent', 'electricity', 'water', 'propane', 'groceries', 'internet', 'cellular',
+      'vehicle', 'maintenance', 'insurance', 'roadside', 'healthcare', 'mailbox', 'laundry',
+      'mortgage', 'storage', 'other',
+    ],
+    want: [
+      'restaurants', 'entertainment', 'subscriptions', 'shopping', 'travel',
+      'memberships', 'software', 'pets', 'misc',
+    ],
+    saving: ['debt', 'emergency', 'repairs', 'investments', 'liquidities'],
+  };
 
-  let kind = $state<'fuel' | 'want'>('fuel');
+  let kind = $state<'fuel' | 'need' | 'want' | 'saving'>('fuel');
   let accounts = $state<Account[]>([]);
   let vehicles = $state<Vehicle[]>([]);
   let categories = $state<Category[]>([]);
   let accountId = $state('');
   let vehicleId = $state('');
-  let wantType = $state('restaurants');
+  let spendType = $state('restaurants');
   let name = $state('');
   let amount = $state('');
   let postedOn = $state(todayISO());
@@ -45,9 +53,10 @@
   let mpg = $derived(liveMpg(miles, amount, price));
   let sheet = $state<EnvelopeSheet | null>(null);
 
+  let spendTypes = $derived(kind === 'need' ? typesByKind.need : kind === 'saving' ? typesByKind.saving : typesByKind.want);
   let wantBucket = $derived.by((): EnvelopeCategory | null => {
     if (!sheet) return null;
-    const match = categories.find((item) => item.locked && item.billType === wantType);
+    const match = categories.find((item) => item.locked && item.billType === spendType);
     if (!match) return null;
     return sheet.categories.find((item) => item.id === match.id) ?? null;
   });
@@ -95,7 +104,7 @@
       const [accountData, vehicleData, categoryData] = await Promise.all([
         api<{ accounts: Account[] }>('/api/accounts'),
         api<{ vehicles: Vehicle[] }>('/api/vehicles'),
-        api<{ categories: Category[] }>('/api/categories'),
+        api<{ categories: Category[] }>('/api/buckets'),
       ]);
       accounts = accountData.accounts.filter((item) => item.archivedAt === null);
       vehicles = vehicleData.vehicles;
@@ -107,15 +116,22 @@
       }
       const fuel = accounts.find((item) => item.type === 'fuel');
       if (fuel) accountId = String(fuel.id);
-      sheet = await api<EnvelopeSheet>(`/api/envelopes?today=${todayISO()}`).catch(() => null);
+      sheet = await api<EnvelopeSheet>(`/api/budget?today=${todayISO()}`).catch(() => null);
     } catch (err) {
       message = explain(err).message;
     }
   });
 
+  function chooseKind(next: 'fuel' | 'need' | 'want' | 'saving'): void {
+    kind = next;
+    if (next === 'need') spendType = 'groceries';
+    if (next === 'want') spendType = 'restaurants';
+    if (next === 'saving') spendType = 'debt';
+  }
+
   function bucketName(): string {
-    const match = categories.find((item) => item.locked && item.billType === wantType);
-    return match?.name ?? wantType;
+    const match = categories.find((item) => item.locked && item.billType === spendType);
+    return match?.name ?? spendType;
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -151,9 +167,9 @@
       }
     } else {
       if (name.trim() === '') fields.name = 'Use a name of 1 to 80 characters.';
-      body.type = wantType;
+      body.type = spendType;
       body.name = name.trim();
-      if (wantType === 'misc') body.otherLabel = name.trim();
+      if (spendType === 'misc' || spendType === 'other') body.otherLabel = name.trim();
     }
     if (Object.keys(fields).length > 0) return;
     saving = true;
@@ -176,11 +192,17 @@
   <div class="field">
     <span>Kind</span>
     <div class="flex gap-2">
-      <button class="choice" class:on={kind === 'fuel'} type="button" onclick={() => (kind = 'fuel')}>
+      <button class="choice" class:on={kind === 'fuel'} type="button" onclick={() => chooseKind('fuel')}>
         <Glyph name="fuel" mini /> Fuel
       </button>
-      <button class="choice" class:on={kind === 'want'} type="button" onclick={() => (kind = 'want')}>
+      <button class="choice" class:on={kind === 'need'} type="button" onclick={() => chooseKind('need')}>
+        <Glyph name="needs" mini /> Need
+      </button>
+      <button class="choice" class:on={kind === 'want'} type="button" onclick={() => chooseKind('want')}>
         <Glyph name="wants" mini /> Want
+      </button>
+      <button class="choice" class:on={kind === 'saving'} type="button" onclick={() => chooseKind('saving')}>
+        <Glyph name="savings" mini /> Saving
       </button>
     </div>
   </div>
@@ -236,8 +258,8 @@
     <div class="field">
       <span>Type</span>
       <div class="flex flex-wrap gap-2">
-        {#each wantTypes as option}
-          <button class="choice" class:on={wantType === option} type="button" style={`--tone: var(--tone-${option})`} onclick={() => (wantType = option)}>
+        {#each spendTypes as option}
+          <button class="choice" class:on={spendType === option} type="button" data-log-type={option} style={`--tone: var(--tone-${option})`} onclick={() => (spendType = option)}>
             <Glyph name={option} mini />
             {option}
           </button>

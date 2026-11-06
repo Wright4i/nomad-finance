@@ -225,6 +225,14 @@ final class Routes
                 });
 
                 $secure->get('/bills', function (ServerRequestInterface $request, ResponseInterface $response) use ($bills) {
+                    $params = $request->getQueryParams();
+                    $section = $params['section'] ?? '';
+                    if (is_string($section) && $section !== '') {
+                        $chunks = $params['chunks'] ?? 1;
+
+                        return Json::write($response, $bills->section($section, is_numeric($chunks) ? (int) $chunks : 1));
+                    }
+
                     return Json::write($response, ['bills' => $bills->list()]);
                 });
                 $secure->get('/bills/calendar', function (ServerRequestInterface $request, ResponseInterface $response) use ($bills) {
@@ -273,36 +281,36 @@ final class Routes
                     return Json::write($response, ['bill' => $bills->log(self::body($request))], 201);
                 });
 
-                $secure->get('/categories', function (ServerRequestInterface $request, ResponseInterface $response) use ($categories) {
+                $secure->get('/buckets', function (ServerRequestInterface $request, ResponseInterface $response) use ($categories) {
                     $query = $request->getQueryParams();
                     $include = ($query['includeArchived'] ?? '') === '1';
                     $today = is_string($query['today'] ?? null) ? $query['today'] : null;
 
                     return Json::write($response, ['categories' => $categories->list($include, $today)]);
                 });
-                $secure->post('/categories', function (ServerRequestInterface $request, ResponseInterface $response) use ($categories) {
+                $secure->post('/buckets', function (ServerRequestInterface $request, ResponseInterface $response) use ($categories) {
                     $body = self::body($request);
                     $today = is_string($body['today'] ?? null) ? $body['today'] : null;
 
                     return Json::write($response, ['category' => $categories->create($body, $today)], 201);
                 });
-                $secure->get('/categories/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
+                $secure->get('/buckets/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
                     $today = $request->getQueryParams()['today'] ?? null;
 
                     return Json::write($response, [
                         'category' => $categories->get((int) $args['id'], is_string($today) ? $today : null),
                     ]);
                 });
-                $secure->patch('/categories/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
+                $secure->patch('/buckets/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
                     $body = self::body($request);
                     $today = is_string($body['today'] ?? null) ? $body['today'] : null;
 
                     return Json::write($response, ['category' => $categories->update((int) $args['id'], $body, $today)]);
                 });
-                $secure->post('/categories/{id:[0-9]+}/archive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
+                $secure->post('/buckets/{id:[0-9]+}/archive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
                     return Json::write($response, ['category' => $categories->archive((int) $args['id'])]);
                 });
-                $secure->post('/categories/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
+                $secure->post('/buckets/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
                     return Json::write($response, ['category' => $categories->unarchive((int) $args['id'])]);
                 });
 
@@ -367,7 +375,7 @@ final class Routes
                     ]);
                 });
 
-                $secure->get('/envelopes', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {
+                $secure->get('/budget', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {
                     $query = $request->getQueryParams();
                     $payCycleId = isset($query['payCycleId']) && $query['payCycleId'] !== '' ? (int) $query['payCycleId'] : null;
                     $periodId = isset($query['periodId']) && $query['periodId'] !== '' ? (int) $query['periodId'] : null;
@@ -379,7 +387,7 @@ final class Routes
                         ($query['upcoming'] ?? '') === '1',
                     ));
                 });
-                $secure->put('/envelopes', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {
+                $secure->put('/budget', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {
                     return Json::write($response, $envelopes->save(self::body($request)));
                 });
 

@@ -5,6 +5,7 @@
   import { api, explain } from '../lib/api';
   import { follow } from '../lib/nav.svelte.ts';
   import type { Vehicle } from '../lib/types';
+  import { vehicleTone } from '../lib/vehicleKinds';
 
   let vehicles = $state<Vehicle[]>([]);
   let message = $state('');
@@ -60,7 +61,7 @@
   {#if vehicles.length > 0}
     <div class="vehicle-columns">
       {#each vehicles as vehicle (vehicle.id)}
-        <article class="card stripe grid gap-3" style={`--tone: var(--tone-${vehicle.kind})`}>
+        <article class="card stripe grid gap-3" style={`--tone: var(--tone-${vehicleTone(vehicle.kind)})`}>
           <div class="pay-card-head">
             <a class="flex items-center gap-3 min-w-0 no-underline" href={`/vehicles/${vehicle.id}`} onclick={(event) => follow(event, `/vehicles/${vehicle.id}`)}>
               <Glyph name={vehicle.kind} />

@@ -24,7 +24,7 @@ Another login is off unless `FINANCE_NEW_USER=1`. With that unset, the login pag
 
 PHP listens on http://127.0.0.1:8080. Vite proxies `/api` to it.
 
-Restore Demo's sample accounts, bills, rates, and categories without changing the owner:
+Restore Demo's sample accounts, bills, rates, and buckets without changing the owner:
 
 ```bash
 composer demo:reset

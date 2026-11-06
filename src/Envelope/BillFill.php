@@ -296,23 +296,7 @@ final class BillFill
             'INSERT INTO pay_periods (user_id, pay_cycle_id, period_start, period_end, created_at)
              VALUES (?, ?, ?, ?, ?)'
         )->execute([$this->actor->id(), $cycle['id'], $start, $end, $now]);
-        $id = (int) $this->pdo->lastInsertId();
-        $previous = $this->pdo->prepare(
-            'SELECT id FROM pay_periods WHERE pay_cycle_id = ? AND period_start < ? ORDER BY period_start DESC LIMIT 1'
-        );
-        $previous->execute([(int) $cycle['id'], $start]);
-        $previousId = $previous->fetchColumn();
-        if ($previousId !== false) {
-            $this->pdo->prepare(
-                'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
-                 SELECT ?, a.category_id, a.amount_minor, a.filled_minor
-                 FROM assignments a
-                 WHERE a.pay_period_id = ?
-                   AND a.amount_minor > 0'
-            )->execute([$id, $previousId]);
-        }
-
-        return $id;
+        return (int) $this->pdo->lastInsertId();
     }
 
     private function syncAmounts(string $today): void

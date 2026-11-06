@@ -1,3 +1,5 @@
+import type { VehicleKind } from './vehicleKinds';
+
 export type User = {
   name: string;
   baseCurrency: string;
@@ -316,7 +318,7 @@ export type VehicleReading = {
 export type Vehicle = {
   id: number;
   name: string;
-  kind: 'car' | 'truck' | 'motorcycle' | 'rv' | 'semi';
+  kind: VehicleKind;
   mpgMinTenths: number;
   mpgMaxTenths: number;
   starred: boolean;

@@ -68,7 +68,7 @@ final class NewUserTest extends TestCase
         $ownerBooks = $this->books($ownerId);
         $demoBooks = $this->books($demoId);
         self::assertNotSame([], $demoBooks['trips']);
-        self::assertContains('Stay 1', array_column($demoBooks['trips'], 'place_name'));
+        self::assertContains('Lost Dutchman', array_column($demoBooks['trips'], 'place_name'));
 
         $created = $this->auth->createUser([
             'name' => 'Bea',
@@ -114,7 +114,7 @@ final class NewUserTest extends TestCase
         self::assertNotSame((int) $ownerVehicle->fetchColumn(), (int) $beaVehicle->fetchColumn());
         self::assertSame(1, $this->tally("SELECT COUNT(*) FROM user WHERE role = 'owner'"));
         self::assertSame(1, $this->tally("SELECT COUNT(*) FROM user WHERE role = 'demo'"));
-        self::assertSame($demoId, (int) $this->pdo->query("SELECT user_id FROM trips WHERE place_name = 'Stay 1'")->fetchColumn());
+        self::assertSame($demoId, (int) $this->pdo->query("SELECT user_id FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());
 
         $ownerAgain = $this->auth->login([
             'name' => 'Ada',

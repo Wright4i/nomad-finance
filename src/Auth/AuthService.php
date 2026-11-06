@@ -14,7 +14,7 @@ use PDO;
 
 final class AuthService
 {
-    private const KINDS = ['car', 'truck', 'motorcycle', 'rv', 'semi'];
+    private const KINDS = ['car', 'truck', 'motorcycle', 'rv', 'semi', 'utv', 'atv', 'golf cart', 'dirt bike'];
 
     public function __construct(
         private readonly PDO $pdo,

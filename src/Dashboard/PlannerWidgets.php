@@ -18,7 +18,7 @@ final class PlannerWidgets
     /**
      * Column spans on the six-column planner.
      * Income is half beside net worth. Calendar, Trips, and Accounts are single, three across.
-     * Envelopes and Bills each take the row.
+     * Budget and Bills each take the row.
      *
      * @var array<string, int>
      */

@@ -165,60 +165,35 @@ final class PlannerHeadingTest extends TestCase
             );
 
             $plain = $dashboard->show('2026-11-05');
-            self::assertSame('Planner', $plain['heading']);
-            self::assertFalse($plain['headingItalic']);
+            self::assertContains($plain['heading'], $this->phrases('Mesa'));
+            self::assertTrue($plain['headingItalic']);
 
             $books = $this->books($pdo);
-            $earlier = $trips->create([
-                'placeName' => 'Stay 3',
-                'arriveOn' => '2026-11-01',
-                'departOn' => '2026-11-05',
-                'latitude' => '47.6062',
-                'longitude' => '-122.3321',
-                'city' => 'Seattle',
-                'region' => 'WA',
-                'totalMinor' => 0,
-                'amountDueMinor' => 0,
-                'today' => '2026-11-05',
-            ]);
-            $later = $trips->create([
-                'placeName' => 'Stay 4',
-                'arriveOn' => '2026-11-05',
-                'departOn' => '2026-11-08',
-                'latitude' => '45.5152',
-                'longitude' => '-122.6784',
-                'city' => 'Portland',
-                'region' => 'OR',
-                'totalMinor' => 0,
-                'amountDueMinor' => 0,
-                'today' => '2026-11-05',
-            ]);
-            self::assertSame($books, $this->books($pdo));
-
-            $before = $this->stayRows($trips->list('2026-11-05', false));
-            $sheet = $dashboard->show('2026-11-05');
-            self::assertContains($sheet['heading'], $this->phrases('Seattle'));
-            self::assertTrue($sheet['headingItalic']);
-            self::assertStringNotContainsString('Portland', $sheet['heading']);
-            self::assertSame($before, $this->stayRows($trips->list('2026-11-05', false)));
-            self::assertSame($books, $this->books($pdo));
-
-            $trips->update((int) $earlier['id'], [
-                'placeName' => 'Stay 3',
-                'arriveOn' => '2026-11-01',
-                'departOn' => '2026-11-05',
-                'latitude' => '47.6062',
-                'longitude' => '-122.3321',
+            $current = null;
+            foreach ($trips->list('2026-11-05', false) as $trip) {
+                if ($trip['arriveOn'] <= '2026-11-05' && '2026-11-05' <= $trip['departOn']) {
+                    $current = $trip;
+                    break;
+                }
+            }
+            self::assertIsArray($current);
+            self::assertSame('Usery Mountain', $current['placeName']);
+            $trips->update((int) $current['id'], [
+                'placeName' => 'Usery Mountain',
+                'arriveOn' => '2026-10-30',
+                'departOn' => '2026-11-13',
+                'latitude' => '33.4805',
+                'longitude' => '-111.6135',
                 'city' => null,
-                'region' => 'WA',
-                'totalMinor' => 0,
+                'region' => 'AZ',
+                'accountId' => $current['accountId'],
+                'totalMinor' => 44800,
                 'amountDueMinor' => 0,
                 'today' => '2026-11-05',
             ]);
             $cleared = $dashboard->show('2026-11-05');
             self::assertSame('Planner', $cleared['heading']);
             self::assertFalse($cleared['headingItalic']);
-            self::assertSame('Portland', $trips->get((int) $later['id'], '2026-11-05')['city']);
             self::assertSame($books, $this->books($pdo));
         } finally {
             unset($pdo);

@@ -18,7 +18,7 @@
   type PlannerSpans = Record<PlannerWidget, PlannerSpan>;
 
   // Income shares the top row with net worth. Calendar, Trips, and Accounts sit three across.
-  // Envelopes and Bills each take the row.
+  // Budget and Bills each take the row.
   const DEFAULT_SPANS: PlannerSpans = {
     income: 3,
     calendar: 2,
@@ -33,7 +33,7 @@
     calendar: 'Calendar',
     trips: 'Trips',
     accounts: 'Accounts',
-    envelopes: 'Envelopes',
+    envelopes: 'Budget',
     bills: 'Bills',
   };
 
@@ -42,7 +42,7 @@
     calendar: '/calendar',
     trips: '/trips',
     accounts: '/accounts',
-    envelopes: '/envelopes',
+    envelopes: '/budget',
     bills: '/bills',
   };
 
@@ -228,8 +228,8 @@
     return stroked ? `${tone}; stroke: var(--bg); stroke-width: 0.6` : tone;
   }
 
-  let month = $derived(shiftMonth(todayISO().slice(0, 7), monthOffset));
-  let pies = $derived(data?.duePies[month] ?? []);
+  let billMonth = $derived(shiftMonth(todayISO().slice(0, 7), monthOffset));
+  let pies = $derived(data?.duePies[billMonth] ?? []);
   let isPayday = $derived(Boolean(data?.payday && data.payday.on === data.today));
   let gaugeRows = $derived(
     data && gauge
@@ -517,11 +517,11 @@
         <div class="planner-interest">
           <p class="planner-interest-lost m-0" data-interest="lost">
             <span class="planner-interest-label">Interest lost</span>
-            <span class="planner-interest-amount">{money(data.interestLostMinor ?? 0)} per month</span>
+            <span class="planner-interest-amount">{money(data.interestLostMinor ?? 0)}/mn</span>
           </p>
           <p class="planner-interest-gained m-0" data-interest="gained">
             <span class="planner-interest-label">Interest gained</span>
-            <span class="planner-interest-amount">{money(data.interestGainedMinor ?? 0)} per month</span>
+            <span class="planner-interest-amount">{money(data.interestGainedMinor ?? 0)}/mn</span>
           </p>
         </div>
       </section>
@@ -573,7 +573,7 @@
                   {:else}
                     <p class="muted m-0">No payday yet</p>
                   {/if}
-                  <p class="muted m-0">Still coming in <span class="money">{money(data.incomeComing[month] ?? 0)}</span></p>
+                  <p class="muted m-0">Still coming in <span class="money">{money(data.incomeComing[data.today.slice(0, 7)] ?? 0)}</span></p>
                 </a>
               </div>
             {:else if id === 'calendar'}
@@ -692,7 +692,7 @@
                 {/each}
               </a>
             {:else if id === 'envelopes'}
-              <a class="planner-widget-title" href={widgetPage.envelopes} onclick={(event) => follow(event, widgetPage.envelopes)}>Envelopes</a>
+              <a class="planner-widget-title" href={widgetPage.envelopes} onclick={(event) => follow(event, widgetPage.envelopes)}>Budget</a>
               {#if data.envelopes.payors.length === 0}
                 <p class="muted m-0">Add a pay cycle before assigning.</p>
               {:else}
@@ -729,7 +729,7 @@
                 <p class="envelope-available">
                   <span>Available to assign</span>
                   <span class="money">{money(data.envelopes.availableMinor)}</span>
-                  <span class="muted">
+                  <span class="muted" title="Income still coming in this month, plus every asset account except savings.">
                     {money(data.envelopes.assignedMinor)} assigned of {money(data.envelopes.poolMinor)}
                   </span>
                 </p>
@@ -746,7 +746,7 @@
                     <button class="choice month-square" class:on={monthOffset === 1} type="button" aria-pressed={monthOffset === 1} onclick={() => (monthOffset = 1)}>Next Month</button>
                   </div>
                 </div>
-                <p class="muted m-0">{formatMonth(month)}</p>
+                <p class="muted m-0">{formatMonth(billMonth)}</p>
                 {#if pies.length === 0}
                   <p class="muted m-0">No bills due this month.</p>
                 {:else}

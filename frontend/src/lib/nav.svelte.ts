@@ -28,7 +28,6 @@ export type View =
   | { name: 'account-form'; id: string | null }
   | { name: 'bills' }
   | { name: 'bill-form'; id: string | null }
-  | { name: 'categories' }
   | { name: 'category-form'; id: string | null }
   | { name: 'pay-cycles' }
   | { name: 'pay-cycle-form'; id: string | null }
@@ -51,15 +50,14 @@ export function match(path: string): View {
   if (path === '/bills/new') return { name: 'bill-form', id: null };
   const bill = path.match(/^\/bills\/(\d+)$/);
   if (bill) return { name: 'bill-form', id: bill[1] };
-  if (path === '/categories') return { name: 'categories' };
-  if (path === '/categories/new') return { name: 'category-form', id: null };
-  const category = path.match(/^\/categories\/(\d+)$/);
-  if (category) return { name: 'category-form', id: category[1] };
+  if (path === '/categories' || path === '/envelopes' || path === '/budget' || path === '/buckets') return { name: 'envelopes' };
+  if (path === '/buckets/new' || path === '/categories/new') return { name: 'category-form', id: null };
+  const bucket = path.match(/^\/(?:buckets|categories)\/(\d+)$/);
+  if (bucket) return { name: 'category-form', id: bucket[1] };
   if (path === '/pay-cycles' || path === '/pay-cycle') return { name: 'pay-cycles' };
   if (path === '/pay-cycles/new') return { name: 'pay-cycle-form', id: null };
   const payCycle = path.match(/^\/pay-cycles\/(\d+)$/);
   if (payCycle) return { name: 'pay-cycle-form', id: payCycle[1] };
-  if (path === '/envelopes') return { name: 'envelopes' };
   if (path === '/trips') return { name: 'trips' };
   if (path === '/trips/new') return { name: 'trip-form', id: null };
   const trip = path.match(/^\/trips\/(\d+)$/);

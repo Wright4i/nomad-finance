@@ -98,9 +98,24 @@ final class VehiclesTest extends TestCase
         self::click('Use demo');
         self::waitForText('Available to assign');
         self::clickLink('Vehicles');
-        self::waitForText('Vehicle 1');
+        self::waitForText('Bunkhouse');
+        self::waitForText('Side-by-side');
+        self::waitForText('Quad');
+        self::waitForText('Golf cart');
+        self::waitForText('Dirt bike');
+        self::waitForText('utv');
+        self::waitForText('atv');
         self::waitForText('10,500 mi');
         self::waitForText('8.0 mpg');
+        $kindLabels = self::driver()->executeScript(<<<'JS'
+            return [...document.querySelectorAll('.vehicle-columns article .muted')].map((node) => node.textContent.trim());
+        JS);
+        self::assertIsArray($kindLabels);
+        self::assertContains('rv', $kindLabels);
+        self::assertContains('utv', $kindLabels);
+        self::assertContains('atv', $kindLabels);
+        self::assertContains('golf cart', $kindLabels);
+        self::assertContains('dirt bike', $kindLabels);
         $vehicle = self::wait()->until(function (): array|false {
             $measured = self::driver()->executeScript(<<<'JS'
                 const columns = document.querySelector('.vehicle-columns');
@@ -156,7 +171,7 @@ final class VehiclesTest extends TestCase
 
                 return is_array($measured) && $measured['card'] > 0 ? $measured : false;
             });
-            self::assertSame(1, $phone['count']);
+            self::assertSame(5, $phone['count']);
             self::assertTrue($phone['inside']);
             self::assertTrue($phone['overflow']);
             self::assertGreaterThanOrEqual(-1, $phone['cardLeft']);
@@ -166,7 +181,8 @@ final class VehiclesTest extends TestCase
             self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
         }
         self::clickLink('Bills');
-        self::waitForText('Recurring Monthly Bill');
+        Reveal::bill(self::driver(), 'Site week', 'active');
+        self::waitForText('Site week');
         $bills = self::wait()->until(function (): array|false {
             $measured = self::driver()->executeScript(<<<'JS'
                 const columns = document.querySelector('.bill-columns');
@@ -183,8 +199,9 @@ final class VehiclesTest extends TestCase
         self::clickLink('Vehicles');
         self::waitForText('10,500 mi');
         self::assertEqualsWithDelta($bills['columns'], $vehicle['columns'], 4);
-        self::assertGreaterThanOrEqual($bills['card'] - 1, $vehicle['card']);
-        self::clickLinkContaining('Vehicle 1');
+        self::assertGreaterThan(200, $vehicle['card']);
+        self::assertLessThanOrEqual($vehicle['columns'] + 1, $vehicle['card']);
+        self::clickLinkContaining('Bunkhouse');
         self::waitForText('Minimum mpg');
         self::assertFalse(self::colorFieldPresent());
 
@@ -192,8 +209,17 @@ final class VehiclesTest extends TestCase
         self::waitForText('New vehicle');
         self::clickLink('New vehicle');
         self::waitForText('Kind');
+        self::waitForText('utv');
+        self::waitForText('atv');
+        self::waitForText('golf cart');
+        self::waitForText('dirt bike');
         self::assertFalse(self::colorFieldPresent());
         self::type('name', 'Vehicle 2');
+        self::click('utv');
+        self::assertSame('true', self::driver()->findElement(WebDriverBy::xpath('//button[normalize-space()="utv"]'))->getAttribute('aria-pressed'));
+        self::click('atv');
+        self::click('golf cart');
+        self::click('dirt bike');
         self::click('truck');
         self::type('currentOdometer', '0');
         self::click('Save vehicle');
@@ -210,7 +236,7 @@ final class VehiclesTest extends TestCase
         self::assertSame('Vehicle 2', $saved);
         self::clickLink('Back');
         self::waitForText('Vehicle 2');
-        self::clickLinkContaining('Vehicle 1');
+        self::clickLinkContaining('Bunkhouse');
         self::waitForText('Stretch mpg');
         $dates = self::wait()->until(function (): array|false {
             $dates = self::driver()->executeScript(<<<'JS'

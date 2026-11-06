@@ -6,7 +6,7 @@
   import { formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
-  import type { EnvelopeSheet, PeriodStep } from '../lib/types';
+  import type { Category, EnvelopeSheet, PeriodStep } from '../lib/types';
 
   const groups = [
     { id: 'needs', label: 'Needs' },
@@ -25,6 +25,8 @@
   let saving = $state(false);
   let celebrateEase = $state(false);
   let ready = $state(false);
+  let showArchived = $state(false);
+  let archived = $state<Category[]>([]);
   let sourcesDialog: HTMLDialogElement | undefined = $state();
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -35,7 +37,7 @@
     if (payCycleId !== null) params.set('payCycleId', String(payCycleId));
     if (upcoming) params.set('upcoming', '1');
     else if (periodId !== null) params.set('periodId', String(periodId));
-    const data = await api<EnvelopeSheet>(`/api/envelopes?${params}`);
+    const data = await api<EnvelopeSheet>(`/api/budget?${params}`);
     sheet = data;
     payCycleId = data.payCycleId;
     const next: Record<number, string> = {};
@@ -70,6 +72,20 @@
     return (sheet?.categories ?? [])
       .filter((category) => category.group === id)
       .sort((left, right) => Number(left.role === 'locked') - Number(right.role === 'locked') || left.name.localeCompare(right.name));
+  }
+
+  function archivedIn(id: string): Category[] {
+    const shown = new Set((sheet?.categories ?? []).map((category) => category.id));
+    return archived
+      .filter((category) => category.group === id && category.archivedAt !== null && !shown.has(category.id))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async function toggleArchived(): Promise<void> {
+    showArchived = !showArchived;
+    if (!showArchived) return;
+    const data = await api<{ categories: Category[] }>(`/api/buckets?includeArchived=1&today=${todayISO()}`);
+    archived = data.categories;
   }
 
   function maximumInput(category: EnvelopeSheet['categories'][number], exponent: number): string {
@@ -124,6 +140,8 @@
       const amountMinor = raw === '' ? 0 : parseMajor(raw, sheet.exponent);
       if (amountMinor === null) {
         fields[`amount-${category.id}`] = 'Enter an amount of zero or more.';
+      } else if (category.role === 'locked' && amountMinor < (category.billMinor ?? 0)) {
+        fields[`amount-${category.id}`] = 'Assigned cannot be lower than the bills.';
       }
       return { categoryId: category.id, amountMinor: amountMinor ?? 0 };
     });
@@ -145,7 +163,7 @@
     saving = true;
     try {
       const planning = sheet.period?.upcoming === true;
-      const data = await api<EnvelopeSheet>('/api/envelopes', {
+      const data = await api<EnvelopeSheet>('/api/budget', {
         method: 'PUT',
         body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, maximums, upcoming: planning },
       });
@@ -180,22 +198,22 @@
 
 <div class="grid gap-5">
   <div class="flex flex-wrap items-end justify-between gap-3">
-    <h1 class="text-3xl m-0">Envelopes</h1>
-    <a class="btn primary" href="/categories/new" onclick={(event) => { event.preventDefault(); go('/categories/new'); }}>Add bucket</a>
+    <h1 class="text-3xl m-0">Budget</h1>
+    <a class="btn primary" href="/buckets/new" onclick={(event) => { event.preventDefault(); go('/buckets/new'); }}>Add bucket</a>
   </div>
-  <p class="muted m-0">Assign cash from checking, savings, and cash. An assignment does not change an account balance.</p>
+  <p class="muted m-0">Available to assign is income still coming in this month, plus every asset account except savings, minus what the buckets already hold. An assignment does not change an account balance.</p>
   <Note bind:message />
 
   {#if ready && sheet}
     {#if sheet.payors.length === 0}
       <p class="m-0">Add a pay cycle before assigning. <a href="/pay-cycles/new" onclick={(event) => { event.preventDefault(); go('/pay-cycles/new'); }}>New pay cycle</a></p>
-    {:else}
+    {/if}
       <section class="hero">
         <button class="available-open" type="button" data-action="available" onclick={() => sourcesDialog?.showModal()}>
           <p class="kicker m-0">Available to assign</p>
           <p class="figure">{formatMinor(sheet.availableMinor, sheet.baseCurrency, sheet.exponent)}</p>
         </button>
-        <p class="muted m-0" title="Income from every payor this month, plus checking, savings, and cash.">
+        <p class="muted m-0" title="Income still coming in this month, plus every asset account except savings.">
           {formatMinor(sheet.assignedMinor, sheet.baseCurrency, sheet.exponent)} assigned of {formatMinor(sheet.poolMinor, sheet.baseCurrency, sheet.exponent)}
         </p>
       </section>
@@ -204,7 +222,7 @@
         <div class="modal-body">
           <h2 id="available-title" class="m-0 text-2xl">Available to assign</h2>
           <section class="grid gap-2" data-source="income">
-            <h3 class="m-0 text-lg">Income</h3>
+            <h3 class="m-0 text-lg">Still coming in</h3>
             {#each sheet.sources.income as row (row.id)}
               <p class="source-row" style={`--tone: var(--tone-${row.length})`}>
                 <Glyph name={row.length} />
@@ -243,6 +261,7 @@
         {#if sheet.period}
           <p class="m-0" data-month={sheet.period.start.slice(0, 7)}>{formatMonth(sheet.period.start)}</p>
         {/if}
+        <button class="btn" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
       </div>
       {#if sheet.period?.upcoming}
         <p class="muted m-0">These amounts are in place when this month opens. Available to assign still follows the current month.</p>
@@ -252,8 +271,9 @@
 
       {#each groups as group (group.id)}
         {@const rows = inGroup(group.id)}
+        {@const hidden = showArchived ? archivedIn(group.id) : []}
         {@const heading = sheet.groups.find((item) => item.group === group.id)}
-        {#if rows.length > 0}
+        {#if rows.length > 0 || hidden.length > 0}
           <section class="grid gap-3">
             <h2 class="group-title text-2xl" data-group={group.id} style={`--tone: var(--tone-${group.id})`}>
               <Glyph name={group.id} />
@@ -271,6 +291,7 @@
               {@const hold = holdOf(category)}
               {@const level = levelOf(category, rows)}
               {@const over = hold !== null && category.amountMinor > hold}
+              <div class="bucket-cell">
               <article
                 class="bucket-tile envelope-tile"
                 class:over
@@ -285,7 +306,7 @@
                 </span>
                 <span class="flex items-center gap-1">
                   <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
-                  <strong>{category.name}</strong>
+                  <strong><a href={`/buckets/${category.id}`} onclick={(event) => follow(event, `/buckets/${category.id}`)}>{category.name}</a></strong>
                 </span>
                 <label class="bucket-field">
                   <span>Assigned</span>
@@ -295,7 +316,7 @@
                       name={`amount-${category.id}`}
                       aria-label={`Assigned ${category.name}`}
                       inputmode="decimal"
-                      disabled={!editable || category.archivedAt !== null || category.role === 'locked'}
+                      disabled={!editable || category.archivedAt !== null}
                       value={drafts[category.id] ?? ''}
                       oninput={(event) => {
                         drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
@@ -323,18 +344,23 @@
                     />
                   </span>
                 </label>
-                {#if over}
-                  <span>Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</span>
-                {/if}
                 {#if fields[`amount-${category.id}`]}<em>{fields[`amount-${category.id}`]}</em>{/if}
                 {#if fields[`maximum-${category.id}`]}<em>{fields[`maximum-${category.id}`]}</em>{/if}
               </article>
+              {#if over}
+                <p class="bucket-overage">Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</p>
+              {/if}
+              </div>
             {/each}
             </div>
+            {#each hidden as category (category.id)}
+              <a class="row" href={`/buckets/${category.id}`} onclick={(event) => follow(event, `/buckets/${category.id}`)}>
+                <strong>{category.name}</strong>
+                <span class="muted">archived</span>
+              </a>
+            {/each}
           </section>
         {/if}
       {/each}
-
-    {/if}
   {/if}
 </div>

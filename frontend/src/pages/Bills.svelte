@@ -8,12 +8,49 @@
   import { go } from '../lib/nav.svelte.ts';
   import type { Bill } from '../lib/types';
 
-  let bills = $state<Bill[]>([]);
+  type SectionKey = 'active' | 'paused' | 'paid' | 'archived';
+  const sectionOrder: SectionKey[] = ['active', 'paused', 'paid', 'archived'];
+
+  let loaded = $state<Record<SectionKey, Bill[]>>({ active: [], paused: [], paid: [], archived: [] });
+  let hasMore = $state<Record<SectionKey, boolean>>({ active: false, paused: false, paid: false, archived: false });
+  let chunks = $state<Record<SectionKey, number>>({ active: 1, paused: 1, paid: 1, archived: 1 });
   let message = $state('');
+  const growing: Record<SectionKey, boolean> = { active: false, paused: false, paid: false, archived: false };
+  const requested: Record<SectionKey, number> = { active: 1, paused: 1, paid: 1, archived: 1 };
+
+  async function loadSection(section: SectionKey, count: number): Promise<void> {
+    requested[section] = Math.max(requested[section], count);
+    const data = await api<{ bills: Bill[]; hasMore: boolean }>(`/api/bills?section=${section}&chunks=${count}`);
+    if (count < requested[section]) return;
+    loaded = { ...loaded, [section]: data.bills };
+    hasMore = { ...hasMore, [section]: data.hasMore };
+    chunks = { ...chunks, [section]: count };
+  }
 
   async function load(): Promise<void> {
-    const data = await api<{ bills: Bill[] }>('/api/bills');
-    bills = data.bills;
+    await Promise.all(sectionOrder.map((section) => loadSection(section, chunks[section])));
+  }
+
+  /**
+   * A short section is already at its end, so a downward wheel loads the next days.
+   * A scrollbar drag loads more only after the person has moved down into the list.
+   */
+  function grow(section: SectionKey, node: HTMLElement, deltaY: number | null): void {
+    if (growing[section] || !hasMore[section]) return;
+    const atEnd = node.scrollTop + node.clientHeight >= node.scrollHeight - 8;
+    if (!atEnd) return;
+    if (deltaY === null && node.scrollTop <= 0 && node.scrollHeight <= node.clientHeight + 1) return;
+    if (deltaY !== null && deltaY <= 0) return;
+    const next = requested[section] + 1;
+    requested[section] = next;
+    growing[section] = true;
+    loadSection(section, next)
+      .catch((err: unknown) => {
+        message = err instanceof Error ? err.message : 'Could not load bills.';
+      })
+      .finally(() => {
+        growing[section] = false;
+      });
   }
 
   onMount(() => {
@@ -34,15 +71,13 @@
 
   type Row = Bill & { shownOn: string };
 
-  let active = $derived(bills.filter((bill) => bill.status === 'active').map((bill) => ({ ...bill, shownOn: bill.nextDueDate })));
-  let paused = $derived(bills.filter((bill) => bill.status === 'paused').map((bill) => ({ ...bill, shownOn: bill.nextDueDate })));
-  let archived = $derived(bills.filter((bill) => bill.status === 'archived').map((bill) => ({ ...bill, shownOn: bill.nextDueDate })));
-  let paid = $derived([
-    ...bills.filter((bill) => bill.status === 'paid').map((bill) => ({ ...bill, shownOn: bill.lastPaidOn ?? bill.nextDueDate })),
-    ...bills
-      .filter((bill) => bill.status !== 'paid' && bill.recurrence !== 'once' && bill.lastPaidOn)
-      .map((bill) => ({ ...bill, shownOn: bill.lastPaidOn ?? bill.nextDueDate })),
-  ]);
+  function rows(section: SectionKey): Row[] {
+    const bills = loaded[section];
+    if (section === 'paid') {
+      return bills.map((bill) => ({ ...bill, shownOn: bill.lastPaidOn ?? bill.nextDueDate }));
+    }
+    return bills.map((bill) => ({ ...bill, shownOn: bill.nextDueDate }));
+  }
 
 </script>
 
@@ -54,15 +89,24 @@
   <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone.</p>
   <Note bind:message />
 
-  {#snippet group(title: string, tone: string, rows: Row[], unpay: boolean)}
-    <section class="grid gap-3">
+  {#snippet group(title: string, key: SectionKey, tone: string, unpay: boolean)}
+    <section class="bill-section grid gap-3" data-section={key}>
       <h2 class="group-title text-2xl" style={`--tone: var(--tone-${tone})`}>
         <Glyph name={tone} />
         {title}
       </h2>
-      {#if rows.length === 0}<p class="muted m-0">None.</p>{/if}
-      {#each billDays(rows) as day (day.date)}
-        <div class="bill-day">
+      <div
+        class="bill-scroll"
+        onscroll={(event) => {
+          if (event.currentTarget instanceof HTMLElement) grow(key, event.currentTarget, null);
+        }}
+        onwheel={(event) => {
+          if (event.currentTarget instanceof HTMLElement) grow(key, event.currentTarget, event.deltaY);
+        }}
+      >
+      {#if rows(key).length === 0}<p class="muted m-0">None.</p>{/if}
+      {#each billDays(rows(key)) as day (day.date)}
+        <div class="bill-day" data-date={day.date}>
           <h3 class="bill-date m-0">{formatDate(day.date)}</h3>
           <hr class="bill-date-rule" />
           <div class="bill-columns">
@@ -104,11 +148,12 @@
           </div>
         </div>
       {/each}
+      </div>
     </section>
   {/snippet}
 
-  {@render group('Active', 'active', active, false)}
-  {@render group('Paused', 'paused', paused, false)}
-  {@render group('Paid', 'paid', paid, true)}
-  {@render group('Archived', 'archived', archived, false)}
+  {@render group('Active', 'active', 'active', false)}
+  {@render group('Paused', 'paused', 'paused', false)}
+  {@render group('Paid', 'paid', 'paid', true)}
+  {@render group('Archived', 'archived', 'archived', false)}
 </div>

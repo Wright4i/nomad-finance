@@ -153,21 +153,23 @@
     message = '';
     const arrive = readDateInput('arriveOn');
     const depart = readDateInput('departOn');
-    const due = readDateInput('balanceDueOn');
+    const dueField = document.querySelector<HTMLInputElement>('input[name="balanceDueOn"]');
+    const dueRaw = dueField ? dueField.value.trim() : '';
+    const due = dueRaw === '' ? '' : readDateInput('balanceDueOn');
     const problems: Record<string, string> = {};
     if (parseMajor(total || '0', exponent) === null || parseMajor(amountDue || '0', exponent) === null) {
       problems.totalMinor = 'Use an amount.';
     }
     if (!arrive) problems.arriveOn = DATE_INPUT_ERROR;
     if (!depart) problems.departOn = DATE_INPUT_ERROR;
-    if (!due) problems.balanceDueOn = DATE_INPUT_ERROR;
-    if (!arrive || !depart || !due || Object.keys(problems).length > 0) {
+    if (dueRaw !== '' && !due) problems.balanceDueOn = DATE_INPUT_ERROR;
+    if (!arrive || !depart || (dueRaw !== '' && !due) || Object.keys(problems).length > 0) {
       fields = problems;
       return;
     }
     arriveOn = arrive;
     departOn = depart;
-    balanceDueOn = due;
+    balanceDueOn = due || '';
     saving = true;
     try {
       const path = id ? `/api/trips/${id}` : '/api/trips';

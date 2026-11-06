@@ -116,25 +116,25 @@ final class NewUserTest extends TestCase
         self::click('Create my login');
         self::waitForText('Net worth');
         self::waitForText('Bea');
-        self::assertStringNotContainsString('Stay 1', self::mainText());
+        self::assertStringNotContainsString('Lost Dutchman', self::mainText());
         self::assertStringNotContainsString('Reset demo data', self::mainText());
-        self::assertStringNotContainsString('Checking 1', self::mainText());
+        self::assertStringNotContainsString('Everyday checking', self::mainText());
 
         self::clickLink('Accounts');
         self::waitForText('No accounts yet');
-        self::assertStringNotContainsString('Checking 1', self::mainText());
+        self::assertStringNotContainsString('Everyday checking', self::mainText());
 
         self::clickLink('Trips');
         self::waitForText('Add a stay');
         self::assertSame([], self::tripNames());
-        self::assertStringNotContainsString('Stay 1', self::mainText());
+        self::assertStringNotContainsString('Lost Dutchman', self::mainText());
 
         self::clickLink('Vehicles');
         self::waitForText('Vehicle 1');
         self::clickLinkContaining('Vehicle 1');
         self::waitForText('Fallback price per gallon');
         self::assertSame('', (string) self::driver()->findElement(WebDriverBy::name('fuelPrice'))->getAttribute('value'));
-        self::assertStringNotContainsString('Stay 1', self::mainText());
+        self::assertStringNotContainsString('Lost Dutchman', self::mainText());
     }
 
     /** @return array{primary:bool,top:float,left:float,right:float} */

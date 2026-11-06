@@ -17,6 +17,33 @@ export function arc(points: LngLat[]): LngLat[] {
   return line;
 }
 
+/**
+ * Break a short arc where longitude jumps across the date line.
+ * Each piece stays on one side of the map, so the line does not draw the long way around.
+ */
+export function splitDateLine(points: LngLat[]): LngLat[][] {
+  if (points.length === 0) return [];
+  const segments: LngLat[][] = [[points[0]]];
+  for (let i = 1; i < points.length; i++) {
+    const current = points[i];
+    const segment = segments[segments.length - 1];
+    const previous = segment[segment.length - 1];
+    const jump = current[0] - previous[0];
+    if (Math.abs(jump) <= 180) {
+      segment.push(current);
+      continue;
+    }
+    const delta = jump > 0 ? jump - 360 : jump + 360;
+    const boundary = delta > 0 ? 180 : -180;
+    const span = delta;
+    const t = span === 0 ? 0 : Math.min(1, Math.max(0, (boundary - previous[0]) / span));
+    const latitude = previous[1] + t * (current[1] - previous[1]);
+    segment.push([boundary, latitude]);
+    segments.push([[boundary === 180 ? -180 : 180, latitude], current]);
+  }
+  return segments;
+}
+
 function interpolate(start: LngLat, end: LngLat, fraction: number): LngLat {
   const lat1 = (start[1] * Math.PI) / 180;
   const lon1 = (start[0] * Math.PI) / 180;

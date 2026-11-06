@@ -99,8 +99,9 @@ final class PayCycleTest extends TestCase
         self::click('Use demo');
         self::waitForText('Available to assign');
         self::clickLink('Income');
-        self::waitForText('Weekly Payor');
-        self::waitForText('Averaged Payor');
+        self::waitForText('Camp host');
+        self::waitForText('Remote salary');
+        self::waitForText('Photo gigs');
         $cards = self::driver()->executeScript(<<<'JS'
             const cards = [...document.querySelectorAll('.payor-columns article')].map((card) => {
                 const rect = card.getBoundingClientRect();
@@ -125,8 +126,8 @@ final class PayCycleTest extends TestCase
             self::assertEqualsWithDelta($cards['first']['width'], $cards['last']['width'], 2);
         }
         $card = self::driver()->executeScript(<<<'JS'
-            const card = [...document.querySelectorAll('.payor-columns article')].find((node) => node.textContent.includes('Monthly Payor') && !node.textContent.includes('Monthly Weekday'));
-            const weekly = [...document.querySelectorAll('.payor-columns article')].find((node) => node.textContent.includes('Weekly Payor'));
+            const card = [...document.querySelectorAll('.payor-columns article')].find((node) => node.textContent.includes('Remote salary'));
+            const weekly = [...document.querySelectorAll('.payor-columns article')].find((node) => node.textContent.includes('Camp host'));
             const range = card.querySelector('.pay-period-range');
             const name = card.querySelector('.pay-card-head strong');
             const button = card.querySelector('.pay-card-head button');
@@ -147,8 +148,8 @@ final class PayCycleTest extends TestCase
             };
         JS);
         self::assertIsArray($card);
-        self::assertSame('Nov 1 - Nov 30 | $7,000.00', $card['range']);
-        self::assertSame('Nov 1 - Nov 7 | $1,000.00', $card['weeklyRange']);
+        self::assertSame('Nov 1 - Nov 30 | $5,600.00', $card['range']);
+        self::assertSame('Nov 1 - Nov 7 | $192.00', $card['weeklyRange']);
         self::assertSame('normal', $card['italic']);
         self::assertSame('Log Payroll', $card['button']);
         self::assertSame('rgba(0, 0, 0, 0)', $card['background']);
@@ -156,11 +157,11 @@ final class PayCycleTest extends TestCase
         self::assertTrue($card['sameRow']);
         self::assertFalse($card['basedOnPayday']);
         self::assertSame(
-            ['Roll Dec 1', 'Salary', 'Monthly $7,000.00'],
+            ['Roll Dec 1', 'Salary', 'Monthly $5,600.00'],
             $card['chips'],
         );
-        self::assertNotContains('Check Amount $1,000.00', $card['weeklyChips']);
-        self::assertContains('Monthly $4,333.33', $card['weeklyChips']);
+        self::assertNotContains('Check Amount $192.00', $card['weeklyChips']);
+        self::assertContains('Monthly $832.00', $card['weeklyChips']);
         self::driver()->manage()->window()->setSize(new WebDriverDimension(390, 844));
         try {
             self::wait()->until(function (): bool {
@@ -227,40 +228,36 @@ final class PayCycleTest extends TestCase
         } finally {
             self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
         }
-        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Averaged Payor")]//button[normalize-space()="Log Payroll"]'))->click();
-        self::waitForText('Payroll · Averaged Payor');
-        self::waitForText('$4,000.00');
+        $open = self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText();
+        self::assertStringNotContainsString('Contract days', $open);
+        self::assertStringNotContainsString('Warehouse job', $open);
+        self::click('Show archived');
+        self::waitForText('Warehouse job');
+        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Client average")]//button[normalize-space()="Log Payroll"]'))->click();
+        self::waitForText('Payroll · Client average');
+        self::waitForText('$950.00');
         self::click('Close');
-        self::waitForText('Biweekly Payor');
-        self::waitForText('Semimonthly Payor');
-        self::waitForText('Monthly Payor');
-        self::waitForText('$7,000.00');
-        self::waitForText('Monthly Weekday Payor');
-        self::waitForText('$19,360.00');
-        self::clickLink('Monthly Weekday Payor');
+        self::waitForText('Contract days');
+        self::clickLinkContaining('Contract days');
         self::waitForText('22 weekdays in Oct 2026');
-        self::waitForText('176.00 hours');
-        self::waitForText('Paycheck this period $19,360.00');
+        self::waitForText('66.00 hours');
+        self::waitForText('Paycheck this period $1,320.00');
         self::waitForText('Hours per weekday');
         $hours = self::driver()->executeScript(<<<'JS'
             const input = document.querySelector('input[name="hours"]');
             return input ? input.value : '';
         JS);
-        self::assertSame('8.00', $hours);
+        self::assertSame('3.00', $hours);
         $body = self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText();
         self::assertStringNotContainsString('2026-10', $body);
         self::assertStringNotContainsString('2026-11-01', $body);
         self::clickLink('Income');
-        self::waitForText('Salary');
-        self::waitForText('Irregular Payor');
-        self::waitForTextGone('Archived Payor');
-        self::click('Show archived');
-        self::waitForText('Archived Payor');
-        self::clickLink('Monthly Payor');
+        self::waitForText('Photo gigs');
+        self::clickLink('Remote salary');
         self::waitForText('Based on payday Nov 1, 2026');
         self::waitForText('Nov 1, 2026 – Nov 30, 2026');
         self::waitForText('Rolls on Dec 1, 2026.');
-        self::waitForText('Paycheck this period $7,000.00');
+        self::waitForText('Paycheck this period $5,600.00');
         $payday = self::driver()->executeScript(<<<'JS'
             const input = document.querySelector('input[name="payday"]');
             return input ? input.value : '';
@@ -292,7 +289,7 @@ final class PayCycleTest extends TestCase
         self::click('Save pay cycle');
         self::waitForText('Scratch Payor');
         self::waitForText('$1,750.00');
-        self::waitForText('Weekly Payor');
+        self::waitForText('Camp host');
         self::clickLink('Scratch Payor');
         self::click('Archive');
         self::waitForText('Archive this pay cycle?');
@@ -300,7 +297,7 @@ final class PayCycleTest extends TestCase
         self::waitForText('Scratch Payor');
         self::click('Archive');
         self::click('Archive pay cycle');
-        self::waitForText('Weekly Payor');
+        self::waitForText('Camp host');
         self::waitForTextGone('Scratch Payor');
         self::click('Show archived');
         self::waitForText('Scratch Payor');
@@ -317,7 +314,7 @@ final class PayCycleTest extends TestCase
         self::waitForText('Net worth');
         self::clickLink('Income');
         self::waitForText('No pay cycles yet.');
-        self::waitForTextGone('Weekly Payor');
+        self::waitForTextGone('Camp host');
         self::waitForTextGone('Scratch Payor');
     }
 

@@ -147,7 +147,7 @@ final class LogTest extends TestCase
                     });
                     const logBody = await logged.json();
                     const vehicles = await (await fetch('/api/vehicles', { headers: accept, credentials: 'same-origin' })).json();
-                    const first = vehicles.vehicles.find((item) => item.name === 'Vehicle 1');
+                    const first = vehicles.vehicles.find((item) => item.name === 'Bunkhouse');
                     const detail = await (await fetch('/api/vehicles/' + first.id, { headers: accept, credentials: 'same-origin' })).json();
                     done({
                         vehicleStatus: step.vehicleStatus,
@@ -232,7 +232,7 @@ final class LogTest extends TestCase
         self::chooseVehicle('Vehicle 2');
         self::waitForField('odometer', '2500');
         self::waitForField('price', '5.25');
-        self::chooseVehicle('Vehicle 1');
+        self::chooseVehicle('Bunkhouse');
         self::waitForField('odometer', '10500');
         self::waitForField('price', '4.00');
         self::replace('odometer', '10800');
@@ -266,6 +266,7 @@ final class LogTest extends TestCase
         self::waitForPath('/calendar');
 
         self::driver()->get(self::$base . '/bills');
+        Reveal::bill(self::driver(), 'Logged Dinner', 'active');
         self::waitForText('Logged Dinner');
         $places = self::billPlaces();
         self::assertIsArray($places);
@@ -284,17 +285,88 @@ final class LogTest extends TestCase
             const button = [...article.querySelectorAll('button')].find((item) => item.textContent.trim() === 'Mark paid');
             button.click();
         JS);
-        self::wait()->until(function (): bool {
-            $places = self::billPlaces();
-
-            return is_array($places)
-                && ($places['dinner']['heading'] ?? '') === 'Paid'
-                && in_array('Unpay', $places['dinner']['buttons'], true)
-                && ($places['fuel']['heading'] ?? '') === 'Active';
-        });
+        Reveal::bill(self::driver(), 'Logged Dinner', 'paid');
+        $places = self::billPlaces();
+        self::assertIsArray($places);
+        self::assertSame('Paid', $places['dinner']['heading']);
+        self::assertContains('Unpay', $places['dinner']['buttons']);
+        self::assertSame('Active', $places['fuel']['heading']);
 
         $after = self::fuelAccount();
         self::assertSame($before['balance'], $after['balance']);
+    }
+
+    #[Depends('testASavedFuelLogAndWantLogStayUnpaid')]
+    public function testANeedLogOmitsFuelAndASavingLogStaysUnpaid(): void
+    {
+        $before = self::fuelAccount();
+        self::driver()->get(self::$base . '/log');
+        self::waitForText('left unpaid');
+        self::waitForAccount();
+        self::click('Need');
+        self::waitForText('Bucket');
+        $needTypes = self::logTypes();
+        self::assertContains('groceries', $needTypes);
+        self::assertContains('rent', $needTypes);
+        self::assertNotContains('fuel', $needTypes);
+        self::assertNotContains('debt', $needTypes);
+        self::waitForText('Groceries');
+        self::type('name', 'Logged Groceries');
+        self::type('amount', '12');
+        self::click('Save log');
+        self::waitForPath('/calendar');
+
+        self::driver()->get(self::$base . '/log');
+        self::waitForText('left unpaid');
+        self::waitForAccount();
+        self::click('Saving');
+        $savingTypes = self::logTypes();
+        self::assertContains('debt', $savingTypes);
+        self::assertContains('emergency', $savingTypes);
+        self::assertNotContains('fuel', $savingTypes);
+        self::assertNotContains('groceries', $savingTypes);
+        self::waitForText('Debt');
+        self::type('name', 'Logged Debt');
+        self::type('amount', '8');
+        self::click('Save log');
+        self::waitForPath('/calendar');
+
+        self::driver()->get(self::$base . '/bills');
+        Reveal::bill(self::driver(), 'Logged Groceries', 'active');
+        Reveal::bill(self::driver(), 'Logged Debt', 'active');
+        self::waitForText('Logged Groceries');
+        self::waitForText('Logged Debt');
+        $places = self::driver()->executeScript(<<<'JS'
+            const place = (name) => {
+                const article = [...document.querySelectorAll('article')].find((node) => {
+                    const title = node.querySelector('strong');
+                    return title && title.textContent.trim() === name;
+                });
+                if (!article) return null;
+                const heading = article.closest('section').querySelector('h2').textContent.replace(/\s+/g, ' ').trim();
+                const buttons = [...article.querySelectorAll('button')].map((button) => button.textContent.trim());
+                return { heading, buttons };
+            };
+            return { groceries: place('Logged Groceries'), debt: place('Logged Debt') };
+        JS);
+        self::assertIsArray($places);
+        self::assertSame('Active', $places['groceries']['heading']);
+        self::assertContains('Mark paid', $places['groceries']['buttons']);
+        self::assertSame('Active', $places['debt']['heading']);
+        self::assertContains('Mark paid', $places['debt']['buttons']);
+        $after = self::fuelAccount();
+        self::assertSame($before['balance'], $after['balance']);
+    }
+
+    /** @return list<string> */
+    private static function logTypes(): array
+    {
+        $types = self::driver()->executeScript(<<<'JS'
+            return [...document.querySelectorAll('[data-log-type]')].map((node) => node.getAttribute('data-log-type'));
+        JS);
+        self::assertIsArray($types);
+
+        return array_values(array_filter($types, 'is_string'));
     }
 
     /** @return array{id:int,balance:int} */

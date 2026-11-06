@@ -141,7 +141,7 @@ final class RegisterTest extends TestCase
         self::waitForText('Available to assign');
         self::waitForText('rent');
         self::waitForText('Reset demo data');
-        self::waitForMoney('$8,945.00');
+        self::waitForMoney('$11,892.00');
         $reset = self::driver()->findElement(WebDriverBy::xpath('//button[normalize-space()="Reset demo data"]'));
         $resting = $reset->getCSSValue('background-color');
         self::driver()->action()->moveToElement($reset)->perform();
@@ -153,9 +153,10 @@ final class RegisterTest extends TestCase
         self::assertIsString($hovered);
         self::assertNotSame($resting, $hovered);
         self::clickLink('Accounts');
-        self::waitForText('Checking 1');
+        self::waitForText('Everyday checking');
         self::clickLink('Bills');
-        self::waitForText('One-Time Bill');
+        Reveal::bill(self::driver(), 'Site week', 'active');
+        self::waitForText('Site week');
     }
 
     #[Depends('testDemoOpensTheSampleBooks')]
@@ -181,7 +182,7 @@ final class RegisterTest extends TestCase
         self::waitForText('Scratch');
         self::click('Reset demo data');
         self::click('Reset the sample books');
-        self::waitForText('Checking 1');
+        self::waitForText('Everyday checking');
         self::waitForTextGone('Scratch');
     }
 
@@ -224,7 +225,7 @@ final class RegisterTest extends TestCase
         self::click('Unlock');
         self::waitForText('Net worth');
         self::waitForMoney('$0.00');
-        self::waitForTextGone('Checking 1');
+        self::waitForTextGone('Everyday checking');
         self::waitForTextGone('Scratch');
     }
 

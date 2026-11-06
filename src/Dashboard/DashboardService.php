@@ -162,8 +162,8 @@ final class DashboardService
     }
 
     /**
-     * Still coming in for the month on screen and the next one.
-     * The planner switches between those two.
+     * Still coming in for the current month and the next one.
+     * Income uses the current month. The bills widget chooses between the two.
      *
      * @return array<string, int>
      */

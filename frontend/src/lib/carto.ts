@@ -11,7 +11,10 @@ function carto(style: string): string[] {
 }
 
 export const darkMatterTiles = carto('dark_all');
+/** Carto Positron. Night uses this raster. */
 export const positronTiles = carto('light_all');
+/** Carto Voyager. Day uses this raster. */
+export const voyagerTiles = carto('voyager');
 export const cartoAttribution = '© OpenStreetMap © CARTO';
 
 /** Esri World Imagery. The path order is z/y/x. */

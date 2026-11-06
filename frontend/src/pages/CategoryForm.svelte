@@ -1,15 +1,12 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
-  import DateField from '../components/DateField.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
   import { exponentOf, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
-  import { targetHint } from '../lib/target';
-  import type { Category, CategoryTarget, PayCycle } from '../lib/types';
+  import type { Category } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
 
@@ -21,20 +18,15 @@
 
   const targetKinds = [
     { id: 'none', label: 'None', title: 'This bucket has no target.' },
-    { id: 'needed', label: 'Needed by date', title: 'The gap to the amount, divided by the months still left.' },
-    { id: 'balance', label: 'Target balance', title: 'An amount to hold, with no end date.' },
+    { id: 'balance', label: 'Target balance', title: 'An amount with no end date.' },
   ] as const;
 
   let name = $state('');
   let group = $state('needs');
   let role = $state<'goal' | 'locked'>('goal');
   let locked = $derived(role === 'locked');
-  let targetKind = $state<'none' | CategoryTarget['kind']>('none');
+  let targetKind = $state<'none' | 'balance'>('none');
   let targetAmount = $state('');
-  let targetDate = $state('');
-  let payCycleId = $state('');
-  let loadedTarget = $state<CategoryTarget | null>(null);
-  let cycles = $state<PayCycle[]>([]);
   let archivedAt = $state<string | null>(null);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
@@ -43,22 +35,17 @@
 
   onMount(async () => {
     try {
-      const cycleData = await api<{ payCycles: PayCycle[] }>(`/api/pay-cycles?today=${todayISO()}`);
-      cycles = cycleData.payCycles.filter((cycle) => cycle.archivedAt === null);
       if (!id) return;
-      const data = await api<{ category: Category }>(`/api/categories/${id}?today=${todayISO()}`);
+      const data = await api<{ category: Category }>(`/api/buckets/${id}?today=${todayISO()}`);
       name = data.category.name;
       group = data.category.group;
       role = data.category.role;
       archivedAt = data.category.archivedAt;
-      loadedTarget = data.category.target;
-      if (data.category.target) {
-        targetKind = data.category.target.kind;
+      if (data.category.target?.kind === 'balance') {
+        targetKind = 'balance';
         targetAmount = data.category.target.amountMinor === null
           ? ''
           : minorToInput(data.category.target.amountMinor, exponentOf(session.user?.baseCurrency ?? 'USD'));
-        targetDate = data.category.target.targetDate ?? '';
-        payCycleId = data.category.target.payCycleId === null ? '' : String(data.category.target.payCycleId);
       }
     } catch (err) {
       message = explain(err).message;
@@ -68,37 +55,23 @@
   function targetBody(): Record<string, unknown> | null {
     if (targetKind === 'none') return null;
     const amountMinor = parseMajor(targetAmount, exponentOf(session.user?.baseCurrency ?? 'USD'));
-    if (targetKind === 'balance') return { kind: 'balance', amountMinor };
-    return {
-      kind: 'needed',
-      amountMinor,
-      targetDate,
-      payCycleId: payCycleId === '' ? null : Number(payCycleId),
-    };
+    return { kind: 'balance', amountMinor };
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     fields = {};
     message = '';
-    if (targetKind === 'needed') {
-      const date = readDateInput('targetDate');
-      if (!date) {
-        fields = { targetDate: DATE_INPUT_ERROR };
-        return;
-      }
-      targetDate = date;
-    }
     saving = true;
     try {
-      const path = id ? `/api/categories/${id}` : '/api/categories';
+      const path = id ? `/api/buckets/${id}` : '/api/buckets';
       const method = id ? 'PATCH' : 'POST';
       const target = locked ? (targetAmount.trim() === '' ? null : { kind: 'balance', amountMinor: parseMajor(targetAmount, exponentOf(session.user?.baseCurrency ?? 'USD')) }) : targetBody();
       const body = locked
         ? { today: todayISO(), target }
         : { name, group, today: todayISO(), target };
       await api(path, { method, body });
-      go('/categories');
+      go('/budget');
     } catch (err) {
       const problem = explain(err);
       message = problem.message;
@@ -121,9 +94,9 @@
     saving = true;
     message = '';
     try {
-      await api(`/api/categories/${id}/archive`, { method: 'POST', body: {} });
+      await api(`/api/buckets/${id}/archive`, { method: 'POST', body: {} });
       dialog?.close();
-      go('/categories');
+      go('/budget');
     } catch (err) {
       dialog?.close();
       message = explain(err).message;
@@ -137,8 +110,8 @@
     saving = true;
     message = '';
     try {
-      await api(`/api/categories/${id}/unarchive`, { method: 'POST', body: {} });
-      go('/categories');
+      await api(`/api/buckets/${id}/unarchive`, { method: 'POST', body: {} });
+      go('/budget');
     } catch (err) {
       message = explain(err).message;
     } finally {
@@ -199,7 +172,7 @@
     {#if fields.target}<em>{fields.target}</em>{/if}
   </div>
   {/if}
-  {#if !locked && (targetKind === 'needed' || targetKind === 'balance')}
+  {#if !locked && targetKind === 'balance'}
     <label class="field">
       <span>Amount</span>
       <span class="money-input">
@@ -209,29 +182,9 @@
       {#if fields.targetAmount}<em>{fields.targetAmount}</em>{/if}
     </label>
   {/if}
-  {#if !locked && targetKind === 'needed'}
-    <label class="field">
-      <span>Date</span>
-      <DateField name="targetDate" bind:value={targetDate} />
-      {#if fields.targetDate}<em>{fields.targetDate}</em>{/if}
-    </label>
-    <label class="field">
-      <span>Pay cycle</span>
-      <select name="payCycleId" bind:value={payCycleId}>
-        <option value="">Choose a pay cycle</option>
-        {#each cycles as cycle (cycle.id)}
-          <option value={String(cycle.id)}>{cycle.payor}</option>
-        {/each}
-      </select>
-      {#if fields.payCycleId}<em>{fields.payCycleId}</em>{/if}
-    </label>
-  {/if}
-  {#if loadedTarget && targetKind === loadedTarget.kind}
-    <p class="muted m-0">{targetHint(loadedTarget, session.user?.baseCurrency ?? 'USD')}</p>
-  {/if}
   <div class="flex flex-wrap gap-2">
     <button class="btn primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save bucket'}</button>
-    <a class="btn" href="/categories" onclick={(event) => { event.preventDefault(); go('/categories'); }}>Cancel</a>
+    <a class="btn" href="/budget" onclick={(event) => { event.preventDefault(); go('/budget'); }}>Cancel</a>
     {#if id && !archivedAt && !locked}
       <button class="btn danger" type="button" title="Hide this bucket. Refused while it holds an amount." disabled={saving} onclick={askArchive}>Archive</button>
     {/if}

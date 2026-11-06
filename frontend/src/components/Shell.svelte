@@ -41,7 +41,7 @@
     [
       { href: '/pay-cycles', label: 'Income', mark: 'cash' },
       { href: '/bills', label: 'Bills', mark: 'debt' },
-      { href: '/envelopes', label: 'Envelopes', mark: 'envelope' },
+      { href: '/budget', label: 'Budget', mark: 'envelope' },
     ],
     [
       { href: '/accounts', label: 'Accounts', mark: 'vault' },
@@ -55,9 +55,12 @@
     if (href === '/') {
       return route.path === '/';
     }
-    if (href === '/envelopes') {
-      return route.path === '/envelopes'
+    if (href === '/budget') {
+      return route.path === '/budget'
+        || route.path === '/envelopes'
         || route.path.startsWith('/envelopes/')
+        || route.path === '/buckets'
+        || route.path.startsWith('/buckets/')
         || route.path === '/categories'
         || route.path.startsWith('/categories/');
     }

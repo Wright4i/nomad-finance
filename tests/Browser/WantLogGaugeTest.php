@@ -201,8 +201,8 @@ final class WantLogGaugeTest extends TestCase
                 return bills > 0 ? bills : 0;
             };
             Promise.all([
-                fetch('/api/envelopes?today=' + today, { headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((response) => response.json()),
-                fetch('/api/categories', { headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((response) => response.json()),
+                fetch('/api/budget?today=' + today, { headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((response) => response.json()),
+                fetch('/api/buckets', { headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((response) => response.json()),
             ]).then(([sheet, listed]) => {
                 const read = (type) => {
                     const cat = listed.categories.find((item) => item.locked && item.billType === type);
@@ -234,9 +234,9 @@ final class WantLogGaugeTest extends TestCase
             const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             fetch('/api/session', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
                 .then((response) => response.json())
-                .then((session) => fetch('/api/envelopes?today=' + today, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+                .then((session) => fetch('/api/budget?today=' + today, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
                     .then((response) => response.json())
-                    .then((sheet) => fetch('/api/envelopes', {
+                    .then((sheet) => fetch('/api/budget', {
                         method: 'PUT',
                         credentials: 'same-origin',
                         headers: {

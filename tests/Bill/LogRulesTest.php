@@ -162,6 +162,71 @@ final class LogRulesTest extends TestCase
         self::assertSame('paused', $this->bills->unarchiveBill($archived['id'], ['today' => '2026-11-05'])['status']);
     }
 
+    public function testANeedLogOmitsFuelAndASavingLogFilesOnItsBucket(): void
+    {
+        $before = $this->balance();
+        try {
+            $this->bills->log([
+                'kind' => 'need',
+                'type' => 'fuel',
+                'name' => 'Fill 1',
+                'accountId' => $this->checkingId,
+                'amountMinor' => 1000,
+                'date' => '2026-11-05',
+                'today' => '2026-11-05',
+            ]);
+            self::fail('A need log accepted Fuel.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertSame('Choose a needs type.', $e->fields['type']);
+        }
+        try {
+            $this->bills->log([
+                'kind' => 'saving',
+                'type' => 'restaurants',
+                'name' => 'Dinner 2',
+                'accountId' => $this->checkingId,
+                'amountMinor' => 1000,
+                'date' => '2026-11-05',
+                'today' => '2026-11-05',
+            ]);
+            self::fail('A saving log accepted a wants type.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertSame('Choose a savings type.', $e->fields['type']);
+        }
+
+        $groceries = $this->bills->log([
+            'kind' => 'need',
+            'type' => 'groceries',
+            'name' => 'Market 1',
+            'accountId' => $this->checkingId,
+            'amountMinor' => 1800,
+            'date' => '2026-11-05',
+            'today' => '2026-11-05',
+        ]);
+        self::assertSame('active', $groceries['status']);
+        self::assertNull($groceries['lastPaidOn']);
+        self::assertSame('groceries', $groceries['type']);
+        self::assertSame('Groceries', $groceries['categoryName']);
+        self::assertSame($before, $this->balance());
+
+        $debt = $this->bills->log([
+            'kind' => 'saving',
+            'type' => 'debt',
+            'name' => 'Payment 1',
+            'accountId' => $this->checkingId,
+            'amountMinor' => 900,
+            'date' => '2026-11-05',
+            'today' => '2026-11-05',
+        ]);
+        self::assertSame('active', $debt['status']);
+        self::assertNull($debt['lastPaidOn']);
+        self::assertSame('debt', $debt['type']);
+        self::assertSame('Debt', $debt['categoryName']);
+        self::assertSame($before, $this->balance());
+    }
+
     public function testALiabilityBillHidesWhenAutopayIsOffAndStaysLocked(): void
     {
         $card = $this->accounts->create([

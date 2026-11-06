@@ -2,7 +2,7 @@
 
 Status: now
 
-A target sits on a bucket. It compares itself to the bucket amount, which is the sum of open assignments. It cannot see a purchase. That waits for postings. A bucket can have one target, or none. The choice is on the bucket form. The bucket list, the envelope rows, and the dashboard repeat what to set aside.
+A target sits on a bucket. It compares itself to the bucket amount, which is the sum of open assignments. It cannot see a purchase. That waits for postings. A bucket can have one target, or none. The bucket form offers none or a target balance. Tiles do not show a date or a still-to-hold line.
 
 | Kind | Rule |
 | --- | --- |
@@ -15,6 +15,6 @@ A needed-by-date target is met when the bucket amount has reached the target and
 
 See [one pay cycle per dated target](../adr/0015-target-uses-one-pay-cycle.md).
 
-Demo seed: Needed By Date 1 and Target Balance 1, each in Savings. Needed By Date 1 is 1,200.00 on Monthly Payor for 2027-02-01. Target Balance 1 is 500.00.
+Demo seed: Tires and Repair reserve, each in Savings. Tires is 1,200.00 on Remote salary for 2027-02-01. Repair reserve is 500.00.
 
-Requires buckets, pay cycles, and envelopes.
+Requires buckets, pay cycles, and Budget.

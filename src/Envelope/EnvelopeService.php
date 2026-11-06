@@ -57,18 +57,35 @@ final class EnvelopeService
             }
             $periodId = $this->storePeriod($cycle, $next['start'], $next['end']);
             $period = ['id' => $periodId];
+            $spanStart = $next['start'];
         } else {
             $open = $this->openSpan($cycle, $today);
             $period = $this->periodRow((int) $cycle['id'], $open['start']);
             if ($period === null) {
                 throw new ApiException(404, 'Pay period not found.');
             }
+            $spanStart = (string) $period['period_start'];
         }
 
         $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
         $maximums = array_key_exists('maximums', $input)
             ? $this->maximums(is_array($input['maximums']) ? $input['maximums'] : null)
             : null;
+        $lockedIds = $this->lockedIds();
+        $floors = $this->monthBillSums($spanStart, !$upcoming, $today);
+        $tooLow = [];
+        foreach ($amounts as $categoryId => $typed) {
+            if (!isset($lockedIds[$categoryId])) {
+                continue;
+            }
+            $floor = $floors[$categoryId] ?? 0;
+            if ($typed < $floor) {
+                $tooLow['amount-' . $categoryId] = 'Assigned cannot be lower than the bills.';
+            }
+        }
+        if ($tooLow !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $tooLow);
+        }
         $this->pdo->beginTransaction();
         try {
             $kept = $this->pdo->prepare('SELECT category_id, amount_minor, filled_minor FROM assignments WHERE pay_period_id = ?');
@@ -82,14 +99,6 @@ final class EnvelopeService
                     ];
                 }
             }
-            $lockedIds = [];
-            $locked = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'locked'");
-            $locked->execute([$this->actor->id()]);
-            while ($row = $locked->fetch()) {
-                if (is_array($row)) {
-                    $lockedIds[(int) $row['id']] = true;
-                }
-            }
             $this->pdo->prepare('DELETE FROM assignments WHERE pay_period_id = ?')->execute([(int) $period['id']]);
             $insert = $this->pdo->prepare(
                 'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
@@ -97,9 +106,13 @@ final class EnvelopeService
             $ids = array_unique([...array_keys($amounts), ...array_keys($prior)]);
             foreach ($ids as $categoryId) {
                 $keptRow = $prior[$categoryId] ?? ['amount' => 0, 'filled' => 0];
-                $amount = isset($lockedIds[$categoryId])
-                    ? max(0, $keptRow['amount'])
-                    : ($amounts[$categoryId] ?? 0);
+                if (array_key_exists($categoryId, $amounts)) {
+                    $amount = $amounts[$categoryId];
+                } elseif (isset($lockedIds[$categoryId])) {
+                    $amount = max(0, $keptRow['amount']);
+                } else {
+                    $amount = 0;
+                }
                 $portion = $keptRow['filled'];
                 if ($amount === 0 && $portion === 0) {
                     continue;
@@ -309,26 +322,8 @@ final class EnvelopeService
             'INSERT INTO pay_periods (user_id, pay_cycle_id, period_start, period_end, created_at)
              VALUES (?, ?, ?, ?, ?)'
         )->execute([$this->actor->id(), $cycle['id'], $start, $end, $now]);
-        $id = (int) $this->pdo->lastInsertId();
 
-        $previous = $this->pdo->prepare(
-            'SELECT id FROM pay_periods
-             WHERE pay_cycle_id = ? AND period_start < ?
-             ORDER BY period_start DESC LIMIT 1'
-        );
-        $previous->execute([$cycle['id'], $start]);
-        $previousId = $previous->fetchColumn();
-        if ($previousId !== false) {
-            $this->pdo->prepare(
-                'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
-                 SELECT ?, a.category_id, a.amount_minor, a.filled_minor
-                 FROM assignments a
-                 WHERE a.pay_period_id = ?
-                   AND a.amount_minor > 0'
-            )->execute([$id, $previousId]);
-        }
-
-        return $id;
+        return (int) $this->pdo->lastInsertId();
     }
 
     private function syncAmounts(string $today): void
@@ -387,7 +382,6 @@ final class EnvelopeService
     private function present(string $today, ?int $payCycleId, ?int $periodId, bool $upcoming, bool $observe): array
     {
         $base = $this->actor->baseCurrency();
-        $pool = $this->pool();
         $cycles = array_values(array_filter(
             $this->cycles(),
             static fn (array $cycle): bool => $cycle['archived_at'] === null,
@@ -395,7 +389,8 @@ final class EnvelopeService
         $selected = $this->selectCycle($cycles, $payCycleId, $today);
         $assigned = $this->assignedOpen($today, $selected);
         $sources = $this->sources($today);
-        $available = $this->sourceTotal($sources);
+        $poolMinor = $this->sourceTotal($sources);
+        $available = $poolMinor - $assigned;
 
         $period = null;
         $categories = [];
@@ -422,7 +417,7 @@ final class EnvelopeService
                     'upcoming' => true,
                 ];
                 $categories = $plan === null
-                    ? $this->previewCategories($openRow === null ? null : (int) $openRow['id'])
+                    ? $this->previewCategories(null)
                     : $this->categories((int) $plan['id']);
                 $previousPeriod = $openRow === null ? null : $this->cursor($openRow, false);
             } else {
@@ -473,6 +468,8 @@ final class EnvelopeService
                     }
                 }
             }
+        } else {
+            $categories = $this->previewCategories(null);
         }
 
         $categories = $this->withMonthGoals(
@@ -511,20 +508,21 @@ final class EnvelopeService
             'closed' => $closed,
             'availableMinor' => $available,
             'assignedMinor' => $assigned,
-            'poolMinor' => $pool['minor'],
-            'leftOut' => $pool['leftOut'],
+            'poolMinor' => $poolMinor,
+            'leftOut' => [],
             'categories' => $shown,
             'billLeftOut' => $this->billLeftOut(is_array($period) ? $period : null, $today),
             'incomeMinor' => $incomeMinor,
             'sources' => $sources,
-            'groups' => $this->headings($this->groups($categories), $shown, $available),
+            'groups' => $this->headings($this->groups($categories), $shown, $poolMinor),
             'celebrate' => $celebrate,
         ];
     }
 
     /**
-     * Available to assign is every payor's income in the open month
-     * plus checking, savings, and cash. Those lines are the total.
+     * The amount under the headline is income still coming in this month
+     * plus every asset account except savings. A payday before today is left out.
+     * Those lines are that total. The headline is the total minus what is already assigned.
      *
      * @return array{income: list<array{id:int,payor:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,amountMinor:int}>}
      */
@@ -533,9 +531,12 @@ final class EnvelopeService
         $month = substr($today, 0, 7);
         $income = [];
         foreach ($this->payCycles->monthPay($month, $today) as $row) {
+            if ((string) $row['on'] < $today) {
+                continue;
+            }
             $id = (int) $row['id'];
             $amount = (int) $row['paycheckMinor'];
-            if ($amount < 1) {
+            if ($amount === 0) {
                 continue;
             }
             if (!isset($income[$id])) {
@@ -552,8 +553,7 @@ final class EnvelopeService
         $stmt = $this->pdo->prepare(
             'SELECT id, name, type, balance_minor FROM accounts
              WHERE user_id = ? AND archived_at IS NULL
-               AND type IN (\'checking\', \'savings\', \'cash\')
-               AND balance_minor > 0
+               AND side = \'asset\' AND type != \'savings\'
              ORDER BY name COLLATE NOCASE, id'
         );
         $stmt->execute([$this->actor->id()]);
@@ -592,7 +592,7 @@ final class EnvelopeService
 
     /**
      * Goal amounts for the calendar month, each stored assignment once.
-     * A preview that is not stored yet is the anchor's carry, added once.
+     * A month that has no rows yet stays empty. Recurring bills fill on their own.
      *
      * @param list<array<string, mixed>> $categories
      * @param ?array<string, mixed> $period
@@ -605,16 +605,11 @@ final class EnvelopeService
         }
         $month = $this->calendarMonth((string) $period['start']);
         $stored = $this->goalSums($month['start'], $month['end']);
-        $anchorStored = $this->anchorHasPeriod($anchorCycleId, $month['start'], $month['end']);
         foreach ($categories as $index => $category) {
             if (($category['role'] ?? '') === 'locked') {
                 continue;
             }
-            $sum = $stored[(int) $category['id']] ?? 0;
-            if (!$anchorStored) {
-                $sum += max(0, (int) ($category['amountMinor'] ?? 0));
-            }
-            $categories[$index]['amountMinor'] = $sum;
+            $categories[$index]['amountMinor'] = $stored[(int) $category['id']] ?? 0;
         }
 
         return $categories;
@@ -641,18 +636,6 @@ final class EnvelopeService
         }
 
         return $sums;
-    }
-
-    private function anchorHasPeriod(int $cycleId, string $start, string $end): bool
-    {
-        $stmt = $this->pdo->prepare(
-            'SELECT 1 FROM pay_periods
-             WHERE pay_cycle_id = ? AND user_id = ? AND period_start >= ? AND period_start <= ?
-             LIMIT 1'
-        );
-        $stmt->execute([$cycleId, $this->actor->id(), $start, $end]);
-
-        return $stmt->fetchColumn() !== false;
     }
 
     /**
@@ -745,29 +728,6 @@ final class EnvelopeService
         return $best ?? $cycles[0];
     }
 
-    /** @return array{minor:int,leftOut:list<empty>} */
-    private function pool(): array
-    {
-        $stmt = $this->pdo->prepare(
-            'SELECT balance_minor FROM accounts
-             WHERE user_id = ? AND archived_at IS NULL AND type IN (\'checking\', \'savings\', \'cash\')'
-        );
-        $stmt->execute([$this->actor->id()]);
-        $rows = $stmt->fetchAll();
-        $minor = 0;
-        if (!is_array($rows)) {
-            return ['minor' => 0, 'leftOut' => []];
-        }
-        foreach ($rows as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $minor += (int) $row['balance_minor'];
-        }
-
-        return ['minor' => $minor, 'leftOut' => []];
-    }
-
     private function periodTotal(int $cycleId, string $start): int
     {
         $stmt = $this->pdo->prepare(
@@ -808,6 +768,7 @@ final class EnvelopeService
         }
         if ($billCycle !== null) {
             $total += $this->lockedBills($billCycle, $today);
+            $total += $this->lockedExtra($billCycle, $today);
         }
 
         return $total;
@@ -841,6 +802,75 @@ final class EnvelopeService
         }
 
         return $total;
+    }
+
+    /** @return array<int, true> */
+    private function lockedIds(): array
+    {
+        $ids = [];
+        $locked = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'locked'");
+        $locked->execute([$this->actor->id()]);
+        while ($row = $locked->fetch()) {
+            if (is_array($row)) {
+                $ids[(int) $row['id']] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Bills due in the calendar month, per bucket.
+     *
+     * @return array<int, int>
+     */
+    private function monthBillSums(string $day, bool $overdue, string $today): array
+    {
+        $month = $this->calendarMonth($day);
+        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            $month['start'],
+            $month['end'],
+            $overdue,
+        );
+        $sums = [];
+        foreach ($picture['bills'] as $categoryId => $bills) {
+            $total = 0;
+            foreach ($bills as $bill) {
+                $total += (int) $bill['amountMinor'];
+            }
+            $sums[(int) $categoryId] = $total;
+        }
+
+        return $sums;
+    }
+
+    /** @param array<string, mixed> $cycle */
+    private function lockedExtra(array $cycle, string $today): int
+    {
+        $open = $this->openSpan($cycle, $today);
+        $period = $this->periodRow((int) $cycle['id'], $open['start']);
+        if ($period === null) {
+            return 0;
+        }
+        $floors = $this->monthBillSums($open['start'], true, $today);
+        $stmt = $this->pdo->prepare(
+            'SELECT a.category_id, a.amount_minor
+             FROM assignments a
+             JOIN categories c ON c.id = a.category_id
+             WHERE a.pay_period_id = ? AND c.role = \'locked\''
+        );
+        $stmt->execute([(int) $period['id']]);
+        $extra = 0;
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $floor = $floors[(int) $row['category_id']] ?? 0;
+            $extra += max(0, (int) $row['amount_minor'] - $floor);
+        }
+
+        return $extra;
     }
 
     /** @return list<array<string, mixed>> */
@@ -925,14 +955,14 @@ final class EnvelopeService
     /**
      * Assigned and Max are the sums for the buckets in that group for this month.
      * Max is the saved target when one is set. A locked bucket with no saved target uses its unpaid bills.
-     * Target is that group's share of available to assign: Needs 50%, Wants 30%, Savings 20%. Half up to the cent.
+     * Target is that group's share of income still coming in plus non-savings assets: Needs 50%, Wants 30%, Savings 20%. Half up to the cent.
      * The gauges keep their own share of goal assignments.
      *
      * @param list<array<string, mixed>> $groups
      * @param list<array<string, mixed>> $categories
      * @return list<array<string, mixed>>
      */
-    private function headings(array $groups, array $categories, int $availableMinor): array
+    private function headings(array $groups, array $categories, int $poolMinor): array
     {
         $assigned = ['needs' => 0, 'wants' => 0, 'savings' => 0];
         $maximum = ['needs' => 0, 'wants' => 0, 'savings' => 0];
@@ -952,8 +982,8 @@ final class EnvelopeService
             $percent = (int) ($group['targetPercent'] ?? 0);
             $groups[$index]['assignedMinor'] = $assigned[$name] ?? 0;
             $groups[$index]['maximumMinor'] = $maximum[$name] ?? 0;
-            $groups[$index]['targetMinor'] = $availableMinor > 0 && $percent > 0
-                ? intdiv($availableMinor * $percent + 50, 100)
+            $groups[$index]['targetMinor'] = $poolMinor > 0 && $percent > 0
+                ? intdiv($poolMinor * $percent + 50, 100)
                 : 0;
         }
 
@@ -1298,8 +1328,9 @@ final class EnvelopeService
             }
             $categories[$index]['billMinor'] = $bills;
             if (($category['role'] ?? '') === 'locked') {
-                $categories[$index]['amountMinor'] = $bills;
-                $categories[$index]['remainingMinor'] = $bills;
+                $shown = max((int) ($category['amountMinor'] ?? 0), $bills);
+                $categories[$index]['amountMinor'] = $shown;
+                $categories[$index]['remainingMinor'] = $shown;
             }
         }
 

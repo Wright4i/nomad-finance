@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Trip;
 
 use App\Auth\Actor;
+use App\Category\SystemBuckets;
+use App\Envelope\BillFill;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\Posting\Stretch;
@@ -101,8 +103,10 @@ final class TripService
             $now,
             $now,
         ]);
+        $id = (int) $this->pdo->lastInsertId();
+        $this->syncDueBill($id, $data, $today);
 
-        return $this->get((int) $this->pdo->lastInsertId(), $today);
+        return $this->get($id, $today);
     }
 
     public function rememberLocality(int $id, string $city, ?string $region, ?string $address, string $today): array
@@ -149,6 +153,7 @@ final class TripService
                 $id,
                 $this->actor->id(),
             ]);
+        $this->syncDueBill($id, $data, $today);
 
         return $this->get($id, $today);
     }
@@ -159,7 +164,9 @@ final class TripService
         if (!$confirm) {
             throw new ApiException(409, 'Confirm before deleting this stay.');
         }
+        $this->pdo->prepare('DELETE FROM bills WHERE trip_id = ?')->execute([$id]);
         $this->pdo->prepare('DELETE FROM trips WHERE id = ? AND user_id = ?')->execute([$id, $this->actor->id()]);
+        $this->refill(gmdate('Y-m-d'));
     }
 
     public static function status(string $arrive, string $depart, string $today): string
@@ -172,6 +179,60 @@ final class TripService
         }
 
         return 'underway';
+    }
+
+    /**
+     * One lodging bill for a stay that still has an amount due and a balance-due date.
+     * The same row is updated. Clearing either field removes it. The account balance stays put.
+     *
+     * @param array<string, mixed> $data
+     */
+    private function syncDueBill(int $tripId, array $data, string $today): void
+    {
+        $amount = (int) $data['amountDueMinor'];
+        $dueOn = is_string($data['balanceDueOn']) ? $data['balanceDueOn'] : '';
+        $accountId = $data['accountId'];
+        $accountId = is_int($accountId) ? $accountId : null;
+        $stmt = $this->pdo->prepare('SELECT id FROM bills WHERE trip_id = ?');
+        $stmt->execute([$tripId]);
+        $found = $stmt->fetchColumn();
+        $billId = $found === false ? null : (int) $found;
+        if ($amount < 1 || $dueOn === '' || $accountId === null) {
+            if ($billId !== null) {
+                $this->pdo->prepare('DELETE FROM bills WHERE id = ? AND trip_id = ?')->execute([$billId, $tripId]);
+                $this->refill($today);
+            }
+
+            return;
+        }
+        $currencyStmt = $this->pdo->prepare('SELECT currency FROM accounts WHERE id = ? AND user_id = ?');
+        $currencyStmt->execute([$accountId, $this->actor->id()]);
+        $currency = $currencyStmt->fetchColumn();
+        $currency = is_string($currency) && $currency !== '' ? $currency : 'USD';
+        $categoryId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'lodging');
+        $now = gmdate('c');
+        $name = (string) $data['placeName'];
+        if ($billId === null) {
+            $this->pdo->prepare(
+                'INSERT INTO bills (
+                    name, type, account_id, category_id, amount_minor, currency,
+                    recurrence, anchor_date, next_due_date, autopay, status, created_at, updated_at, trip_id
+                 ) VALUES (?, \'lodging\', ?, ?, ?, ?, \'once\', ?, ?, 0, \'active\', ?, ?, ?)'
+            )->execute([$name, $accountId, $categoryId, $amount, $currency, $dueOn, $dueOn, $now, $now, $tripId]);
+        } else {
+            $this->pdo->prepare(
+                'UPDATE bills SET
+                    name = ?, account_id = ?, category_id = ?, amount_minor = ?, currency = ?,
+                    anchor_date = ?, next_due_date = ?, updated_at = ?
+                 WHERE id = ? AND trip_id = ?'
+            )->execute([$name, $accountId, $categoryId, $amount, $currency, $dueOn, $dueOn, $now, $billId, $tripId]);
+        }
+        $this->refill($today);
+    }
+
+    private function refill(string $today): void
+    {
+        (new BillFill($this->pdo, $this->currencies, $this->actor))->apply($today);
     }
 
     /** @param array<string, mixed> $input
@@ -208,10 +269,14 @@ final class TripService
             }
         }
         $balanceDue = $arrive;
-        if (array_key_exists('balanceDueOn', $input) && $input['balanceDueOn'] !== null && $input['balanceDueOn'] !== '') {
-            $balanceDue = $this->day(is_string($input['balanceDueOn']) ? $input['balanceDueOn'] : '');
-            if ($balanceDue === null) {
-                $errors['balanceDueOn'] = 'Use a YYYY-MM-DD date.';
+        if (array_key_exists('balanceDueOn', $input)) {
+            if ($input['balanceDueOn'] === null || $input['balanceDueOn'] === '') {
+                $balanceDue = null;
+            } else {
+                $balanceDue = $this->day(is_string($input['balanceDueOn']) ? $input['balanceDueOn'] : '');
+                if ($balanceDue === null) {
+                    $errors['balanceDueOn'] = 'Use a YYYY-MM-DD date.';
+                }
             }
         }
         $latitude = $this->coordinate($input['latitude'] ?? null, -90, 90);

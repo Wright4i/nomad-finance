@@ -65,7 +65,7 @@ final class TargetService
         $owned = $this->pdo->prepare('SELECT id FROM categories WHERE id = ? AND user_id = ?');
         $owned->execute([$categoryId, $this->actor->id()]);
         if ($owned->fetch() === false) {
-            throw new ApiException(404, 'Category not found.');
+            throw new ApiException(404, 'Bucket not found.');
         }
         if ($input === null) {
             $this->pdo->prepare('DELETE FROM targets WHERE category_id = ? AND user_id = ?')

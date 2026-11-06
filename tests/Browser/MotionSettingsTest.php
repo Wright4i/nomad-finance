@@ -120,7 +120,7 @@ final class MotionSettingsTest extends TestCase
         self::assertSame('none', $figure['animation']);
         self::assertSame([], $figure['motion']);
 
-        self::clickLink('Envelopes');
+        self::clickLink('Budget');
         self::waitForText('Needs');
         $cascade = self::wait()->until(function (): array|false {
             $motion = self::driver()->executeScript(<<<'JS'

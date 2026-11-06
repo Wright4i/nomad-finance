@@ -10,7 +10,6 @@
   import AccountForm from './pages/AccountForm.svelte';
   import Bills from './pages/Bills.svelte';
   import BillForm from './pages/BillForm.svelte';
-  import Categories from './pages/Categories.svelte';
   import CategoryForm from './pages/CategoryForm.svelte';
   import PayCycles from './pages/PayCycles.svelte';
   import PayCycle from './pages/PayCycle.svelte';
@@ -29,6 +28,17 @@
     if (path === '/credit' || path === '/plans' || path.startsWith('/plans/') || path === '/settings' || path === '/settings/rates') {
       history.replaceState({}, '', '/');
       route.path = '/';
+      return;
+    }
+    if (path === '/categories' || path === '/envelopes' || path === '/buckets') {
+      history.replaceState({}, '', '/budget');
+      route.path = '/budget';
+      return;
+    }
+    if (path.startsWith('/categories/')) {
+      const next = '/buckets' + path.slice('/categories'.length);
+      history.replaceState({}, '', next);
+      route.path = next;
       return;
     }
     if (path === '/settings/vehicles' || path.startsWith('/settings/vehicles/')) {
@@ -63,8 +73,6 @@
         <Bills />
       {:else if view.name === 'bill-form'}
         <BillForm id={view.id} />
-      {:else if view.name === 'categories'}
-        <Categories />
       {:else if view.name === 'category-form'}
         <CategoryForm id={view.id} />
       {:else if view.name === 'pay-cycles'}

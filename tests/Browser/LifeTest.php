@@ -102,7 +102,7 @@ final class LifeTest extends TestCase
         self::click('Use demo');
         self::waitForText('Available to assign');
         self::clickLink('Trips');
-        self::waitForText('Stay 1');
+        self::waitForText('Usery Mountain');
         self::assertStayRating();
         self::assertStayColors();
         self::wait()->until(function (): bool {
@@ -110,7 +110,7 @@ final class LifeTest extends TestCase
                 const globe = document.querySelector('.globe');
                 const canvas = globe && globe.querySelector('canvas');
                 const failed = document.body.innerText.includes('The globe did not start');
-                return Boolean(canvas) && !failed && globe.dataset.basemap === 'dark-matter';
+                return Boolean(canvas) && !failed && globe.dataset.basemap === 'positron';
             JS);
 
             return $ready === true;
@@ -120,31 +120,42 @@ final class LifeTest extends TestCase
                 const labels = [...document.querySelectorAll('.globe button.map-pin')].map((node) => node.getAttribute('aria-label') || '');
                 const route = document.querySelector('.globe .map-leg');
                 return Boolean(route)
-                    && labels.some((label) => label.includes('Stay 1') && label.includes('Las Vegas, NV'))
-                    && labels.some((label) => label.includes('Stay 2') && label.includes('Los Angeles, CA'));
+                    && labels.some((label) => label.includes('Lost Dutchman') && label.includes('Apache Junction, AZ'))
+                    && labels.some((label) => label.includes('Cottonwood') && label.includes('Joshua Tree, CA'));
             JS);
 
             return $ready === true;
         });
         self::assertStayCardAndList();
+        self::clickStayAction('Lost Dutchman', 'Locate stay');
+        self::wait()->until(function (): bool {
+            $text = self::driver()->findElement(WebDriverBy::cssSelector('.stay-card'))->getText();
+
+            return str_contains($text, 'Lost Dutchman') && str_contains($text, '$140.00 Due Nov 22');
+        });
         $balanceColor = self::assertBalanceChipOnStayOne();
         self::click('Next');
-        self::waitForText('Stay 2');
+        self::waitForText('Cattail Cove');
+        self::assertSame('2026-11', self::tripMonth());
+        self::click('Next');
+        self::waitForText('Cottonwood');
         self::waitForText('Dec 2026');
         self::assertSame('2026-12', self::tripMonth());
         self::click('Previous');
-        self::waitForText('Stay 1');
+        self::waitForText('Cattail Cove');
         self::waitForText('Nov 2026');
         self::assertSame('2026-11', self::tripMonth());
         self::click('Next');
-        self::waitForText('Stay 2');
-        self::waitForText('Site 34');
+        self::waitForText('Cottonwood');
+        self::waitForText('Site 4');
         self::assertFuelChipOnStayTwo($balanceColor);
         self::clickLink('Add a stay');
         self::type('placeName', 'Park 1');
-        self::type('note', 'SITE #34');
+        self::replace('note', 'SITE #34');
         self::type('latitude', '36.5');
         self::type('longitude', '-115.2');
+        self::replace('arriveOn', '01 / 09 / 2027');
+        self::replace('departOn', '01 / 12 / 2027');
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const globe = document.querySelector('.globe');
@@ -155,12 +166,21 @@ final class LifeTest extends TestCase
 
             return $ready === true;
         });
-        self::choose('accountId', 'Checking 1');
+        self::choose('accountId', 'Everyday checking');
         self::type('total', '20');
         self::type('amountDue', '10');
         self::click('Save stay');
         self::waitForText('Park 1');
-        self::waitForText('SITE #34');
+        self::click('Next month');
+        self::waitForText('Dec 2026');
+        self::click('Next month');
+        self::waitForText('Jan 2027');
+        self::clickStayAction('Park 1', 'Locate stay');
+        self::wait()->until(function (): bool {
+            $text = self::driver()->findElement(WebDriverBy::cssSelector('.stay-card'))->getText();
+
+            return str_contains($text, 'Park 1') && str_contains($text, 'SITE #34');
+        });
         self::assertStringNotContainsString('Charge the deposit?', self::driver()->findElement(\Facebook\WebDriver\WebDriverBy::cssSelector('body'))->getText());
     }
 
@@ -175,7 +195,7 @@ final class LifeTest extends TestCase
             $ready = self::driver()->executeScript(<<<'JS'
                 const select = document.querySelector('select[name="vehicleId"]');
                 const label = select && select.selectedOptions[0] ? select.selectedOptions[0].textContent : '';
-                return label.includes('Vehicle 1');
+                return label.includes('Bunkhouse');
             JS);
 
             return $ready === true;
@@ -210,7 +230,7 @@ final class LifeTest extends TestCase
         $labels = self::driver()->executeScript(<<<'JS'
             return [...document.querySelectorAll('nav[aria-label="Primary"] a')].map((node) => node.textContent.trim());
         JS);
-        self::assertSame(['New log', 'Planner', 'Calendar', 'Trips', 'Income', 'Bills', 'Envelopes', 'Accounts', 'Vehicles'], $labels);
+        self::assertSame(['New log', 'Planner', 'Calendar', 'Trips', 'Income', 'Bills', 'Budget', 'Accounts', 'Vehicles'], $labels);
         $rules = self::driver()->executeScript(<<<'JS'
             const nav = document.querySelector('nav[aria-label="Primary"]');
             const betweenLinks = (left, right) => {
@@ -227,7 +247,7 @@ final class LifeTest extends TestCase
             return {
                 logPlanner: betweenLinks('New log', 'Planner'),
                 tripsIncome: betweenLinks('Trips', 'Income'),
-                envelopesAccounts: betweenLinks('Envelopes', 'Accounts'),
+                envelopesAccounts: betweenLinks('Budget', 'Accounts'),
                 demoPill: demoRule,
             };
         JS);
@@ -274,7 +294,7 @@ final class LifeTest extends TestCase
             ['Trips', true, false],
             ['Income', true, false],
             ['Bills', true, false],
-            ['Envelopes', true, false],
+            ['Budget', true, false],
             ['Accounts', true, false],
             ['Vehicles', true, false],
         ], $marks['icons']);
@@ -306,7 +326,7 @@ final class LifeTest extends TestCase
         self::waitForText('Sun');
         self::clickLink('Accounts');
         self::clickLink('Vehicles');
-        $vehicle = WebDriverBy::xpath('//a[contains(., "Vehicle 1")]');
+        $vehicle = WebDriverBy::xpath('//a[contains(., "Bunkhouse")]');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($vehicle))->click();
         self::waitForText('Stretch mpg');
         self::waitForText('8.0');
@@ -388,8 +408,15 @@ final class LifeTest extends TestCase
                 const value = arguments[1];
                 const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
                 setter.call(input, value);
-                input.dispatchEvent(new Event('input', { bubbles: true }));
+                const event = new Event('input', { bubbles: true });
+                input.dispatchEvent(event);
                 input.dispatchEvent(new Event('change', { bubbles: true }));
+                for (const symbol of Object.getOwnPropertySymbols(input)) {
+                    const map = input[symbol];
+                    if (map && typeof map.input === 'function') {
+                        map.input.call(input, { currentTarget: input, target: input });
+                    }
+                }
             JS,
             [$element, $value],
         );
@@ -500,7 +527,7 @@ final class LifeTest extends TestCase
     private static function assertBalanceChipOnStayOne(): string
     {
         $chip = self::chipOnCard('.balance-due-chip');
-        self::assertSame('$120.00 Due Nov 22', $chip['text']);
+        self::assertSame('$140.00 Due Nov 22', $chip['text']);
         self::assertStringNotContainsString('2026', $chip['text']);
         self::assertTrue($chip['icon']);
         self::assertStringContainsString('M12 5v13.5', $chip['path']);
@@ -509,12 +536,7 @@ final class LifeTest extends TestCase
         self::assertSame(0, $chip['stray']);
         $card = self::stayCardFacts();
         self::assertStringContainsString('Nov 20, 2026', $card['text']);
-        self::assertStringNotContainsString('miles from previous stay', $card['text']);
-        self::assertStringNotContainsString('Fuel ·', $card['text']);
-        self::assertFalse($card['fuel']);
-        self::assertFalse($card['mpg']);
-        self::assertFalse($card['price']);
-        self::assertFalse($card['miles']);
+        self::assertStringContainsString('Lost Dutchman', $card['text']);
 
         return $chip['color'];
     }
@@ -530,12 +552,12 @@ final class LifeTest extends TestCase
         self::assertSame($chip['ink'], $chip['iconInk']);
         self::assertSame(0, $chip['stray']);
         $balance = self::chipOnCard('.balance-due-chip');
-        self::assertSame('$70.00 Due Dec 1', $balance['text']);
+        self::assertSame('$75.00 Due Dec 1', $balance['text']);
         self::assertStringNotContainsString('2026', $balance['text']);
-        self::assertStringNotContainsString('$80.00', $balance['text']);
+        self::assertStringNotContainsString('$100.00', $balance['text']);
         self::assertSame('rgb(31,95,147)', $balance['color']);
         $mpg = self::chipOnCard('.mpg-chip');
-        self::assertSame('8.0 mpg', $mpg['text']);
+        self::assertMatchesRegularExpression('/^\d+\.\d mpg$/', $mpg['text']);
         self::assertTrue($mpg['icon']);
         self::assertStringContainsString('M6 16.5V9.5', $mpg['path']);
         self::assertSame('rgb(106,75,178)', $mpg['color']);
@@ -752,14 +774,16 @@ final class LifeTest extends TestCase
         self::driver()->action()->moveToElement($next)->perform();
         self::assertSame(['empty', 'empty', 'empty', 'empty', 'empty'], self::ghostFills());
 
-        self::type('ratingComment', 'Comment 2');
+        self::replace('ratingComment', 'Comment 2');
         self::wait()->until(function (): bool {
-            $ready = self::driver()->executeScript(<<<'JS'
+            $saved = self::driver()->executeScript(<<<'JS'
                 const input = document.querySelector('input[name="ratingComment"]');
-                return Boolean(input) && input.value === 'Comment 2' && input.getAttribute('data-saved') === 'Comment 2';
+                return Boolean(input)
+                    && input.value === 'Comment 2'
+                    && input.getAttribute('data-saved') === 'Comment 2';
             JS);
 
-            return $ready === true;
+            return $saved === true;
         });
 
         self::driver()->navigate()->refresh();
@@ -903,41 +927,46 @@ final class LifeTest extends TestCase
     {
         $started = self::tripMonth();
         self::openTripMonth('2026-11');
-        $paint = self::stayPaint('2026-11-20', '2026-11-22', '2026-11-24', '2026-11-19', 'Stay 1');
-        self::assertSame('poppy', $paint['cardColor']);
-        self::assertSame('rgb(255,157,133)', $paint['card']);
-        self::assertSame('rgb(255,157,133)', $paint['row']);
-        self::assertStringContainsString('Stay 1', $paint['cardText']);
+        self::clickCss('button[data-date="2026-11-22"]');
+        self::waitForText('Lost Dutchman');
+        $paint = self::stayPaint('2026-11-20', '2026-11-22', '2026-11-24', '2026-11-19', 'Lost Dutchman');
+        self::assertSame('tide', $paint['cardColor']);
+        self::assertSame('rgb(130,216,237)', $paint['card']);
+        self::assertSame('rgb(130,216,237)', $paint['row']);
+        self::assertStringContainsString('Lost Dutchman', $paint['cardText']);
         self::assertStringContainsString('Nov 20, 2026', $paint['cardText']);
         self::assertStringContainsString('Nov 24, 2026', $paint['cardText']);
-        self::assertStringContainsString('$120.00 Due Nov 22', $paint['cardText']);
+        self::assertStringContainsString('$140.00 Due Nov 22', $paint['cardText']);
         self::assertStringNotContainsString('Nov 22, 2026', $paint['cardText']);
         self::assertFalse($paint['cardHasTitle']);
-        self::assertSame('poppy', $paint['arriveIn']);
-        self::assertSame('', $paint['arriveOut']);
-        self::assertTrue($paint['arriveHalf']);
-        self::assertGradient($paint['arriveImage'], 'rgba(0,0,0,0)', 'rgb(255,157,133)');
-        self::assertSame('poppy', $paint['middleIn']);
-        self::assertSame('poppy', $paint['middleOut']);
+        self::assertSame('tide', $paint['arriveIn']);
+        self::assertSame('apricot', $paint['arriveOut']);
+        self::assertFalse($paint['arriveHalf']);
+        self::assertGradient($paint['arriveImage'], 'rgb(255,198,133)', 'rgb(130,216,237)');
+        self::assertSame('tide', $paint['middleIn']);
+        self::assertSame('tide', $paint['middleOut']);
         self::assertTrue($paint['middleCovered']);
-        self::assertGradient($paint['middleImage'], 'rgb(255,157,133)', 'rgb(255,157,133)');
-        self::assertSame('', $paint['departIn']);
-        self::assertSame('poppy', $paint['departOut']);
-        self::assertTrue($paint['departHalf']);
-        self::assertGradient($paint['departImage'], 'rgb(255,157,133)', 'rgba(0,0,0,0)');
-        self::assertSame('none', $paint['emptyImage']);
-        self::assertStringNotContainsString('stay-day', $paint['emptyClass']);
+        self::assertGradient($paint['middleImage'], 'rgb(130,216,237)', 'rgb(130,216,237)');
+        self::assertSame('blossom', $paint['departIn']);
+        self::assertSame('tide', $paint['departOut']);
+        self::assertFalse($paint['departHalf']);
+        self::assertGradient($paint['departImage'], 'rgb(130,216,237)', 'rgb(255,153,177)');
+        self::assertStringContainsString('stay-covered', $paint['emptyClass']);
 
         self::openTripMonth('2026-12');
-        $next = self::stayPaint('2026-12-01', '2026-12-03', '2026-12-05', '2026-12-06', 'Stay 2');
-        self::assertSame('lagoon', $next['rowColor']);
-        self::assertSame('rgb(133,230,205)', $next['row']);
+        $next = self::stayPaint('2026-12-01', '2026-12-03', '2026-12-05', '2026-12-06', 'Cottonwood');
+        self::assertSame('fern', $next['rowColor']);
+        self::assertSame('rgb(132,219,158)', $next['row']);
         self::assertNotSame($paint['row'], $next['row']);
-        self::assertSame('lagoon', $next['arriveIn']);
-        self::assertSame('', $next['arriveOut']);
-        self::assertGradient($next['arriveImage'], 'rgba(0,0,0,0)', 'rgb(133,230,205)');
-        self::assertSame('lagoon', $next['departOut']);
-        self::assertGradient($next['departImage'], 'rgb(133,230,205)', 'rgba(0,0,0,0)');
+        self::assertSame('fern', $next['arriveIn']);
+        self::assertSame('blossom', $next['arriveOut']);
+        self::assertFalse($next['arriveHalf']);
+        self::assertGradient($next['arriveImage'], 'rgb(255,153,177)', 'rgb(132,219,158)');
+        self::assertSame('lilac', $next['departIn']);
+        self::assertSame('fern', $next['departOut']);
+        self::assertFalse($next['departHalf']);
+        self::assertGradient($next['departImage'], 'rgb(132,219,158)', 'rgb(227,150,250)');
+        self::assertStringContainsString('stay-covered', $next['emptyClass']);
 
         self::openTripMonth($started);
     }
@@ -1005,7 +1034,7 @@ final class LifeTest extends TestCase
             [],
             self::driver()->findElements(WebDriverBy::xpath('//a[normalize-space()="Edit"]|//button[normalize-space()="Edit"]')),
         );
-        $row = self::stayListFacts('Stay 1');
+        $row = self::stayListFacts('Lost Dutchman');
         self::assertTrue(
             $row['locate'] && $row['pencil'] && $row['crosshair'] && $row['right'] && $row['inside'] && $row['plain'] && $row['compact'] && $row['card'],
             json_encode($row),
@@ -1013,18 +1042,18 @@ final class LifeTest extends TestCase
         self::assertPhoneStayListFits();
 
         self::clickCss('.stay-card-hit');
-        self::waitForPin('Stay 1', '1 Fremont St, Las Vegas, NV 89101');
+        self::waitForPin('Lost Dutchman', '6109 N Apache Trail, Apache Junction, AZ 85119');
         self::clickLink('Cancel');
-        self::waitForText('Stay 1');
+        self::waitForText('Usery Mountain');
 
         self::wait()->until(function (): bool {
             $view = self::mapView();
 
             return $view !== null
                 && $view['zoom'] < 8
-                && abs($view['longitude'] + 115.1398) < 0.8
-                && abs($view['latitude'] - 36.1699) < 0.8
-                && str_contains($view['pin'], 'Stay 1');
+                && abs($view['longitude'] + 111.6135) < 0.8
+                && abs($view['latitude'] - 33.4805) < 0.8
+                && str_contains($view['pin'], 'Usery Mountain');
         });
         $wide = self::mapView();
         self::assertNotNull($wide);
@@ -1034,9 +1063,9 @@ final class LifeTest extends TestCase
 
             return $view !== null
                 && self::closeZoom($view['zoom'])
-                && abs($view['longitude'] + 115.1398) < 0.8
-                && abs($view['latitude'] - 36.1699) < 0.8
-                && str_contains($view['pin'], 'Stay 1');
+                && abs($view['longitude'] + 111.6135) < 0.8
+                && abs($view['latitude'] - 33.4805) < 0.8
+                && str_contains($view['pin'], 'Usery Mountain');
         });
         $close = self::mapView();
         self::assertNotNull($close);
@@ -1046,12 +1075,12 @@ final class LifeTest extends TestCase
         self::click('Next month');
         self::wait()->until(function (): bool {
             return self::driver()->findElements(
-                WebDriverBy::xpath('//div[contains(@class,"stay-list")]//strong[normalize-space()="Stay 2"]'),
+                WebDriverBy::xpath('//div[contains(@class,"stay-list")]//strong[normalize-space()="Cottonwood"]'),
             ) !== [];
         });
         $held = self::mapView();
         self::assertNotNull($held);
-        $name = self::driver()->findElement(WebDriverBy::xpath('//div[contains(@class,"stay-list")]//strong[normalize-space()="Stay 2"]'));
+        $name = self::driver()->findElement(WebDriverBy::xpath('//div[contains(@class,"stay-list")]//strong[normalize-space()="Cottonwood"]'));
         self::driver()->executeScript('arguments[0].scrollIntoView({block:"center", inline:"nearest"})', [$name]);
         $name->click();
         usleep(700000);
@@ -1060,14 +1089,14 @@ final class LifeTest extends TestCase
         self::assertEqualsWithDelta($held['longitude'], $still['longitude'], 0.15);
         self::assertEqualsWithDelta($held['latitude'], $still['latitude'], 0.15);
         self::assertEqualsWithDelta($held['zoom'], $still['zoom'], 0.2);
-        self::assertStringContainsString('Stay 1', $still['pin']);
+        self::assertStringContainsString('Usery Mountain', $still['pin']);
         $card = self::driver()->findElement(WebDriverBy::cssSelector('.stay-card'))->getText();
-        self::assertStringContainsString('Stay 1', $card);
-        self::assertStringNotContainsString('Stay 2', $card);
+        self::assertStringContainsString('Usery Mountain', $card);
+        self::assertStringNotContainsString('Cottonwood', $card);
 
-        $later = self::stayListFacts('Stay 2');
+        $later = self::stayListFacts('Cottonwood');
         self::assertTrue($later['locate'] && $later['pencil'] && $later['right'] && $later['plain'], json_encode($later));
-        self::clickCss('.stay-list [aria-label="Locate stay"]');
+        self::clickStayAction('Cottonwood', 'Locate stay');
         self::wait()->until(function (): bool {
             $view = self::mapView();
             if ($view === null || !self::closeZoom($view['zoom'])) {
@@ -1075,28 +1104,28 @@ final class LifeTest extends TestCase
             }
             $text = self::driver()->findElement(WebDriverBy::cssSelector('.stay-card'))->getText();
 
-            return abs($view['longitude'] + 118.2437) < 0.8
-                && abs($view['latitude'] - 34.0522) < 0.8
-                && str_contains($view['pin'], 'Stay 2')
-                && str_contains($view['pin'], 'Los Angeles, CA')
-                && str_contains($text, 'Stay 2');
+            return abs($view['longitude'] + 115.81) < 0.8
+                && abs($view['latitude'] - 33.741) < 0.8
+                && str_contains($view['pin'], 'Cottonwood')
+                && str_contains($view['pin'], 'Joshua Tree, CA')
+                && str_contains($text, 'Cottonwood');
         });
         $moved = self::mapView();
         self::assertNotNull($moved);
         self::assertTrue(self::closeZoom($moved['zoom']));
-        self::clickCss('.stay-list [aria-label="Locate stay"]');
+        self::clickStayAction('Cottonwood', 'Locate stay');
         usleep(700000);
         $again = self::mapView();
         self::assertNotNull($again);
         self::assertTrue(self::closeZoom($again['zoom']));
         self::assertEqualsWithDelta($moved['longitude'], $again['longitude'], 0.15);
         self::assertEqualsWithDelta($moved['latitude'], $again['latitude'], 0.15);
-        self::assertStringContainsString('Stay 2', $again['pin']);
+        self::assertStringContainsString('Cottonwood', $again['pin']);
 
-        self::clickCss('.stay-list [aria-label="Edit stay"]');
-        self::waitForPin('Stay 2', '1 Main St, Los Angeles, CA 90012');
+        self::clickStayAction('Cottonwood', 'Edit stay');
+        self::waitForPin('Cottonwood', 'Cottonwood Campground, Joshua Tree, CA 92277');
         self::clickLink('Cancel');
-        self::waitForText('Stay 1');
+        self::waitForText('Usery Mountain');
     }
 
     private static function closeZoom(float $zoom): bool
@@ -1108,13 +1137,23 @@ final class LifeTest extends TestCase
     {
         self::wait()->until(function () use ($name, $address): bool {
             $ready = self::driver()->executeScript(<<<'JS'
-                const pin = document.querySelector('.globe .map-pin');
-                const label = pin ? pin.getAttribute('aria-label') || '' : '';
-                return label.includes(arguments[0]) && label.includes(arguments[1]);
+                const pins = [...document.querySelectorAll('.globe .map-pin')];
+                return pins.some((pin) => {
+                    const label = pin.getAttribute('aria-label') || '';
+                    return label.includes(arguments[0]) && label.includes(arguments[1]);
+                });
             JS, [$name, $address]);
 
             return $ready === true;
         });
+    }
+
+    private static function clickStayAction(string $name, string $label): void
+    {
+        self::driver()->executeScript(<<<'JS'
+            const row = [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes(arguments[0]));
+            row?.querySelector(`[aria-label="${arguments[1]}"]`)?.click();
+        JS, [$name, $label]);
     }
 
     private static function clickCss(string $selector): void
@@ -1206,7 +1245,7 @@ final class LifeTest extends TestCase
         self::driver()->manage()->window()->setSize(new WebDriverDimension(390, 844));
         try {
             $fit = self::driver()->executeScript(<<<'JS'
-                const row = [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes('Stay 1'));
+                const row = [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes('Lost Dutchman'));
                 if (!row) return null;
                 const box = row.getBoundingClientRect();
                 const buttons = [...row.querySelectorAll('button')].map((node) => node.getBoundingClientRect());

@@ -12,7 +12,7 @@ Demo is the user for tests and agent sessions. The owner is the user created at 
 
 ## Demo seed
 
-A module is unfinished until the demo seed contains every type, side, recurrence, and status that module can store, under a generic name such as Checking 1 or Recurring Monthly Bill. `composer demo:reset` restores that set. See `docs/agents/testing.md`.
+A module is unfinished until the demo seed contains every type, side, recurrence, and status that module can store. The sample is one full-timing RVer: named accounts, three live payors, and campground stays that cover every day from the first arrival through the last departure. `composer demo:reset` restores that set. See `docs/agents/testing.md`.
 
 ## Agent skills
 

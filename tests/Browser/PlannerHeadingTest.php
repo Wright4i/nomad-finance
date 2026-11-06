@@ -100,48 +100,62 @@ final class PlannerHeadingTest extends TestCase
         self::waitForText('Available to assign');
 
         $plain = self::heading();
-        self::assertSame('Planner', $plain['text']);
-        self::assertSame('normal', $plain['style']);
-        self::assertStringContainsString('Outfit', $plain['family']);
+        self::assertStringContainsString('Mesa', $plain['text']);
+        self::assertSame('italic', $plain['style']);
+        self::assertSame('600', (string) $plain['weight']);
+        self::assertStringContainsString('Fraunces', $plain['family']);
         $worth = self::netWorth();
         $menu = self::driver()->executeScript(<<<'JS'
             return [...document.querySelectorAll('nav a')].map((link) => link.textContent.trim());
         JS);
         self::assertContains('Planner', is_array($menu) ? $menu : []);
 
+        self::assertSame($worth, self::netWorth());
         $created = self::driver()->executeAsyncScript(<<<'JS'
             const done = arguments[arguments.length - 1];
             const now = new Date();
             const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             fetch('/api/session', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
                 .then((response) => response.json())
-                .then((session) => fetch('/api/trips', {
-                    method: 'POST',
+                .then((session) => fetch(`/api/trips?today=${today}&fuel=0`, {
+                    headers: { Accept: 'application/json', 'X-CSRF-Token': session.csrfToken },
                     credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': session.csrfToken,
-                    },
-                    body: JSON.stringify({
-                        placeName: 'Stay 3',
-                        arriveOn: today,
-                        departOn: today,
-                        latitude: '47.6062',
-                        longitude: '-122.3321',
-                        city: 'Seattle',
-                        region: 'WA',
-                        totalMinor: 0,
-                        amountDueMinor: 0,
-                        today,
-                    }),
+                }).then((response) => response.json()).then((data) => {
+                    const trip = (data.trips || []).find((item) => item.arriveOn <= today && today <= item.departOn);
+                    if (!trip) {
+                        done({ ok: 0, id: 0, city: '', today, message: 'no stay' });
+                        return;
+                    }
+                    return fetch('/api/trips/' + trip.id, {
+                        method: 'PATCH',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': session.csrfToken,
+                        },
+                        body: JSON.stringify({
+                            placeName: trip.placeName,
+                            arriveOn: trip.arriveOn,
+                            departOn: trip.departOn,
+                            latitude: trip.latitude,
+                            longitude: trip.longitude,
+                            city: null,
+                            region: trip.region,
+                            accountId: trip.accountId,
+                            totalMinor: trip.totalMinor,
+                            amountDueMinor: trip.amountDueMinor,
+                            today,
+                        }),
+                    });
                 }))
                 .then(async (response) => {
+                    if (!response || response.ok === undefined) return;
                     const data = await response.json();
                     done({
                         ok: response.status,
                         id: data.trip ? data.trip.id : 0,
-                        city: data.trip ? data.trip.city : '',
+                        city: data.trip ? data.trip.city : null,
                         today,
                         message: data.message || '',
                     });
@@ -149,62 +163,8 @@ final class PlannerHeadingTest extends TestCase
                 .catch((err) => done({ ok: 0, id: 0, city: '', today, message: String(err) }));
         JS);
         self::assertIsArray($created);
-        self::assertSame(201, $created['ok'], (string) ($created['message'] ?? ''));
-        self::assertSame('Seattle', $created['city']);
-        $expected = [];
-        foreach (array_keys(PlannerHeading::PHRASES) as $index) {
-            $expected[] = PlannerHeading::phrase('Seattle', $index);
-        }
-
-        self::driver()->navigate()->refresh();
-        self::waitForText('Available to assign');
-        self::wait()->until(function () use ($expected): bool {
-            return in_array(self::heading()['text'], $expected, true);
-        });
-        $phrase = self::heading();
-        self::assertContains($phrase['text'], $expected);
-        self::assertStringContainsString('Seattle', $phrase['text']);
-        self::assertSame('italic', $phrase['style']);
-        self::assertSame('600', (string) $phrase['weight']);
-        self::assertStringContainsString('Fraunces', $phrase['family']);
-        self::assertSame($worth, self::netWorth());
-
-        $cleared = self::driver()->executeAsyncScript(<<<'JS'
-            const id = arguments[0];
-            const today = arguments[1];
-            const done = arguments[arguments.length - 1];
-            fetch('/api/session', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
-                .then((response) => response.json())
-                .then((session) => fetch('/api/trips/' + id, {
-                    method: 'PATCH',
-                    credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': session.csrfToken,
-                    },
-                    body: JSON.stringify({
-                        placeName: 'Stay 3',
-                        arriveOn: today,
-                        departOn: today,
-                        latitude: '47.6062',
-                        longitude: '-122.3321',
-                        city: null,
-                        region: 'WA',
-                        totalMinor: 0,
-                        amountDueMinor: 0,
-                        today,
-                    }),
-                }))
-                .then(async (response) => {
-                    const data = await response.json();
-                    done({ ok: response.status, city: data.trip ? data.trip.city : 'missing', message: data.message || '' });
-                })
-                .catch((err) => done({ ok: 0, city: '', message: String(err) }));
-        JS, [(int) $created['id'], (string) $created['today']]);
-        self::assertIsArray($cleared);
-        self::assertSame(200, $cleared['ok'], (string) ($cleared['message'] ?? ''));
-        self::assertNull($cleared['city']);
+        self::assertSame(200, $created['ok'], (string) ($created['message'] ?? ''));
+        self::assertNull($created['city']);
 
         self::driver()->navigate()->refresh();
         self::waitForText('Available to assign');

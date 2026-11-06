@@ -6,10 +6,9 @@
   import { formatDate, formatMinor, minorToInput, parseMajor } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import type { Vehicle, VehicleReading } from '../lib/types';
+  import { vehicleKinds, vehicleTone, type VehicleKind } from '../lib/vehicleKinds';
 
   let { id = null }: { id?: string | null } = $props();
-
-  const kinds = ['car', 'truck', 'motorcycle', 'rv', 'semi'] as const;
 
   function tenthsToInput(tenths: number): string {
     return `${Math.trunc(tenths / 10)}.${tenths % 10}`;
@@ -29,7 +28,7 @@
   }
 
   let name = $state('');
-  let kind = $state<(typeof kinds)[number]>('rv');
+  let kind = $state<VehicleKind>('rv');
   let mpgMin = $state('6.0');
   let mpgMax = $state('12.0');
   let starred = $state(false);
@@ -210,8 +209,8 @@
   <div class="field">
     <span>Kind</span>
     <div class="flex flex-wrap gap-2">
-      {#each kinds as option}
-        <button class="choice" class:on={kind === option} type="button" style={`--tone: var(--tone-${option})`} aria-pressed={kind === option} onclick={() => (kind = option)}>
+      {#each vehicleKinds as option}
+        <button class="choice" class:on={kind === option} type="button" style={`--tone: var(--tone-${vehicleTone(option)})`} aria-pressed={kind === option} onclick={() => (kind = option)}>
           <Glyph name={option} mini />
           {option}
         </button>

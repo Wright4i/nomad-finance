@@ -76,24 +76,51 @@ final class EnvelopeRulesTest extends TestCase
     {
         $sheet = $this->envelopes->show('2026-11-03');
 
-        self::assertSame('Monthly Payor', $this->payor($sheet));
+        self::assertSame('Remote salary', $this->payor($sheet));
         self::assertSame('2026-11-01', $sheet['period']['start']);
         self::assertSame('2026-11-30', $sheet['period']['end']);
         self::assertTrue($sheet['period']['editable']);
-        self::assertSame(50000, $this->amount($sheet, 'Needs 1'));
-        self::assertSame(0, $this->amount($sheet, 'Wants 1'));
-        self::assertSame(1379500, $sheet['poolMinor']);
+        self::assertSame(50000, $this->amount($sheet, 'Road cushion'));
+        self::assertSame(0, $this->amount($sheet, 'Fun money'));
+        self::assertSame($this->sourceTotal($sheet), $sheet['poolMinor']);
+        self::assertSame($sheet['poolMinor'] - $sheet['assignedMinor'], $sheet['availableMinor']);
+        self::assertLessThan($sheet['poolMinor'], $sheet['availableMinor']);
+        $poolNames = array_column($sheet['sources']['accounts'], 'name');
+        self::assertContains('Everyday checking', $poolNames);
+        self::assertContains('Wallet', $poolNames);
+        self::assertContains('Solar kit', $poolNames);
+        self::assertNotContains('Emergency fund', $poolNames);
+        self::assertNotContains('Rig fund', $poolNames);
+        $listedIncome = 0;
+        foreach ($sheet['sources']['income'] as $row) {
+            $listedIncome += (int) $row['amountMinor'];
+        }
+        $pay = new PayCycleService($this->pdo, new Actor($this->pdo));
+        $stillComing = 0;
+        $wholeMonth = 0;
+        foreach ($pay->monthPay('2026-11', '2026-11-03') as $row) {
+            $wholeMonth += (int) $row['paycheckMinor'];
+            if ((string) $row['on'] >= '2026-11-03') {
+                $stillComing += (int) $row['paycheckMinor'];
+            }
+        }
+        self::assertGreaterThan($stillComing, $wholeMonth);
+        self::assertSame($stillComing, $listedIncome);
+        $savings = $this->balance('Emergency fund');
+        $this->setBalance('Emergency fund', $savings - 5000);
+        $withoutSavings = $this->envelopes->show('2026-11-03');
+        self::assertSame($sheet['availableMinor'], $withoutSavings['availableMinor']);
+        self::assertSame($sheet['poolMinor'], $withoutSavings['poolMinor']);
+        $this->setBalance('Emergency fund', $savings);
         self::assertGreaterThan(50000, $sheet['assignedMinor']);
-        self::assertSame(120000, $this->targetAmount($sheet, 'Needed By Date 1'));
-        self::assertSame(50000, $this->targetAmount($sheet, 'Target Balance 1'));
-        self::assertNull($this->category($sheet, 'Needs 1')['target']);
-        self::assertSame($this->sourceTotal($sheet), $sheet['availableMinor']);
-        self::assertGreaterThan($sheet['poolMinor'], $sheet['availableMinor']);
+        self::assertSame(120000, $this->targetAmount($sheet, 'Tires'));
+        self::assertSame(50000, $this->targetAmount($sheet, 'Repair reserve'));
+        self::assertNull($this->category($sheet, 'Road cushion')['target']);
         self::assertNotSame($sheet['assignedMinor'], $sheet['availableMinor']);
         self::assertSame([], $sheet['leftOut']);
-        self::assertSame(60000, $this->amount($sheet, 'Rent'));
-        self::assertSame(60000, $this->billMinor($sheet, 'Rent'));
-        self::assertSame(21600, $this->billMinor($sheet, 'Groceries'));
+        self::assertSame(84000, $this->amount($sheet, 'Rent'));
+        self::assertSame(84000, $this->billMinor($sheet, 'Rent'));
+        self::assertSame(46000, $this->billMinor($sheet, 'Groceries'));
         self::assertSame(0, $this->billMinor($sheet, 'Entertainment'));
         self::assertSame(['2026-12-01', '2026-12-31'], [$sheet['nextPeriod']['start'], $sheet['nextPeriod']['end']]);
         self::assertFalse($sheet['celebrate']);
@@ -101,28 +128,28 @@ final class EnvelopeRulesTest extends TestCase
         $closed = $this->envelopes->show('2026-11-03', $sheet['payCycleId'], $sheet['closed'][0]['id']);
         self::assertSame('2026-10-01', $closed['period']['start']);
         self::assertFalse($closed['period']['editable']);
-        self::assertSame(20000, $this->amount($closed, 'Needs 1'));
-        self::assertSame(50000, $this->namedCategory('Needs 1')['amountMinor']);
+        self::assertSame(20000, $this->amount($closed, 'Road cushion'));
+        self::assertSame(50000, $this->namedCategory('Road cushion')['amountMinor']);
 
-        $checking = $this->balance('Checking 1');
-        $cash = $this->balance('Cash 1');
-        $this->setBalance('Checking 1', $checking - 1000);
-        $this->setBalance('Cash 1', $cash + 1000);
+        $checking = $this->balance('Everyday checking');
+        $cash = $this->balance('Wallet');
+        $this->setBalance('Everyday checking', $checking - 1000);
+        $this->setBalance('Wallet', $cash + 1000);
         $moved = $this->envelopes->show('2026-11-03');
         self::assertSame($sheet['availableMinor'], $moved['availableMinor']);
 
-        $card = $this->balance('Card 1');
-        $this->setBalance('Card 1', $card + 50000);
+        $card = $this->balance('Travel card');
+        $this->setBalance('Travel card', $card + 50000);
         $untouched = $this->envelopes->show('2026-11-03');
         self::assertSame($sheet['availableMinor'], $untouched['availableMinor']);
 
-        $bill = $this->bill('One-Time Bill');
-        self::assertSame('Needs 1', $bill['categoryName']);
+        $bill = $this->bill('Site week');
+        self::assertSame('Road cushion', $bill['categoryName']);
         $paid = $this->bills->markPaid($bill['id'], ['paidOn' => '2026-11-03']);
         self::assertSame('paid', $paid['status']);
-        self::assertSame('Needs 1', $paid['categoryName']);
-        self::assertSame($checking - 1000, $this->balance('Checking 1'));
-        self::assertSame(50000, $this->namedCategory('Needs 1')['amountMinor']);
+        self::assertSame('Road cushion', $paid['categoryName']);
+        self::assertSame($checking - 1000, $this->balance('Everyday checking'));
+        self::assertSame(50000, $this->namedCategory('Road cushion')['amountMinor']);
 
         $_SESSION['user_id'] = $this->ownerId;
         $owner = $this->envelopes->show('2026-11-03');
@@ -131,14 +158,15 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame(0, $owner['assignedMinor']);
     }
 
-    public function testAvailableSubtractsMaximumsNotAssignments(): void
+    public function testAvailableSubtractsAssignmentsNotMaximums(): void
     {
         $sheet = $this->envelopes->show('2026-11-03');
-        $needs = $this->categoryId($sheet, 'Needs 1');
-        $wants = $this->categoryId($sheet, 'Wants 1');
-        self::assertSame(50000, $this->amount($sheet, 'Needs 1'));
-        self::assertNull($this->category($sheet, 'Needs 1')['target']);
-        self::assertSame($this->sourceTotal($sheet), $sheet['availableMinor']);
+        $needs = $this->categoryId($sheet, 'Road cushion');
+        $wants = $this->categoryId($sheet, 'Fun money');
+        self::assertSame(50000, $this->amount($sheet, 'Road cushion'));
+        self::assertNull($this->category($sheet, 'Road cushion')['target']);
+        self::assertSame($this->sourceTotal($sheet), $sheet['poolMinor']);
+        self::assertSame($sheet['poolMinor'] - $sheet['assignedMinor'], $sheet['availableMinor']);
 
         $raised = $this->envelopes->save([
             'today' => '2026-11-03',
@@ -146,8 +174,8 @@ final class EnvelopeRulesTest extends TestCase
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 50000]],
             'maximums' => [['categoryId' => $needs, 'amountMinor' => 80000]],
         ]);
-        self::assertSame(50000, $this->amount($raised, 'Needs 1'));
-        self::assertSame(80000, $this->targetAmount($raised, 'Needs 1'));
+        self::assertSame(50000, $this->amount($raised, 'Road cushion'));
+        self::assertSame(80000, $this->targetAmount($raised, 'Road cushion'));
         self::assertSame($sheet['assignedMinor'], $raised['assignedMinor']);
         self::assertSame($sheet['availableMinor'], $raised['availableMinor']);
 
@@ -157,9 +185,9 @@ final class EnvelopeRulesTest extends TestCase
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 90000]],
             'maximums' => [['categoryId' => $needs, 'amountMinor' => 80000]],
         ]);
-        self::assertSame(90000, $this->amount($assigned, 'Needs 1'));
-        self::assertSame($raised['availableMinor'], $assigned['availableMinor']);
-        self::assertNotSame($raised['assignedMinor'], $assigned['assignedMinor']);
+        self::assertSame(90000, $this->amount($assigned, 'Road cushion'));
+        self::assertSame($raised['assignedMinor'] + 40000, $assigned['assignedMinor']);
+        self::assertSame($raised['availableMinor'] - 40000, $assigned['availableMinor']);
 
         $empty = $this->envelopes->save([
             'today' => '2026-11-03',
@@ -170,23 +198,28 @@ final class EnvelopeRulesTest extends TestCase
             ],
             'maximums' => [['categoryId' => $wants, 'amountMinor' => 4000]],
         ]);
-        self::assertSame(0, $this->amount($empty, 'Wants 1'));
+        self::assertSame(0, $this->amount($empty, 'Fun money'));
         self::assertSame($assigned['availableMinor'], $empty['availableMinor']);
 
-        $weekly = $this->payCycleId($sheet, 'Weekly Payor');
+        $weekly = $this->payCycleId($sheet, 'Camp host');
         $week = $this->envelopes->show('2026-11-03', $weekly);
         $again = $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $weekly,
             'amounts' => [['categoryId' => $wants, 'amountMinor' => 2500]],
         ]);
-        self::assertSame(2500, $this->amount($again, 'Wants 1'));
-        self::assertSame($week['availableMinor'], $again['availableMinor']);
+        self::assertSame(2500, $this->amount($again, 'Fun money'));
+        self::assertSame($week['assignedMinor'] + 2500, $again['assignedMinor']);
+        self::assertSame($week['availableMinor'] - 2500, $again['availableMinor']);
 
         $monthly = $this->envelopes->show('2026-11-03', $sheet['payCycleId']);
-        self::assertSame($empty['availableMinor'], $monthly['availableMinor']);
-        self::assertSame(90000, $this->amount($monthly, 'Needs 1'));
-        self::assertSame($again['availableMinor'], $monthly['availableMinor']);
+        self::assertSame($empty['availableMinor'] - 2500, $monthly['availableMinor']);
+        self::assertSame(90000, $this->amount($monthly, 'Road cushion'));
+        self::assertSame($again['poolMinor'], $monthly['poolMinor']);
+        self::assertSame(
+            $again['availableMinor'] - ($monthly['assignedMinor'] - $again['assignedMinor']),
+            $monthly['availableMinor'],
+        );
 
         $rent = $this->categoryId($sheet, 'Rent');
         $bills = $this->billMinor($monthly, 'Rent');
@@ -201,7 +234,12 @@ final class EnvelopeRulesTest extends TestCase
         ]);
         self::assertSame($bills, $this->amount($held, 'Rent'));
         self::assertSame($bills + 1500, $this->targetAmount($held, 'Rent'));
-        self::assertSame($monthly['availableMinor'], $held['availableMinor']);
+        self::assertSame($monthly['poolMinor'], $held['poolMinor']);
+        self::assertGreaterThan($monthly['assignedMinor'], $held['assignedMinor']);
+        self::assertSame(
+            $monthly['availableMinor'] - ($held['assignedMinor'] - $monthly['assignedMinor']),
+            $held['availableMinor'],
+        );
 
         $closed = $this->envelopes->show('2026-11-03', $sheet['payCycleId'], $sheet['closed'][0]['id']);
         self::assertSame($held['availableMinor'], $closed['availableMinor']);
@@ -214,59 +252,85 @@ final class EnvelopeRulesTest extends TestCase
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 90000]],
             'maximums' => [['categoryId' => $needs, 'amountMinor' => 0]],
         ]);
-        self::assertNull($this->category($cleared, 'Needs 1')['target']);
-        self::assertSame($held['availableMinor'], $cleared['availableMinor']);
+        self::assertNull($this->category($cleared, 'Road cushion')['target']);
+        self::assertSame($held['poolMinor'], $cleared['poolMinor']);
+        self::assertSame(
+            $held['availableMinor'] - ($cleared['assignedMinor'] - $held['assignedMinor']),
+            $cleared['availableMinor'],
+        );
     }
 
     public function testALockedBucketAssignsTheBillsAndKeepsTheMaximumOpen(): void
     {
         $sheet = $this->envelopes->show('2026-11-03');
         $rent = $this->categoryId($sheet, 'Rent');
-        $needs = $this->categoryId($sheet, 'Needs 1');
+        $needs = $this->categoryId($sheet, 'Road cushion');
+        $bills = $this->billMinor($sheet, 'Rent');
+        try {
+            $this->envelopes->save([
+                'today' => '2026-11-03',
+                'payCycleId' => $sheet['payCycleId'],
+                'amounts' => [
+                    ['categoryId' => $needs, 'amountMinor' => 50000],
+                    ['categoryId' => $rent, 'amountMinor' => $bills - 1],
+                ],
+            ]);
+            self::fail('A locked bucket accepted an assignment under its bills.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertSame('Assigned cannot be lower than the bills.', $e->fields['amount-' . $rent]);
+        }
         $saved = $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
             'amounts' => [
                 ['categoryId' => $needs, 'amountMinor' => 50000],
-                ['categoryId' => $rent, 'amountMinor' => 12500],
+                ['categoryId' => $rent, 'amountMinor' => $bills + 1500],
             ],
             'maximums' => [
                 ['categoryId' => $needs, 'amountMinor' => 80000],
                 ['categoryId' => $rent, 'amountMinor' => 90000],
             ],
         ]);
-        self::assertSame(60000, $this->amount($saved, 'Rent'));
-        self::assertSame(60000, $this->billMinor($saved, 'Rent'));
+        self::assertSame($bills + 1500, $this->amount($saved, 'Rent'));
+        self::assertSame($bills, $this->billMinor($saved, 'Rent'));
+        self::assertSame($sheet['assignedMinor'] + 1500, $saved['assignedMinor']);
         self::assertSame(90000, $this->targetAmount($saved, 'Rent'));
-        self::assertSame(80000, $this->targetAmount($saved, 'Needs 1'));
-        self::assertSame($sheet['availableMinor'], $saved['availableMinor']);
+        self::assertSame(80000, $this->targetAmount($saved, 'Road cushion'));
+        self::assertSame($sheet['poolMinor'], $saved['poolMinor']);
+        self::assertSame($sheet['availableMinor'] - 1500, $saved['availableMinor']);
+        $december = $this->envelopes->show('2026-12-01', $sheet['payCycleId']);
+        self::assertSame($this->billMinor($december, 'Rent'), $this->amount($december, 'Rent'));
+        self::assertNotSame($bills + 1500, $this->amount($december, 'Rent'));
     }
 
     public function testAnAssignmentStaysOnTheOpenPeriod(): void
     {
-        $before = $this->balance('Checking 1');
+        $before = $this->balance('Everyday checking');
         $sheet = $this->envelopes->show('2026-11-03');
-        $needs = $this->categoryId($sheet, 'Needs 1');
+        $needs = $this->categoryId($sheet, 'Road cushion');
 
         $saved = $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 60000]],
         ]);
-        self::assertSame(60000, $this->amount($saved, 'Needs 1'));
-        self::assertSame($sheet['availableMinor'], $saved['availableMinor']);
-        self::assertSame($before, $this->balance('Checking 1'));
+        self::assertSame(60000, $this->amount($saved, 'Road cushion'));
+        self::assertSame($sheet['assignedMinor'] + 10000, $saved['assignedMinor']);
+        self::assertSame($sheet['availableMinor'] - 10000, $saved['availableMinor']);
+        self::assertSame($before, $this->balance('Everyday checking'));
 
         $closed = $this->envelopes->show('2026-11-03', $saved['payCycleId'], $sheet['closed'][0]['id']);
-        self::assertSame(20000, $this->amount($closed, 'Needs 1'));
+        self::assertSame(20000, $this->amount($closed, 'Road cushion'));
 
         $over = $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
             'amounts' => [['categoryId' => $needs, 'amountMinor' => $saved['poolMinor'] + 1]],
         ]);
-        self::assertSame($saved['poolMinor'] + 1, $this->amount($over, 'Needs 1'));
-        self::assertSame($saved['availableMinor'], $over['availableMinor']);
+        self::assertSame($saved['poolMinor'] + 1, $this->amount($over, 'Road cushion'));
+        self::assertSame($over['poolMinor'] - $over['assignedMinor'], $over['availableMinor']);
+        self::assertLessThan(0, $over['availableMinor']);
 
         $capped = $this->envelopes->save([
             'today' => '2026-11-03',
@@ -274,66 +338,70 @@ final class EnvelopeRulesTest extends TestCase
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 50000]],
             'maximums' => [['categoryId' => $needs, 'amountMinor' => $saved['poolMinor'] + 1]],
         ]);
-        self::assertSame($saved['availableMinor'], $capped['availableMinor']);
-        self::assertGreaterThanOrEqual(0, $capped['availableMinor']);
+        self::assertSame($capped['poolMinor'] - $capped['assignedMinor'], $capped['availableMinor']);
+        self::assertGreaterThan($over['availableMinor'], $capped['availableMinor']);
 
         $cleared = $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 0]],
         ]);
-        self::assertSame(0, $this->amount($cleared, 'Needs 1'));
-        self::assertSame(0, $this->namedCategory('Needs 1')['amountMinor']);
+        self::assertSame(0, $this->amount($cleared, 'Road cushion'));
+        self::assertSame(0, $this->namedCategory('Road cushion')['amountMinor']);
         $archived = $this->categories->archive($needs);
         self::assertNotNull($archived['archivedAt']);
     }
 
-    public function testTheNextPeriodCarriesTheOpenAmount(): void
+    public function testANewMonthStartsEmptyExceptItsBills(): void
     {
-        $opened = $this->envelopes->show('2026-12-01');
+        $current = $this->envelopes->show('2026-11-03');
+        $monthly = $this->payCycleId($current, 'Remote salary');
+        $opened = $this->envelopes->show('2026-12-01', $monthly);
         self::assertSame('2026-12-01', $opened['period']['start']);
         self::assertSame('2026-12-31', $opened['period']['end']);
-        self::assertSame(50000, $this->amount($opened, 'Needs 1'));
-        self::assertSame(0, $this->amount($opened, 'Wants 1'));
+        self::assertSame(0, $this->amount($opened, 'Road cushion'));
+        self::assertSame(0, $this->amount($opened, 'Fun money'));
+        self::assertSame($this->billMinor($opened, 'Rent'), $this->amount($opened, 'Rent'));
+        self::assertGreaterThan(0, $this->billMinor($opened, 'Rent'));
         self::assertGreaterThan(50000, $opened['assignedMinor']);
-        self::assertSame($this->sourceTotal($opened), $opened['availableMinor']);
-        self::assertGreaterThan($opened['poolMinor'], $opened['availableMinor']);
-        self::assertSame(50000, $this->namedCategory('Needs 1')['amountMinor']);
+        self::assertSame($this->sourceTotal($opened), $opened['poolMinor']);
+        self::assertSame($opened['poolMinor'] - $opened['assignedMinor'], $opened['availableMinor']);
+        self::assertLessThan($opened['poolMinor'], $opened['availableMinor']);
 
         $november = $this->period($opened, '2026-11-01');
         $october = $this->period($opened, '2026-10-01');
         $readNovember = $this->envelopes->show('2026-12-01', $opened['payCycleId'], $november);
         $readOctober = $this->envelopes->show('2026-12-01', $opened['payCycleId'], $october);
-        self::assertSame(50000, $this->amount($readNovember, 'Needs 1'));
-        self::assertSame(20000, $this->amount($readOctober, 'Needs 1'));
-        self::assertSame(0, $this->amount($readOctober, 'Wants 1'));
+        self::assertSame(50000, $this->amount($readNovember, 'Road cushion'));
+        self::assertSame(20000, $this->amount($readOctober, 'Road cushion'));
+        self::assertSame(0, $this->amount($readOctober, 'Fun money'));
         self::assertFalse($readNovember['period']['editable']);
 
-        $needs = $this->categoryId($opened, 'Needs 1');
+        $needs = $this->categoryId($opened, 'Road cushion');
         $edited = $this->envelopes->save([
             'today' => '2026-12-01',
             'payCycleId' => $opened['payCycleId'],
             'amounts' => [['categoryId' => $needs, 'amountMinor' => 1000]],
         ]);
-        self::assertSame(1000, $this->amount($edited, 'Needs 1'));
+        self::assertSame(1000, $this->amount($edited, 'Road cushion'));
 
-        $back = $this->envelopes->show('2026-11-03');
+        $back = $this->envelopes->show('2026-11-03', $monthly);
         self::assertSame('2026-11-01', $back['period']['start']);
-        self::assertSame(50000, $this->amount($back, 'Needs 1'));
-        self::assertSame(50000, $this->namedCategory('Needs 1')['amountMinor']);
+        self::assertSame(50000, $this->amount($back, 'Road cushion'));
+        self::assertSame(50000, $this->namedCategory('Road cushion')['amountMinor']);
 
-        $again = $this->envelopes->show('2026-12-01');
-        self::assertSame(1000, $this->amount($again, 'Needs 1'));
+        $again = $this->envelopes->show('2026-12-01', $monthly);
+        self::assertSame(1000, $this->amount($again, 'Road cushion'));
         self::assertSame(20000, $this->amount(
             $this->envelopes->show('2026-12-01', $again['payCycleId'], $october),
-            'Needs 1',
+            'Road cushion',
         ));
     }
 
     public function testAnAssignmentCannotBeNegative(): void
     {
         $sheet = $this->envelopes->show('2026-11-03');
-        $needs = $this->categoryId($sheet, 'Needs 1');
+        $needs = $this->categoryId($sheet, 'Road cushion');
         try {
             $this->envelopes->save([
                 'today' => '2026-11-03',
@@ -346,7 +414,7 @@ final class EnvelopeRulesTest extends TestCase
             self::assertArrayHasKey('amount-' . $needs, $e->fields);
         }
         $kept = $this->envelopes->show('2026-11-03');
-        self::assertSame(50000, $this->amount($kept, 'Needs 1'));
+        self::assertSame(50000, $this->amount($kept, 'Road cushion'));
         self::assertSame($sheet['availableMinor'], $kept['availableMinor']);
     }
 
@@ -359,6 +427,13 @@ final class EnvelopeRulesTest extends TestCase
             'DELETE FROM payroll_entries WHERE pay_cycle_id IN (SELECT id FROM pay_cycles WHERE user_id = ?)'
         )->execute([$userId]);
 
+        $empty = $this->envelopes->show('2026-11-03');
+        self::assertSame(0, $empty['poolMinor']);
+        self::assertGreaterThan(0, $empty['assignedMinor']);
+        self::assertSame(-$empty['assignedMinor'], $empty['availableMinor']);
+        self::assertFalse($empty['celebrate']);
+
+        $this->setBalance('Everyday checking', $empty['assignedMinor']);
         $first = $this->envelopes->show('2026-11-03');
         self::assertSame(0, $first['availableMinor']);
         self::assertTrue($first['celebrate']);
@@ -367,12 +442,12 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame(0, $again['availableMinor']);
         self::assertFalse($again['celebrate']);
 
-        $this->setBalance('Checking 1', 100);
+        $this->setBalance('Everyday checking', $empty['assignedMinor'] + 100);
         $moved = $this->envelopes->show('2026-11-03');
         self::assertSame(100, $moved['availableMinor']);
         self::assertFalse($moved['celebrate']);
 
-        $this->setBalance('Checking 1', 0);
+        $this->setBalance('Everyday checking', $empty['assignedMinor']);
         $return = $this->envelopes->show('2026-11-03');
         self::assertSame(0, $return['availableMinor']);
         self::assertFalse($return['celebrate']);
@@ -382,42 +457,49 @@ final class EnvelopeRulesTest extends TestCase
     {
         $sheet = $this->envelopes->show('2026-11-03');
         $rent = $this->billMinor($sheet, 'Rent');
-        $weekly = $this->payCycleId($sheet, 'Weekly Payor');
+        $weekly = $this->payCycleId($sheet, 'Camp host');
         self::assertGreaterThan(1, count($sheet['payors']));
         self::assertGreaterThan(0, $rent);
 
         $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $weekly,
-            'amounts' => [['categoryId' => $this->categoryId($sheet, 'Wants 1'), 'amountMinor' => 3333]],
+            'amounts' => [['categoryId' => $this->categoryId($sheet, 'Fun money'), 'amountMinor' => 3333]],
         ]);
         $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
-            'amounts' => [['categoryId' => $this->categoryId($sheet, 'Needs 1'), 'amountMinor' => 50000]],
+            'amounts' => [['categoryId' => $this->categoryId($sheet, 'Road cushion'), 'amountMinor' => 50000]],
         ]);
 
         $month = $this->envelopes->show('2026-11-03', $sheet['payCycleId']);
         $week = $this->envelopes->show('2026-11-03', $weekly);
-        self::assertSame(50000, $this->amount($month, 'Needs 1'));
-        self::assertSame(3333, $this->amount($month, 'Wants 1'));
-        self::assertSame(50000, $this->amount($week, 'Needs 1'));
-        self::assertSame(3333, $this->amount($week, 'Wants 1'));
+        self::assertSame(50000, $this->amount($month, 'Road cushion'));
+        self::assertSame(3333, $this->amount($month, 'Fun money'));
+        self::assertSame(50000, $this->amount($week, 'Road cushion'));
+        self::assertSame(3333, $this->amount($week, 'Fun money'));
         self::assertSame($rent, $this->billMinor($month, 'Rent'));
         self::assertSame($rent, $this->billMinor($week, 'Rent'));
         self::assertNotSame($rent * count($month['payors']), $this->billMinor($month, 'Rent'));
-        self::assertSame($month['availableMinor'], $week['availableMinor']);
-        self::assertSame($this->sourceTotal($month), $month['availableMinor']);
-        $this->assertSplit($month, $month['availableMinor']);
+        self::assertSame($month['poolMinor'], $week['poolMinor']);
+        self::assertSame(
+            $month['availableMinor'] - ($week['assignedMinor'] - $month['assignedMinor']),
+            $week['availableMinor'],
+        );
+        self::assertSame($this->sourceTotal($month), $month['poolMinor']);
+        self::assertSame($month['poolMinor'] - $month['assignedMinor'], $month['availableMinor']);
+        $this->assertSplit($month, $month['poolMinor']);
         self::assertNotEmpty($month['sources']['income']);
         self::assertNotEmpty($month['sources']['accounts']);
         $names = array_column($month['sources']['accounts'], 'name');
-        self::assertContains('Checking 1', $names);
-        self::assertNotContains('Card 1', $names);
-        self::assertNotContains('Loan 1', $names);
-        self::assertNotContains('Fuel 1', $names);
+        self::assertContains('Everyday checking', $names);
+        self::assertContains('Solar kit', $names);
+        self::assertNotContains('Emergency fund', $names);
+        self::assertNotContains('Travel card', $names);
+        self::assertNotContains('Solar loan', $names);
+        self::assertNotContains('Fuel card', $names);
         foreach ($month['sources']['accounts'] as $account) {
-            self::assertContains($account['type'], ['checking', 'savings', 'cash']);
+            self::assertContains($account['type'], ['checking', 'cash', 'other']);
         }
     }
 
@@ -437,23 +519,22 @@ final class EnvelopeRulesTest extends TestCase
 
         $sheet = $dashboard->show('2026-11-03');
 
-        self::assertSame(3996000, $sheet['incomeMinor']);
-        self::assertSame($this->sourceTotal($sheet['envelopes']), $sheet['envelopes']['availableMinor']);
-        self::assertGreaterThan($sheet['envelopes']['poolMinor'], $sheet['envelopes']['availableMinor']);
+        self::assertSame(624200, $sheet['incomeMinor']);
+        self::assertSame($this->sourceTotal($sheet['envelopes']), $sheet['envelopes']['poolMinor']);
+        self::assertSame(
+            $sheet['envelopes']['poolMinor'] - $sheet['envelopes']['assignedMinor'],
+            $sheet['envelopes']['availableMinor'],
+        );
+        self::assertLessThan($sheet['envelopes']['poolMinor'], $sheet['envelopes']['availableMinor']);
         self::assertGreaterThan(50000, $sheet['envelopes']['assignedMinor']);
         $byPayor = [];
         foreach ($sheet['income'] as $row) {
             $byPayor[$row['payor']] = $row['paycheckMinor'];
         }
-        self::assertSame(100000, $byPayor['Weekly Payor']);
-        self::assertSame(240000, $byPayor['Biweekly Payor']);
-        self::assertSame(250000, $byPayor['Semimonthly Payor']);
-        self::assertSame(700000, $byPayor['Monthly Payor']);
-        self::assertSame(150000, $byPayor['Irregular Payor']);
-        self::assertSame(220000, $byPayor['Weekday Payor']);
-        self::assertSame(1936000, $byPayor['Monthly Weekday Payor']);
-        self::assertSame(400000, $byPayor['Averaged Payor']);
-        self::assertCount(8, $byPayor);
+        self::assertSame(19200, $byPayor['Camp host']);
+        self::assertSame(560000, $byPayor['Remote salary']);
+        self::assertSame(45000, $byPayor['Photo gigs']);
+        self::assertCount(3, $byPayor);
         self::assertSame('2026-10-01', $sheet['envelopes']['previousPeriod']['start']);
         self::assertSame('2026-12-01', $sheet['envelopes']['stepNext']['start']);
         self::assertTrue($sheet['envelopes']['stepNext']['upcoming']);
@@ -465,18 +546,18 @@ final class EnvelopeRulesTest extends TestCase
         );
         self::assertSame('2026-10-01', $closed['envelopes']['period']['start']);
         self::assertFalse($closed['envelopes']['period']['editable']);
-        self::assertSame(20000, $this->amount($closed['envelopes'], 'Needs 1'));
+        self::assertSame(20000, $this->amount($closed['envelopes'], 'Road cushion'));
         self::assertSame($sheet['envelopes']['availableMinor'], $closed['envelopes']['availableMinor']);
-        self::assertSame(3996000, $closed['incomeMinor']);
+        self::assertSame(624200, $closed['incomeMinor']);
 
         $upcoming = $dashboard->show('2026-11-03', $sheet['envelopes']['payCycleId'], null, true);
         self::assertTrue($upcoming['envelopes']['period']['upcoming']);
         self::assertTrue($upcoming['envelopes']['period']['editable']);
         self::assertSame('2026-12-01', $upcoming['envelopes']['period']['start']);
-        self::assertSame(50000, $this->amount($upcoming['envelopes'], 'Needs 1'));
-        self::assertSame(0, $this->amount($upcoming['envelopes'], 'Wants 1'));
+        self::assertSame(0, $this->amount($upcoming['envelopes'], 'Road cushion'));
+        self::assertSame(0, $this->amount($upcoming['envelopes'], 'Fun money'));
         self::assertSame($sheet['envelopes']['availableMinor'], $upcoming['envelopes']['availableMinor']);
-        self::assertSame(3996000, $upcoming['incomeMinor']);
+        self::assertSame(624200, $upcoming['incomeMinor']);
     }
 
     public function testAGroupPastItsShareIsOver(): void
@@ -498,9 +579,9 @@ final class EnvelopeRulesTest extends TestCase
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
             'amounts' => [
-                ['categoryId' => $this->categoryId($sheet, 'Needs 1'), 'amountMinor' => 5000],
-                ['categoryId' => $this->categoryId($sheet, 'Wants 1'), 'amountMinor' => 3000],
-                ['categoryId' => $this->categoryId($sheet, 'Savings 1'), 'amountMinor' => 2000],
+                ['categoryId' => $this->categoryId($sheet, 'Road cushion'), 'amountMinor' => 5000],
+                ['categoryId' => $this->categoryId($sheet, 'Fun money'), 'amountMinor' => 3000],
+                ['categoryId' => $this->categoryId($sheet, 'Next rig'), 'amountMinor' => 2000],
             ],
         ]);
         self::assertSame(5000, $this->group($balanced, 'needs')['shareBasisPoints']);
@@ -514,9 +595,9 @@ final class EnvelopeRulesTest extends TestCase
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
             'amounts' => [
-                ['categoryId' => $this->categoryId($sheet, 'Needs 1'), 'amountMinor' => 5000],
-                ['categoryId' => $this->categoryId($sheet, 'Wants 1'), 'amountMinor' => 4000],
-                ['categoryId' => $this->categoryId($sheet, 'Savings 1'), 'amountMinor' => 1000],
+                ['categoryId' => $this->categoryId($sheet, 'Road cushion'), 'amountMinor' => 5000],
+                ['categoryId' => $this->categoryId($sheet, 'Fun money'), 'amountMinor' => 4000],
+                ['categoryId' => $this->categoryId($sheet, 'Next rig'), 'amountMinor' => 1000],
             ],
         ]);
         self::assertFalse($this->group($wantsHeavy, 'needs')['over']);
@@ -528,9 +609,9 @@ final class EnvelopeRulesTest extends TestCase
     public function testAGroupHeadingSumsAssignedMaxAndThePayorSplit(): void
     {
         $sheet = $this->envelopes->show('2026-11-03');
-        self::assertSame('Monthly Payor', $this->payor($sheet));
-        self::assertSame(700000, $sheet['incomeMinor']);
-        $this->assertSplit($sheet, $sheet['availableMinor']);
+        self::assertSame('Remote salary', $this->payor($sheet));
+        self::assertSame(560000, $sheet['incomeMinor']);
+        $this->assertSplit($sheet, $sheet['poolMinor']);
         foreach (['needs', 'wants', 'savings'] as $group) {
             $heading = $this->group($sheet, $group);
             self::assertSame($this->sumAssigned($sheet, $group), $heading['assignedMinor']);
@@ -542,32 +623,40 @@ final class EnvelopeRulesTest extends TestCase
         self::assertGreaterThanOrEqual(120000 + 50000, $this->group($sheet, 'savings')['maximumMinor']);
 
         $closed = $this->envelopes->show('2026-11-03', $sheet['payCycleId'], $sheet['closed'][0]['id']);
-        self::assertSame(700000, $closed['incomeMinor']);
-        self::assertSame(intdiv($closed['availableMinor'] * 50 + 50, 100), $this->group($closed, 'needs')['targetMinor']);
+        self::assertSame(560000, $closed['incomeMinor']);
+        self::assertSame(intdiv($closed['poolMinor'] * 50 + 50, 100), $this->group($closed, 'needs')['targetMinor']);
         self::assertSame($this->sumAssigned($closed, 'needs'), $this->group($closed, 'needs')['assignedMinor']);
         self::assertNotSame($this->group($sheet, 'needs')['assignedMinor'], $this->group($closed, 'needs')['assignedMinor']);
 
         $paychecks = [
-            'Weekly Payor' => 100000,
-            'Biweekly Payor' => 240000,
-            'Semimonthly Payor' => 250000,
-            'Weekday Payor' => 220000,
-            'Irregular Payor' => 150000,
-            'Monthly Weekday Payor' => 22 * 8 * 11000,
+            'Camp host' => 19200,
+            'Photo gigs' => 45000,
         ];
         foreach ($paychecks as $payor => $income) {
             $view = $this->envelopes->show('2026-11-03', $this->payCycleId($sheet, $payor));
             self::assertSame($income, $view['incomeMinor'], $payor);
-            self::assertSame($sheet['availableMinor'], $view['availableMinor'], $payor);
-            $this->assertSplit($view, $view['availableMinor']);
+            self::assertSame($sheet['poolMinor'], $view['poolMinor'], $payor);
+            self::assertSame(
+                $sheet['availableMinor'] - ($view['assignedMinor'] - $sheet['assignedMinor']),
+                $view['availableMinor'],
+                $payor,
+            );
+            $this->assertSplit($view, $view['poolMinor']);
         }
 
-        $weekday = $this->payCycleId($sheet, 'Monthly Weekday Payor');
-        $december = $this->envelopes->show('2026-11-03', $weekday, null, true);
-        $decemberPay = 21 * 8 * 11000;
+        $weekday = (int) $this->pdo->query(
+            "SELECT id FROM pay_cycles WHERE user_id = {$_SESSION['user_id']} AND payor = 'Contract days'"
+        )->fetchColumn();
+        $this->pdo->prepare('UPDATE pay_cycles SET archived_at = NULL WHERE id = ?')->execute([$weekday]);
+        try {
+            $december = $this->envelopes->show('2026-11-03', $weekday, null, true);
+        } finally {
+            $this->pdo->prepare('UPDATE pay_cycles SET archived_at = ? WHERE id = ?')->execute([gmdate('c'), $weekday]);
+        }
+        $decemberPay = 126000;
         self::assertSame('2026-12-01', $december['period']['start']);
         self::assertSame($decemberPay, $december['incomeMinor']);
-        $this->assertSplit($december, $december['availableMinor']);
+        $this->assertSplit($december, $december['poolMinor']);
 
         $needsBefore = $this->group($sheet, 'needs');
         $wantsBefore = $this->group($sheet, 'wants');
@@ -578,7 +667,7 @@ final class EnvelopeRulesTest extends TestCase
                 continue;
             }
             $amount = (int) $category['amountMinor'];
-            if ($category['name'] === 'Wants 1') {
+            if ($category['name'] === 'Fun money') {
                 $amount = 4500;
             }
             $amounts[] = ['categoryId' => (int) $category['id'], 'amountMinor' => $amount];
@@ -589,10 +678,10 @@ final class EnvelopeRulesTest extends TestCase
             'amounts' => $amounts,
             'maximums' => [
                 ['categoryId' => $this->categoryId($sheet, 'Rent'), 'amountMinor' => 100],
-                ['categoryId' => $this->categoryId($sheet, 'Wants 1'), 'amountMinor' => 12300],
+                ['categoryId' => $this->categoryId($sheet, 'Fun money'), 'amountMinor' => 12300],
             ],
         ]);
-        self::assertSame(700000, $saved['incomeMinor']);
+        self::assertSame(560000, $saved['incomeMinor']);
         self::assertSame($needsBefore['maximumMinor'] - $rentBills + 100, $this->group($saved, 'needs')['maximumMinor']);
         self::assertSame($wantsBefore['assignedMinor'] + 4500, $this->group($saved, 'wants')['assignedMinor']);
         self::assertSame($wantsBefore['maximumMinor'] + 12300, $this->group($saved, 'wants')['maximumMinor']);
@@ -607,12 +696,12 @@ final class EnvelopeRulesTest extends TestCase
         $sheet = $this->envelopes->show('2026-11-03');
         $preview = $this->envelopes->show('2026-11-03', $sheet['payCycleId'], null, true);
         self::assertTrue($preview['period']['editable']);
-        self::assertSame(50000, $this->amount($preview, 'Needs 1'));
+        self::assertSame(0, $this->amount($preview, 'Road cushion'));
         self::assertSame($sheet['availableMinor'], $preview['availableMinor']);
         self::assertNull($preview['period']['id']);
 
-        $needs = $this->categoryId($preview, 'Needs 1');
-        $wants = $this->categoryId($preview, 'Wants 1');
+        $needs = $this->categoryId($preview, 'Road cushion');
+        $wants = $this->categoryId($preview, 'Fun money');
         $planned = $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $sheet['payCycleId'],
@@ -623,16 +712,17 @@ final class EnvelopeRulesTest extends TestCase
             ],
         ]);
         self::assertTrue($planned['period']['upcoming']);
-        self::assertSame(1000, $this->amount($planned, 'Needs 1'));
+        self::assertSame(1000, $this->amount($planned, 'Road cushion'));
         self::assertSame($sheet['availableMinor'], $planned['availableMinor']);
-        self::assertSame(50000, $this->amount($this->envelopes->show('2026-11-03', $sheet['payCycleId']), 'Needs 1'));
+        self::assertSame(50000, $this->amount($this->envelopes->show('2026-11-03', $sheet['payCycleId']), 'Road cushion'));
 
         $opened = $this->envelopes->show('2026-12-01', $sheet['payCycleId']);
         self::assertSame('2026-12-01', $opened['period']['start']);
         self::assertFalse($opened['period']['upcoming']);
-        self::assertSame(1000, $this->amount($opened, 'Needs 1'));
-        self::assertSame(0, $this->amount($opened, 'Wants 1'));
-        self::assertSame($this->sourceTotal($opened), $opened['availableMinor']);
+        self::assertSame(1000, $this->amount($opened, 'Road cushion'));
+        self::assertSame(0, $this->amount($opened, 'Fun money'));
+        self::assertSame($this->sourceTotal($opened), $opened['poolMinor']);
+        self::assertSame($opened['poolMinor'] - $opened['assignedMinor'], $opened['availableMinor']);
     }
 
     public function testAnAmountHeldBeforeEnvelopesBecomesTheOpenAssignment(): void
@@ -642,14 +732,14 @@ final class EnvelopeRulesTest extends TestCase
         )->execute([$_SESSION['user_id']]);
         $this->pdo->prepare(
             'UPDATE categories SET amount_minor = 4200 WHERE user_id = ? AND name = ?'
-        )->execute([$_SESSION['user_id'], 'Needs 1']);
+        )->execute([$_SESSION['user_id'], 'Road cushion']);
 
         $sheet = $this->envelopes->show('2026-11-03');
 
-        self::assertSame('Averaged Payor', $this->payor($sheet));
-        self::assertSame(4200, $this->amount($sheet, 'Needs 1'));
-        self::assertSame(4200, $this->namedCategory('Needs 1')['amountMinor']);
-        self::assertSame(4200, $this->amount($this->envelopes->show('2026-11-03', $this->payCycleId($sheet, 'Monthly Payor')), 'Needs 1'));
+        self::assertSame('Camp host', $this->payor($sheet));
+        self::assertSame(4200, $this->amount($sheet, 'Road cushion'));
+        self::assertSame(4200, $this->namedCategory('Road cushion')['amountMinor']);
+        self::assertSame(4200, $this->amount($this->envelopes->show('2026-11-03', $this->payCycleId($sheet, 'Remote salary')), 'Road cushion'));
     }
 
     public function testAnotherOpenPeriodCountsAgainstTheSamePool(): void
@@ -657,7 +747,7 @@ final class EnvelopeRulesTest extends TestCase
         $sheet = $this->envelopes->show('2026-11-03');
         $weekly = null;
         foreach ($sheet['payors'] as $payor) {
-            if ($payor['payor'] === 'Weekly Payor') {
+            if ($payor['payor'] === 'Camp host') {
                 $weekly = $payor['id'];
             }
         }
@@ -665,19 +755,20 @@ final class EnvelopeRulesTest extends TestCase
         $week = $this->envelopes->show('2026-11-03', $weekly);
         self::assertSame('2026-11-01', $week['period']['start']);
         self::assertSame('2026-11-07', $week['period']['end']);
-        self::assertSame(0, $this->amount($week, 'Wants 1'));
+        self::assertSame(0, $this->amount($week, 'Fun money'));
 
         $saved = $this->envelopes->save([
             'today' => '2026-11-03',
             'payCycleId' => $weekly,
-            'amounts' => [['categoryId' => $this->categoryId($week, 'Wants 1'), 'amountMinor' => 2500]],
+            'amounts' => [['categoryId' => $this->categoryId($week, 'Fun money'), 'amountMinor' => 2500]],
         ]);
-        self::assertSame(2500, $this->amount($saved, 'Wants 1'));
-        self::assertSame($week['availableMinor'], $saved['availableMinor']);
-        self::assertSame(2500, $this->namedCategory('Wants 1')['amountMinor']);
+        self::assertSame(2500, $this->amount($saved, 'Fun money'));
+        self::assertSame($week['assignedMinor'] + 2500, $saved['assignedMinor']);
+        self::assertSame($week['availableMinor'] - 2500, $saved['availableMinor']);
+        self::assertSame(2500, $this->namedCategory('Fun money')['amountMinor']);
 
         $monthly = $this->envelopes->show('2026-11-03', $sheet['payCycleId']);
-        self::assertSame(50000, $this->amount($monthly, 'Needs 1'));
+        self::assertSame(50000, $this->amount($monthly, 'Road cushion'));
         self::assertSame($sheet['assignedMinor'] + 2500, $monthly['assignedMinor']);
     }
 

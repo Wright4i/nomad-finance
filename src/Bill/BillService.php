@@ -45,6 +45,43 @@ final class BillService
         return array_map($this->present(...), is_array($rows) ? $rows : []);
     }
 
+    /**
+     * One status section, oldest dates first, a few days at a time.
+     * Paid opens on the recent dates and older chunks follow. Other sections open early and later chunks follow.
+     * The full list stays on list().
+     *
+     * @return array{bills:list<array<string, mixed>>,hasMore:bool}
+     */
+    public function section(string $section, int $chunks): array
+    {
+        if (!in_array($section, ['active', 'paused', 'paid', 'archived'], true)) {
+            throw new ApiException(422, 'Choose a bill section.');
+        }
+        $rows = [];
+        foreach ($this->list() as $bill) {
+            $shown = BillWindow::shownOn($bill, $section);
+            if ($shown === null) {
+                continue;
+            }
+            $rows[] = [
+                'id' => (int) $bill['id'],
+                'name' => (string) $bill['name'],
+                'shownOn' => $shown,
+                'amountMinor' => (int) $bill['amountMinor'],
+                'bill' => $bill,
+            ];
+        }
+        $window = BillWindow::window($rows, $chunks, $section === 'paid');
+        $bills = [];
+        foreach ($window['rows'] as $row) {
+            if (is_array($row['bill'])) {
+                $bills[] = $row['bill'];
+            }
+        }
+
+        return ['bills' => $bills, 'hasMore' => $window['hasMore']];
+    }
+
     /** @return array<string, mixed> */
     public function get(int $id): array
     {
@@ -708,8 +745,9 @@ final class BillService
     }
 
     /**
-     * A fuel or want log is an unpaid one-time bill. It does not move a balance.
+     * A fuel, need, want, or saving log is an unpaid one-time bill. It does not move a balance.
      * Mark paid comes later. An unpaid fuel log still advances the odometer.
+     * A need log does not accept Fuel.
      *
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -720,11 +758,11 @@ final class BillService
         if ($kind === 'fuel') {
             return $this->logFuel($input);
         }
-        if ($kind === 'want') {
-            return $this->logWant($input);
+        if ($kind === 'need' || $kind === 'want' || $kind === 'saving') {
+            return $this->logSpend($input, $kind);
         }
 
-        throw new ApiException(422, 'Check the highlighted fields.', ['kind' => 'Choose Fuel or Want.']);
+        throw new ApiException(422, 'Check the highlighted fields.', ['kind' => 'Choose Fuel, Need, Want, or Saving.']);
     }
 
     /** @param array<string, mixed> $input */
@@ -764,9 +802,8 @@ final class BillService
         if ((string) $existing['recurrence'] !== 'once' || $existing['source_account_id'] !== null) {
             return false;
         }
-        $type = (string) $existing['type'];
 
-        return $type === 'fuel' || BillTypes::group($type) === 'wants';
+        return BillTypes::group((string) $existing['type']) !== '';
     }
 
     /**
@@ -776,11 +813,18 @@ final class BillService
     private function guardLogEdit(array $existing, array $data): void
     {
         $type = (string) $existing['type'];
-        if ($type === 'fuel' && $data['type'] !== 'fuel') {
+        $next = (string) $data['type'];
+        if ($type === 'fuel' && $next !== 'fuel') {
             throw new ApiException(422, 'Check the highlighted fields.', ['type' => 'A fuel log stays fuel.']);
         }
-        if (BillTypes::group($type) === 'wants' && BillTypes::group((string) $data['type']) !== 'wants') {
+        if ($type !== 'fuel' && BillTypes::group($type) === 'needs' && (BillTypes::group($next) !== 'needs' || $next === 'fuel')) {
+            throw new ApiException(422, 'Check the highlighted fields.', ['type' => 'Choose a needs type.']);
+        }
+        if (BillTypes::group($type) === 'wants' && BillTypes::group($next) !== 'wants') {
             throw new ApiException(422, 'Check the highlighted fields.', ['type' => 'Choose a wants type.']);
+        }
+        if (BillTypes::group($type) === 'savings' && BillTypes::group($next) !== 'savings') {
+            throw new ApiException(422, 'Check the highlighted fields.', ['type' => 'Choose a savings type.']);
         }
         if ($data['recurrence'] !== 'once') {
             throw new ApiException(422, 'Check the highlighted fields.', ['recurrence' => 'A log is one time.']);
@@ -864,22 +908,25 @@ final class BillService
     /** @param array<string, mixed> $input
      *  @return array<string, mixed>
      */
-    private function logWant(array $input): array
+    private function logSpend(array $input, string $kind): array
     {
         $errors = [];
         $today = $this->today($input);
         $date = $this->logDate($input, $today, $errors);
         $accountId = $this->logAccount($input, $errors);
+        $group = $kind === 'need' ? 'needs' : ($kind === 'saving' ? 'savings' : 'wants');
         $type = is_string($input['type'] ?? null) ? $input['type'] : '';
-        if (BillTypes::group($type) !== 'wants') {
-            $errors['type'] = 'Choose a wants type.';
+        if (BillTypes::group($type) !== $group || ($kind === 'need' && $type === 'fuel')) {
+            $errors['type'] = $kind === 'need'
+                ? 'Choose a needs type.'
+                : ($kind === 'saving' ? 'Choose a savings type.' : 'Choose a wants type.');
         }
         $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
         if ($name === '' || mb_strlen($name) > 80) {
             $errors['name'] = 'Use a name of 1 to 80 characters.';
         }
         $other = null;
-        if ($type === 'misc') {
+        if (BillTypes::namesItself($type)) {
             $other = trim(is_string($input['otherLabel'] ?? null) ? $input['otherLabel'] : '');
             if ($other === '' || mb_strlen($other) > 80) {
                 $errors['otherLabel'] = 'Use a name of 1 to 80 characters.';

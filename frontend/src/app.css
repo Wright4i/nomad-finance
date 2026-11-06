@@ -82,6 +82,10 @@
   --tone-motorcycle: var(--iris);
   --tone-rv: var(--rose);
   --tone-semi: var(--stone);
+  --tone-utv: var(--amber);
+  --tone-atv: var(--fern);
+  --tone-golf-cart: var(--lemon);
+  --tone-dirt-bike: var(--berry);
   --tone-active: var(--teal);
   --tone-paused: var(--stone);
   --tone-paid: var(--sky);
@@ -174,6 +178,10 @@
   --tone-motorcycle: var(--iris);
   --tone-rv: var(--rose);
   --tone-semi: var(--stone);
+  --tone-utv: var(--amber);
+  --tone-atv: var(--fern);
+  --tone-golf-cart: var(--lemon);
+  --tone-dirt-bike: var(--berry);
   --tone-active: var(--teal);
   --tone-paused: var(--stone);
   --tone-paid: var(--sky);
@@ -1377,6 +1385,35 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   border: 1px solid var(--line);
 }
 
+.globe-stage {
+  position: relative;
+}
+
+.globe-past {
+  position: absolute;
+  z-index: 3;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.35rem 0.55rem 0.35rem 0.75rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--bg) 88%, transparent);
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.globe-past select {
+  border-radius: 0.55rem;
+  border: 1px solid var(--line);
+  background: var(--bg-raise);
+  color: var(--text);
+  padding: 0.25rem 0.4rem;
+}
+
 .globe {
   height: 52vh;
   min-height: 280px;
@@ -1455,6 +1492,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   color: #9ef0e0;
   font-size: 0.72rem;
   white-space: nowrap;
+}
+
+.map-flight {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  color: #0f766e;
+  background: color-mix(in oklab, #f4fffc 90%, transparent);
+  border: 2px solid #0f766e;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgb(244 255 252 / 80%);
+}
+
+.map-flight svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
 }
 
 dialog.modal {
@@ -2003,6 +2058,37 @@ button.entry-chip {
   border-top: 1px solid var(--line);
 }
 
+.bill-section {
+  min-width: 0;
+}
+
+.bill-scroll {
+  max-height: 22rem;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: var(--text) color-mix(in oklab, var(--text) 18%, transparent);
+  padding-right: 0.15rem;
+}
+
+.bill-scroll::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 10px;
+}
+
+.bill-scroll::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--text) 18%, transparent);
+  border-radius: 999px;
+}
+
+.bill-scroll::-webkit-scrollbar-thumb {
+  background: var(--text);
+  border-radius: 999px;
+  min-height: 1.4rem;
+}
+
 .bill-day {
   display: grid;
   gap: 0.55rem;
@@ -2098,6 +2184,37 @@ button.entry-chip {
   gap: 0.75rem;
 }
 
+.bucket-board:has(.bucket-cell) {
+  align-items: stretch;
+  column-gap: 0.75rem;
+  row-gap: 3.4rem;
+}
+
+.bucket-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.bucket-overage {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 0.2rem);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.28rem 0.35rem;
+  border-radius: 0.4rem;
+  background: #d0122a;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+}
+
 .bucket-tile {
   position: relative;
   display: grid;
@@ -2112,8 +2229,12 @@ button.entry-chip {
 }
 
 .bucket-tile.over {
-  border-color: #c9842a;
-  background: color-mix(in oklab, #c9842a 18%, var(--bg-raise));
+  border-color: #e08a2a;
+  background: color-mix(in oklab, #e08a2a 18%, var(--bg-raise));
+}
+
+.bucket-tile.over .bucket-water {
+  --tone: #e08a2a;
 }
 
 .bucket-water {
@@ -2164,6 +2285,12 @@ button.entry-chip {
   100% { transform: rotate(0deg); }
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .bucket-tile.envelope-tile strong a:hover {
+    text-decoration: underline;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bucket-wave { display: none; }
 
@@ -2187,7 +2314,10 @@ a.bucket-tile {
   color: inherit;
   text-decoration: none;
   aspect-ratio: auto;
-  align-self: start;
+  align-self: stretch;
+  align-content: start;
+  grid-template-rows: auto auto 1fr;
+  overflow: visible;
   background: linear-gradient(
     155deg,
     color-mix(in oklab, var(--tone, var(--stone)) 34%, var(--bg-raise)),
@@ -2195,10 +2325,40 @@ a.bucket-tile {
   );
 }
 
+a.bucket-tile > span {
+  min-width: 0;
+}
+
+a.bucket-tile > span strong {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+a.bucket-tile .money {
+  align-self: end;
+}
+
 .bucket-tile.envelope-tile {
   aspect-ratio: auto;
-  min-height: 9.5rem;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: max(9.5rem, min-content);
+  align-content: start;
   border-radius: 5%;
+}
+
+.bucket-tile.envelope-tile > span:not(.bucket-water) {
+  min-width: 0;
+}
+
+.bucket-tile.envelope-tile > span:not(.bucket-water) strong,
+.bucket-tile.envelope-tile > em {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.bucket-tile.envelope-tile strong a {
+  text-decoration: none;
 }
 
 .bucket-tile.envelope-tile strong,
@@ -3080,6 +3240,7 @@ a.planner-stay {
 .account-totals {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(4.2rem, 1fr));
+  align-items: stretch;
   gap: 0.45rem 0.35rem;
   color: inherit;
   text-decoration: none;
@@ -3090,11 +3251,19 @@ a.planner-stay {
 
 .account-total {
   display: grid;
+  grid-template-rows: auto 1fr;
   gap: 0.1rem;
   min-width: 0;
+  height: 100%;
+}
+
+.account-total .kicker {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .account-total .money {
+  align-self: end;
   font-size: 0.95rem;
   font-weight: 650;
 }
@@ -3110,11 +3279,13 @@ a.planner-stay {
 .planner-gauges {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
   gap: 0.85rem;
 }
 
 .planner-board button.want-gauge {
   width: 100%;
+  align-self: stretch;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 0.85rem;
@@ -3246,13 +3417,15 @@ a.planner-stay {
   .account-totals {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 0.9rem 1.35rem;
   }
 
   .account-total {
     flex: 1 1 7rem;
     box-sizing: border-box;
+    align-self: stretch;
+    height: auto;
     min-width: max-content;
     max-width: 100%;
   }

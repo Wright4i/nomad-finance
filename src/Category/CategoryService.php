@@ -177,7 +177,7 @@ final class CategoryService
         $stmt->execute([$id, $this->actor->id()]);
         $row = $stmt->fetch();
         if (!is_array($row)) {
-            throw new ApiException(404, 'Category not found.');
+            throw new ApiException(404, 'Bucket not found.');
         }
 
         return $row;

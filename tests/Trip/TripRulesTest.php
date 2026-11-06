@@ -6,6 +6,7 @@ namespace App\Tests\Trip;
 
 use App\Account\AccountService;
 use App\Auth\Actor;
+use App\Bill\BillService;
 use App\Category\CategoryService;
 use App\Database\Database;
 use App\Http\ApiException;
@@ -377,12 +378,115 @@ final class TripRulesTest extends TestCase
         self::assertSame('Comment 1', $still['ratingComment']);
     }
 
-    public function testLodgingDueDoesNotBlockArchiveOrChangeTheBalance(): void
+    public function testAStayDueBecomesOneLodgingBillAndEditsKeepThatBill(): void
     {
-        $this->stay(8000, 8000, '2026-12-01', '2026-12-05');
+        $trip = $this->stay(12000, 4000, '2026-11-20', '2026-11-24', 'Mesa camp');
+        $created = $this->stayBills();
+        self::assertCount(1, $created);
+        self::assertSame('Mesa camp', $created[0]['name']);
+        self::assertSame('lodging', $created[0]['type']);
+        self::assertSame('once', $created[0]['recurrence']);
+        self::assertSame('active', $created[0]['status']);
+        self::assertSame('USD', $created[0]['currency']);
+        self::assertSame(4000, (int) $created[0]['amount_minor']);
+        self::assertSame('2026-11-20', $created[0]['anchor_date']);
+        self::assertSame('2026-11-20', $created[0]['next_due_date']);
+        self::assertSame($this->accountId, (int) $created[0]['account_id']);
+        self::assertSame((int) $trip['id'], (int) $created[0]['trip_id']);
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+
+        $wallet = $this->accounts->create([
+            'name' => 'Wallet 1',
+            'type' => 'cash',
+            'currency' => 'USD',
+            'balanceMinor' => 5000,
+        ]);
+        $updated = $this->trips->update((int) $trip['id'], $this->fields([
+            'placeName' => 'Mesa camp',
+            'arriveOn' => '2026-11-20',
+            'departOn' => '2026-11-24',
+            'totalMinor' => 12000,
+            'amountDueMinor' => 2500,
+            'balanceDueOn' => '2026-11-22',
+            'accountId' => (int) $wallet['id'],
+        ]));
+        $edited = $this->stayBills();
+        self::assertCount(1, $edited);
+        self::assertSame((int) $created[0]['id'], (int) $edited[0]['id']);
+        self::assertSame('Mesa camp', $edited[0]['name']);
+        self::assertSame(2500, (int) $edited[0]['amount_minor']);
+        self::assertSame('2026-11-22', $edited[0]['anchor_date']);
+        self::assertSame('2026-11-22', $edited[0]['next_due_date']);
+        self::assertSame((int) $wallet['id'], (int) $edited[0]['account_id']);
+        self::assertSame('USD', $edited[0]['currency']);
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+        self::assertSame(5000, $this->accounts->get((int) $wallet['id'])['balanceMinor']);
+
+        $paid = (new BillService($this->pdo, new CurrencyCatalog(), new Actor($this->pdo)))->markPaid(
+            (int) $edited[0]['id'],
+            ['paidOn' => '2026-11-22'],
+        );
+        self::assertSame('paid', $paid['status']);
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+        self::assertSame(5000, $this->accounts->get((int) $wallet['id'])['balanceMinor']);
+
+        $this->trips->update((int) $updated['id'], $this->fields([
+            'placeName' => 'Mesa camp',
+            'arriveOn' => '2026-11-20',
+            'departOn' => '2026-11-24',
+            'totalMinor' => 12000,
+            'amountDueMinor' => 0,
+            'balanceDueOn' => '2026-11-22',
+            'accountId' => (int) $wallet['id'],
+        ]));
+        self::assertSame([], $this->stayBills());
+
+        $this->stay(0, 0, '2027-02-01', '2027-02-03', 'Open camp');
+        self::assertSame([], $this->stayBills());
+
+        $dated = $this->stay(5000, 5000, '2027-03-01', '2027-03-04', 'Due camp');
+        self::assertCount(1, $this->stayBills());
+        $this->trips->update((int) $dated['id'], $this->fields([
+            'placeName' => 'Due camp',
+            'arriveOn' => '2027-03-01',
+            'departOn' => '2027-03-04',
+            'totalMinor' => 5000,
+            'amountDueMinor' => 5000,
+            'balanceDueOn' => '',
+            'accountId' => $this->accountId,
+        ]));
+        self::assertSame([], $this->stayBills());
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+    }
+
+    public function testLodgingDueDoesNotChangeTheBalanceAndTheBillBlocksArchive(): void
+    {
+        $trip = $this->stay(8000, 8000, '2026-12-01', '2026-12-05');
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+        try {
+            $this->accounts->archive($this->accountId);
+            self::fail('An active lodging bill allowed the account to be archived.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        $this->trips->update((int) $trip['id'], $this->fields([
+            'placeName' => 'Stay 1',
+            'arriveOn' => '2026-12-01',
+            'departOn' => '2026-12-05',
+            'totalMinor' => 8000,
+            'amountDueMinor' => 0,
+            'balanceDueOn' => '2026-12-01',
+        ]));
         self::assertNotNull($this->accounts->archive($this->accountId)['archivedAt']);
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function stayBills(): array
+    {
+        $rows = $this->pdo->query('SELECT * FROM bills WHERE trip_id IS NOT NULL ORDER BY id')->fetchAll();
+
+        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
     }
 
     /** @param array<string, mixed> $extra

@@ -79,6 +79,22 @@
       <path d="M3 15.5V9h7v6.5M10 12h4.2L17 15.5M3 15.5h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       <circle cx="6.5" cy="16.5" r="1.3" fill="currentColor" />
       <circle cx="14" cy="16.5" r="1.3" fill="currentColor" />
+    {:else if mark === 'utv'}
+      <path d="M3.5 15.5V9.5h17v6M3.5 15.5h17M6.5 9.5V7h4.2M13.3 9.5V7h4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      <circle cx="7.5" cy="16.5" r="1.3" fill="currentColor" />
+      <circle cx="16.5" cy="16.5" r="1.3" fill="currentColor" />
+    {:else if mark === 'atv'}
+      <circle cx="6.5" cy="16.5" r="2" stroke="currentColor" stroke-width="1.8" />
+      <circle cx="17.5" cy="16.5" r="2" stroke="currentColor" stroke-width="1.8" />
+      <path d="M8.2 16.2 11 11.5h3.2l2.2 4.7M10.2 11.5 11.4 8h2.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'golf cart'}
+      <path d="M4.5 16V11h8.5v5M13 13.2h5M4.5 16h15.5M6.5 11V7.5h6.5V11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      <circle cx="8" cy="17" r="1.3" fill="currentColor" />
+      <circle cx="16" cy="17" r="1.3" fill="currentColor" />
+    {:else if mark === 'dirt bike'}
+      <circle cx="6.5" cy="16.8" r="2.3" stroke="currentColor" stroke-width="1.8" />
+      <circle cx="17.5" cy="16.8" r="2.3" stroke="currentColor" stroke-width="1.8" />
+      <path d="M8.5 16.5 12 11.2l2.6 1.6 2.4-4.4M12 11.2 10.2 13.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'debt' || mark === 'tax'}
       <path d="M7 4h7l4 4v12H7V4zM14 4v4h4M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'entertainment' || mark === 'education'}

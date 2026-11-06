@@ -13,7 +13,7 @@ final class PlaceSearch
         if (mb_strlen($query) < 2) {
             return [];
         }
-        $url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=' . rawurlencode($query);
+        $url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&accept-language=en&q=' . rawurlencode($query);
         $decoded = $this->fetch($url);
         if ($decoded === null) {
             return [];

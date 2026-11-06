@@ -100,7 +100,7 @@ final class PlannerWidgetsTest extends TestCase
         self::click('Log out');
         self::waitForText('Use demo');
         self::click('Use demo');
-        self::waitForText('Weekly Payor');
+        self::waitForText('Camp host');
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
 
         $seen = self::driver()->executeScript(<<<'JS'
@@ -153,13 +153,31 @@ final class PlannerWidgetsTest extends TestCase
                     bills: titleOf('bills'),
                 },
                 netKicker: text('.planner-net .kicker'),
+                interestLost: text('.planner-interest-lost .planner-interest-amount'),
+                interestGained: text('.planner-interest-gained .planner-interest-amount'),
+                netCopy: text('.planner-net'),
                 paydayOn: document.querySelector('[data-payday]')?.dataset.payday ?? '',
                 today: document.querySelector('.planner-day')?.dataset.today ?? '',
-                totals: [...document.querySelectorAll('.account-total')].map((node) => ({
-                    type: node.dataset.accountType,
-                    side: node.dataset.side,
-                    money: node.querySelector('.money')?.className ?? '',
-                })),
+                totals: [...document.querySelectorAll('.account-total')].map((node) => {
+                    const rect = node.getBoundingClientRect();
+                    const label = node.querySelector('.kicker');
+                    const amount = node.querySelector('.money');
+                    const inside = (item) => {
+                        if (!item) return false;
+                        const box = item.getBoundingClientRect();
+                        return box.top >= rect.top - 1
+                            && box.bottom <= rect.bottom + 1
+                            && item.scrollHeight <= item.clientHeight + 2;
+                    };
+                    return {
+                        type: node.dataset.accountType,
+                        side: node.dataset.side,
+                        money: amount?.className ?? '',
+                        top: rect.top,
+                        height: rect.height,
+                        clipped: !inside(label) || !inside(amount),
+                    };
+                }),
                 tripMap: document.querySelector('[data-section="trips"] .globe') !== null,
                 billColumns: charts ? getComputedStyle(charts).gridTemplateColumns.split(' ').filter(Boolean).length : 0,
                 billStacked: pieCell && legend ? legend.getBoundingClientRect().top >= pieCell.getBoundingClientRect().bottom - 2 : false,
@@ -198,12 +216,26 @@ final class PlannerWidgetsTest extends TestCase
             $seen['widgets'],
         );
         self::assertSame('income,calendar,trips,accounts,envelopes,bills', $seen['order']);
-        self::assertStringContainsString('Weekly Payor', $seen['income']);
+        self::assertStringContainsString('Camp host', $seen['income']);
         self::assertStringContainsString('Nov 8, 2026', $seen['income']);
-        self::assertStringContainsString('$1,000.00', $seen['income']);
-        self::assertStringContainsString('8 payors', $seen['income']);
+        self::assertStringContainsString('$192.00', $seen['income']);
+        self::assertStringContainsString('3 payors', $seen['income']);
         self::assertStringContainsString('Still coming in', $seen['income']);
-        self::assertStringContainsString('$17,500.00', $seen['income']);
+        self::assertStringContainsString('$768.00', $seen['income']);
+        self::click('Next Month');
+        self::wait()->until(function (): bool {
+            $split = self::driver()->executeScript(<<<'JS'
+                return {
+                    income: document.querySelector('[data-section="income"]')?.innerText || '',
+                    bills: document.querySelector('[data-section="bills"]')?.innerText || '',
+                };
+            JS);
+
+            return is_array($split)
+                && str_contains((string) $split['income'], '$768.00')
+                && str_contains((string) $split['bills'], 'Dec 2026');
+        });
+        self::click('Current Month');
         self::assertGreaterThanOrEqual($seen['today'], $seen['paydayOn']);
         self::assertSame($seen['localToday'], $seen['today']);
         self::assertSame($seen['expectedDay'], $seen['day']);
@@ -214,7 +246,7 @@ final class PlannerWidgetsTest extends TestCase
             'calendar' => ['Calendar', '/calendar'],
             'trips' => ['Trips', '/trips'],
             'accounts' => ['Accounts', '/accounts'],
-            'envelopes' => ['Envelopes', '/envelopes'],
+            'envelopes' => ['Budget', '/budget'],
             'bills' => ['Bills', '/bills'],
         ] as $id => [$label, $href]) {
             $title = $seen['titles'][$id];
@@ -233,10 +265,11 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('Calendar', (string) $seen['calendar']);
         self::assertGreaterThan(0.5, $seen['dayShare']);
         self::assertStringContainsString('Trips', (string) $seen['trips']);
-        self::assertStringContainsString('No current stay', $seen['trips']);
-        self::assertFalse($seen['tripMap']);
+        self::assertStringContainsString('Usery Mountain', $seen['trips']);
+        self::assertStringNotContainsString('No current stay', $seen['trips']);
+        self::assertTrue($seen['tripMap']);
         self::assertStringContainsStringIgnoringCase('Accounts', (string) $seen['accounts']);
-        self::assertStringContainsStringIgnoringCase('Envelopes', (string) $seen['envelopes']);
+        self::assertStringContainsStringIgnoringCase('Budget', (string) $seen['envelopes']);
         self::assertStringContainsStringIgnoringCase('Assigned', $seen['envelopes']);
         self::assertStringContainsStringIgnoringCase('Max', $seen['envelopes']);
         self::assertFalse($seen['assign']);
@@ -247,15 +280,15 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('Available to assign', $seen['envelopes']);
         $accounts = strtolower((string) $seen['accounts']);
         self::assertStringContainsString('checking', $accounts);
-        self::assertStringContainsString('$2,490.00', $accounts);
+        self::assertStringContainsString('$3,180.00', $accounts);
         self::assertStringContainsString('savings', $accounts);
-        self::assertStringContainsString('$10,200.00', $accounts);
+        self::assertStringContainsString('$10,050.00', $accounts);
         self::assertStringContainsString('credit', $accounts);
-        self::assertStringContainsString('$400.00', $accounts);
+        self::assertStringContainsString('$860.00', $accounts);
         self::assertStringContainsString('loan', $accounts);
-        self::assertStringContainsString('$5,000.00', $accounts);
+        self::assertStringContainsString('$2,450.00', $accounts);
         self::assertStringContainsString('fuel', $accounts);
-        self::assertStringContainsString('$80.00', $accounts);
+        self::assertStringContainsString('$64.00', $accounts);
         self::assertStringContainsString('coral', $seen['creditClass']);
         self::assertStringContainsString('coral', $seen['otherClass']);
         self::assertStringNotContainsString('teal', $seen['otherClass']);
@@ -264,8 +297,8 @@ final class PlannerWidgetsTest extends TestCase
             [
                 ['type' => 'savings', 'side' => 'asset'],
                 ['type' => 'checking', 'side' => 'asset'],
-                ['type' => 'cash', 'side' => 'asset'],
                 ['type' => 'other', 'side' => 'asset'],
+                ['type' => 'cash', 'side' => 'asset'],
                 ['type' => 'fuel', 'side' => 'liability'],
                 ['type' => 'other', 'side' => 'liability'],
                 ['type' => 'credit', 'side' => 'liability'],
@@ -276,6 +309,33 @@ final class PlannerWidgetsTest extends TestCase
                 $seen['totals'],
             ),
         );
+        $accountRows = [];
+        foreach ($seen['totals'] as $total) {
+            self::assertIsArray($total);
+            self::assertFalse($total['clipped']);
+            $top = (float) $total['top'];
+            $placed = false;
+            foreach ($accountRows as &$accountRow) {
+                if (abs($accountRow['top'] - $top) < 2) {
+                    $accountRow['heights'][] = (float) $total['height'];
+                    $placed = true;
+                    break;
+                }
+            }
+            unset($accountRow);
+            if (!$placed) {
+                $accountRows[] = ['top' => $top, 'heights' => [(float) $total['height']]];
+            }
+        }
+        $accountRowMatched = false;
+        foreach ($accountRows as $accountRow) {
+            if (count($accountRow['heights']) < 2) {
+                continue;
+            }
+            $accountRowMatched = true;
+            self::assertLessThan(2, max($accountRow['heights']) - min($accountRow['heights']));
+        }
+        self::assertTrue($accountRowMatched);
         self::assertGreaterThan(1, $seen['billColumns']);
         self::assertFalse($seen['billStacked']);
         self::assertTrue($seen['gaugesShareRow']);
@@ -284,6 +344,9 @@ final class PlannerWidgetsTest extends TestCase
         self::assertGreaterThan(0, $seen['pieWidth']);
         self::assertLessThan(200, $seen['pieWidth']);
         self::assertSame(0, $seen['figureChildren']);
+        self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}\/mn$/', (string) $seen['interestLost']);
+        self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}\/mn$/', (string) $seen['interestGained']);
+        self::assertStringNotContainsString('per month', (string) $seen['netCopy']);
         self::assertStringNotContainsString('USD', $seen['income'] . $seen['accounts'] . $seen['envelopes'] . $seen['bills']);
         self::assertGreaterThan($seen['net']['left'] + $seen['net']['width'] - 8, $seen['incomeBox']['left']);
         self::assertEqualsWithDelta($seen['calendarBox']['top'], $seen['tripBox']['top'], 4);
@@ -420,7 +483,7 @@ final class PlannerWidgetsTest extends TestCase
         });
 
         self::driver()->navigate()->refresh();
-        self::waitForText('Weekly Payor');
+        self::waitForText('Camp host');
         $kept = self::driver()->executeScript(<<<'JS'
             return {
                 order: document.querySelector('.planner-board')?.dataset.order ?? '',
@@ -435,11 +498,11 @@ final class PlannerWidgetsTest extends TestCase
             $kept['widgets'],
         );
         self::assertSame('bills,income,calendar,trips,accounts,envelopes', $kept['order']);
-        self::assertStringContainsString('Weekly Payor', $kept['income']);
+        self::assertStringContainsString('Camp host', $kept['income']);
         self::assertSame(1, $kept['pie']);
 
         // Income is half beside net worth. Calendar, Trips, and Accounts are single, three across.
-        // Envelopes and Bills each take the row.
+        // Budget and Bills each take the row.
         $defaults = self::driver()->executeScript(<<<'JS'
             const span = (id) => document.querySelector(`[data-widget="${id}"]`)?.dataset.span ?? '';
             return {
@@ -531,7 +594,7 @@ final class PlannerWidgetsTest extends TestCase
         );
 
         self::driver()->navigate()->refresh();
-        self::waitForText('Weekly Payor');
+        self::waitForText('Camp host');
         $restored = self::driver()->executeScript(<<<'JS'
             return {
                 span: document.querySelector('[data-widget="income"]')?.dataset.span ?? '',
@@ -550,7 +613,7 @@ final class PlannerWidgetsTest extends TestCase
     {
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Weekly Payor');
+        self::waitForText('Camp host');
 
         self::driver()->findElement(WebDriverBy::cssSelector('a.planner-day'))->click();
         self::wait()->until(
@@ -558,50 +621,8 @@ final class PlannerWidgetsTest extends TestCase
         );
         self::waitForText('Show Income');
         self::driver()->get(self::$base . '/');
-        self::waitForText('No current stay');
-
-        self::driver()->manage()->timeouts()->setScriptTimeout(20);
-        $created = self::driver()->executeAsyncScript(<<<'JS'
-            const done = arguments[arguments.length - 1];
-            const today = document.querySelector('.planner-day')?.dataset.today || '';
-            const [year, month, day] = today.split('-').map(Number);
-            const next = new Date(year, month - 1, day + 1);
-            const tomorrow = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
-            fetch('/api/session', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
-                .then((response) => response.json())
-                .then((session) => fetch('/api/trips', {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        Accept: 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': session.csrfToken,
-                    },
-                    body: JSON.stringify({
-                        placeName: 'Camp 1',
-                        city: 'Austin',
-                        region: 'TX',
-                        arriveOn: today,
-                        departOn: tomorrow,
-                        latitude: '30.2672',
-                        longitude: '-97.7431',
-                        totalMinor: 0,
-                        amountDueMinor: 0,
-                        today,
-                    }),
-                }))
-                .then(async (response) => {
-                    const body = await response.json();
-                    done({ status: response.status, city: body.trip ? body.trip.city : '', message: body.message || '' });
-                })
-                .catch((error) => done({ status: 0, city: '', message: String(error) }));
-        JS);
-        self::assertIsArray($created);
-        self::assertSame(201, $created['status'], (string) ($created['message'] ?? ''));
-        self::assertSame('Austin', $created['city']);
-
-        self::driver()->navigate()->refresh();
-        self::waitForText('Camp 1');
+        self::waitForText('Usery Mountain');
+        self::assertStringNotContainsString('No current stay', self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText());
         $square = self::driver()->executeScript(<<<'JS'
             const day = document.querySelector('.planner-day');
             const items = day ? day.querySelector('.day-items') : null;
@@ -613,7 +634,7 @@ final class PlannerWidgetsTest extends TestCase
             };
         JS);
         self::assertIsArray($square);
-        self::assertContains('Camp 1', $square['names']);
+        self::assertContains('Usery Mountain', $square['names']);
         self::assertSame('auto', $square['overflow']);
         self::assertContains($square['align'], ['start', 'flex-start']);
         $map = null;
@@ -630,8 +651,8 @@ final class PlannerWidgetsTest extends TestCase
                             && globe.dataset.projection === 'mercator'
                             && globe.dataset.basemap !== 'satellite'
                             && zoom > 6 && zoom < 12
-                            && label.includes('Camp 1')
-                            && label.includes('Austin, TX');
+                            && label.includes('Usery Mountain')
+                            && label.includes('Mesa, AZ');
                         return {
                             ok,
                             text: section ? section.innerText.replace(/\s+/g, ' ').trim().slice(0, 240) : '',
@@ -701,7 +722,7 @@ final class PlannerWidgetsTest extends TestCase
             'document.querySelector(\'[data-widget="envelopes"] .planner-size\')?.scrollIntoView({ block: "center" })',
         );
         self::driver()->findElement(WebDriverBy::cssSelector('[data-widget="envelopes"] .planner-size'))->click();
-        self::waitForText('Edit Envelopes layout');
+        self::waitForText('Edit Budget layout');
         self::chooseSpan(2);
         self::waitForSpan('envelopes', 2);
         self::driver()->findElement(WebDriverBy::xpath('//dialog[contains(@class,"modal") and @open]//button[normalize-space()="Close"]'))->click();
@@ -724,7 +745,7 @@ final class PlannerWidgetsTest extends TestCase
                 'return document.querySelector("dialog.gauge-modal[open]")?.innerText ?? ""',
             );
 
-            return is_string($text) && str_contains($text, 'Needs 1') && str_contains($text, 'Rent');
+            return is_string($text) && str_contains($text, 'Road cushion') && str_contains($text, 'Rent');
         });
         $marks = self::driver()->executeScript(<<<'JS'
             const dialog = document.querySelector('dialog.gauge-modal[open]');
@@ -734,15 +755,15 @@ final class PlannerWidgetsTest extends TestCase
                 return { glyph: node.dataset.glyph || '', tone: node.style.getPropertyValue('--tone') };
             };
             const names = [...dialog.querySelectorAll('[data-glyph]')].map((node) => (node.textContent || '').replace(/\s+/g, ' ').trim());
-            return { needs: mark('Needs 1'), rent: mark('Rent'), names };
+            return { needs: mark('Road cushion'), rent: mark('Rent'), names };
         JS);
         self::assertIsArray($marks);
         self::assertSame('needs', $marks['needs']['glyph']);
         self::assertSame('rent', $marks['rent']['glyph']);
         self::assertSame('var(--tone-needs)', $marks['needs']['tone']);
         self::assertSame('var(--tone-rent)', $marks['rent']['tone']);
-        self::assertNotContains('Wants 1', $marks['names']);
-        self::assertNotContains('Savings 1', $marks['names']);
+        self::assertNotContains('Fun money', $marks['names']);
+        self::assertNotContains('Next rig', $marks['names']);
 
         $inside = self::driver()->executeScript(<<<'JS'
             const node = document.querySelector('dialog.gauge-modal[open] [data-glyph="rent"]');
@@ -771,7 +792,7 @@ final class PlannerWidgetsTest extends TestCase
     {
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Weekly Payor');
+        self::waitForText('Camp host');
 
         $default = self::calendarSquares();
         self::assertSame('2', $default['span']);

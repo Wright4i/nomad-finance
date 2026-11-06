@@ -107,10 +107,10 @@ final class CalendarTest extends TestCase
         self::waitForText('Available to assign');
         self::clickLink('Calendar');
         self::openMonth('2026-11');
-        self::waitForText('Stay 1');
+        self::waitForText('Lost Dutchman');
         self::waitForText('Nov 20, 2026 – Nov 24, 2026');
-        self::waitForText('Weekly Payor');
-        self::waitForText('Travel Bill');
+        self::waitForText('Camp host');
+        self::waitForText('America the Beautiful');
         $marks = self::chipMarks();
         self::assertSame('M16.2 8.2A5.2 5.2 0 1 0 17 12M17 7.2V11h-3.6', $marks['income']);
         self::assertSame('M4 14.5 20 9.5l-7 1.2L10 16.5l1.4-4.2L4 14.5z', $marks['bill']);
@@ -135,113 +135,116 @@ final class CalendarTest extends TestCase
         self::assertSame([true, true, true, true], $checked);
         self::assertSame('--lilac', self::filterTone('Show Paid Bills'));
         self::assertSame('--coral', self::filterTone('Show Unpaid Bills'));
-        self::assertSame('--lilac', self::chipFill('2026-11-04', 'Paid Weekly Bill'));
-        self::assertSame(1, self::chipCount('2026-11-04', 'Paid Weekly Bill'));
-        self::assertSame('--coral', self::chipFill('2026-11-11', 'Paid Weekly Bill'));
-        self::assertStringContainsString('$64.68', self::paidColumn());
+        self::assertSame('--lilac', self::chipFill('2026-11-04', 'Metered electric'));
+        self::assertSame(1, self::chipCount('2026-11-04', 'Metered electric'));
+        self::assertSame('--coral', self::chipFill('2026-11-11', 'Metered electric'));
+        self::assertStringContainsString('$58.40', self::paidColumn());
         self::setFilter('Show Unpaid Bills', false);
-        self::assertSame('--lilac', self::chipFill('2026-11-04', 'Paid Weekly Bill'));
-        self::assertSame('', self::chipFill('2026-11-11', 'Paid Weekly Bill'));
+        self::assertSame('--lilac', self::chipFill('2026-11-04', 'Metered electric'));
+        self::assertSame('', self::chipFill('2026-11-11', 'Metered electric'));
         self::setFilter('Show Unpaid Bills', true);
         self::setFilter('Show Paid Bills', false);
-        self::assertSame('', self::chipFill('2026-11-04', 'Paid Weekly Bill'));
-        self::assertSame('--coral', self::chipFill('2026-11-11', 'Paid Weekly Bill'));
+        self::assertSame('', self::chipFill('2026-11-04', 'Metered electric'));
+        self::assertSame('--coral', self::chipFill('2026-11-11', 'Metered electric'));
         self::setFilter('Show Paid Bills', true);
-        self::assertSame('--lilac', self::chipFill('2026-11-04', 'Paid Weekly Bill'));
+        self::assertSame('--lilac', self::chipFill('2026-11-04', 'Metered electric'));
 
         $total = self::monthTotal();
         self::assertStringContainsString('Income', $total);
         self::assertStringContainsString('Debt', $total);
         self::assertStringContainsString('Paid', $total);
         self::assertStringContainsString('Net', $total);
-        self::assertStringNotContainsString('Stay 1', $total);
+        self::assertStringNotContainsString('Lost Dutchman', $total);
 
         self::setFilter('Show Stays', false);
-        self::waitForTextGone('Stay 1');
+        self::waitForTextGone('Lost Dutchman');
         self::assertSame($total, self::monthTotal());
         self::clickDay('2026-11-24');
         $depart = self::dialogText();
-        self::assertStringContainsString('Stay 1', $depart);
+        self::assertStringContainsString('Lost Dutchman', $depart);
         self::assertStringContainsString('Nov 20, 2026 – Nov 24, 2026', $depart);
         self::assertStringContainsString('No income this day.', $depart);
         self::assertStringContainsString('No bills this day.', $depart);
         self::assertStringNotContainsString('No stay this day.', $depart);
-        self::assertSame(self::TREE, self::dialogPaths('Stay'));
+        self::assertSame([...self::TREE, ...self::TREE], self::dialogPaths('Stay'));
         self::assertLessThan(strpos($depart, 'Income'), strpos($depart, 'Stay'));
         self::assertLessThan(strpos($depart, 'Bills'), strpos($depart, 'Income'));
         self::click('Close');
 
         self::clickDay('2026-11-20');
         $arrive = self::dialogText();
-        self::assertStringContainsString('Stay 1', $arrive);
-        self::assertStringContainsString('Recurring Yearly Bill', $arrive);
+        self::assertStringContainsString('Lost Dutchman', $arrive);
+        self::assertStringContainsString('Health share', $arrive);
         self::assertStringContainsString('No income this day.', $arrive);
         self::click('Close');
 
         self::clickDay('2026-11-19');
         $before = self::dialogText();
-        self::assertStringContainsString('No stay this day.', $before);
+        self::assertStringContainsString('McDowell Mountain', $before);
+        self::assertStringNotContainsString('No stay this day.', $before);
         self::assertStringContainsString('No income this day.', $before);
-        self::assertStringContainsString('Travel Bill', $before);
-        self::assertSame('M4 14.5 20 9.5l-7 1.2L10 16.5l1.4-4.2L4 14.5z', self::dialogBillPath('Travel Bill'));
+        self::assertStringContainsString('America the Beautiful', $before);
+        self::assertSame('M4 14.5 20 9.5l-7 1.2L10 16.5l1.4-4.2L4 14.5z', self::dialogBillPath('America the Beautiful'));
         self::click('Close');
 
         self::setFilter('Show Stays', true);
         self::setFilter('Show Income', false);
         self::setFilter('Show Paid Bills', false);
         self::setFilter('Show Unpaid Bills', false);
-        self::waitForTextGone('Weekly Payor');
-        self::waitForTextGone('Travel Bill');
+        self::waitForTextGone('Camp host');
+        self::waitForTextGone('America the Beautiful');
         self::assertSame($total, self::monthTotal());
         self::clickDay('2026-11-22');
         $middle = self::dialogText();
-        self::assertStringContainsString('Stay 1', $middle);
-        self::assertStringContainsString('Weekly Payor', $middle);
-        self::assertStringContainsString('Recurring Weekly Bill', $middle);
+        self::assertStringContainsString('Lost Dutchman', $middle);
+        self::assertStringContainsString('Camp host', $middle);
+        self::assertStringContainsString('Shore power', $middle);
         self::assertStringNotContainsString('No bills this day.', $middle);
         self::assertSame('M16.2 8.2A5.2 5.2 0 1 0 17 12M17 7.2V11h-3.6', self::dialogMark('Income'));
         self::click('Close');
         self::setFilter('Show Income', true);
         self::setFilter('Show Paid Bills', true);
         self::setFilter('Show Unpaid Bills', true);
-        self::waitForText('Weekly Payor');
-        self::waitForText('Stay 1');
+        self::waitForText('Camp host');
+        self::waitForText('Lost Dutchman');
 
         self::openMonth('2026-10');
-        self::waitForText('Paid One-Time Bill');
-        self::waitForText('Overdue Monthly Bill');
-        self::assertSame('--lilac', self::chipFill('2026-10-01', 'Paid One-Time Bill'));
-        self::assertSame('--coral', self::chipFill('2026-10-15', 'Overdue Monthly Bill'));
-        self::assertTrue(self::chipInk('2026-10-01', 'Paid One-Time Bill'));
-        self::assertTrue(self::chipInk('2026-10-15', 'Overdue Monthly Bill'));
+        self::waitForText('Urgent care');
+        self::waitForText('October site');
+        self::assertSame('--lilac', self::chipFill('2026-10-01', 'Urgent care'));
+        self::assertSame('--coral', self::chipFill('2026-10-15', 'October site'));
+        self::assertTrue(self::chipInk('2026-10-01', 'Urgent care'));
+        self::assertTrue(self::chipInk('2026-10-15', 'October site'));
         self::clickDay('2026-10-01');
-        self::assertStringContainsString('Paid One-Time Bill', self::dialogText());
+        self::assertStringContainsString('Urgent care', self::dialogText());
         self::assertSame('--lilac', self::dialogAmountTone('Bills'));
         self::click('Close');
         self::clickDay('2026-10-15');
-        self::assertStringContainsString('Overdue Monthly Bill', self::dialogText());
-        self::assertSame('--coral', self::dialogAmountTone('Bills', 'Overdue Monthly Bill'));
+        self::assertStringContainsString('October site', self::dialogText());
+        self::assertSame('--coral', self::dialogAmountTone('Bills', 'October site'));
         self::click('Close');
 
         self::setFilter('Show Unpaid Bills', false);
-        self::waitForTextGone('Overdue Monthly Bill');
-        self::waitForText('Paid One-Time Bill');
+        self::waitForTextGone('October site');
+        self::waitForText('Urgent care');
         self::setFilter('Show Unpaid Bills', true);
-        self::waitForText('Overdue Monthly Bill');
+        self::waitForText('October site');
         self::setFilter('Show Paid Bills', false);
-        self::waitForTextGone('Paid One-Time Bill');
-        self::waitForText('Overdue Monthly Bill');
+        self::waitForTextGone('Urgent care');
+        self::waitForText('October site');
         self::setFilter('Show Paid Bills', true);
-        self::waitForText('Paid One-Time Bill');
+        self::waitForText('Urgent care');
 
         self::openMonth('2026-12');
         self::wait()->until(function (): bool {
-            return self::chipFill('2026-12-15', 'Recurring Monthly Bill') === '--coral';
+            return self::chipFill('2026-12-15', 'Streaming') === '--coral';
         });
-        self::assertSame(1, self::chipCount('2026-12-15', 'Recurring Monthly Bill'));
+        self::assertSame(1, self::chipCount('2026-12-15', 'Streaming'));
 
         self::clickLink('Bills');
-        self::waitForText('Paid Weekly Bill');
+        Reveal::bill(self::driver(), 'Metered electric', 'active');
+        Reveal::bill(self::driver(), 'Metered electric', 'paid');
+        self::waitForText('Metered electric');
         $actions = self::driver()->executeScript(<<<'JS'
             const buttons = (section, name) => {
                 const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === section);
@@ -250,7 +253,7 @@ final class CalendarTest extends TestCase
                     : null;
                 return card ? [...card.querySelectorAll('button')].map((node) => node.textContent.trim()) : [];
             };
-            return { active: buttons('Active', 'Paid Weekly Bill'), paid: buttons('Paid', 'Paid Weekly Bill') };
+            return { active: buttons('Active', 'Metered electric'), paid: buttons('Paid', 'Metered electric') };
         JS);
         self::assertIsArray($actions);
         self::assertContains('Mark paid', $actions['active']);
@@ -258,7 +261,7 @@ final class CalendarTest extends TestCase
         self::assertContains('Unpay', $actions['paid']);
         self::assertNotContains('Mark paid', $actions['paid']);
         self::wait()->until(
-            WebDriverExpectedCondition::elementToBeClickable(WebDriverBy::partialLinkText('Paid Weekly Bill'))
+            WebDriverExpectedCondition::elementToBeClickable(WebDriverBy::partialLinkText('Metered electric'))
         )->click();
         self::waitForText('Save bill');
         $open = self::driver()->executeScript(<<<'JS'
@@ -286,7 +289,7 @@ final class CalendarTest extends TestCase
         self::assertSame('Thu1', self::compact($phone['label']));
 
         self::openMonth('2026-11');
-        self::waitForText('Stay 1');
+        self::waitForText('Lost Dutchman');
         self::waitForText('Show Stays');
         $november = self::layout();
         self::assertSame(1, $november['columns']);
@@ -313,8 +316,8 @@ final class CalendarTest extends TestCase
         self::setFilter('Show Stays', true);
         self::setFilter('Show Paid Bills', true);
         self::setFilter('Show Unpaid Bills', true);
-        self::waitForText('Stay 1');
-        self::waitForText('Weekly Payor');
+        self::waitForText('Lost Dutchman');
+        self::waitForText('Camp host');
         self::wait()->until(function (): bool {
             $first = self::dayWindow('2026-11-01');
             $stay = self::dayWindow('2026-11-20');
@@ -369,11 +372,11 @@ final class CalendarTest extends TestCase
         self::assertLessThan(24.0, $phoneScroll['numberFromCell']);
 
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
-        self::assertSame(1, self::chipCount('2026-11-01', 'Weekly Payor'));
-        self::assertSame(1, self::chipCount('2026-11-01', 'Averaged Payor'));
+        self::assertSame(1, self::chipCount('2026-11-01', 'Camp host'));
+        self::assertSame(1, self::chipCount('2026-11-01', 'Remote salary'));
         self::clickDay('2026-11-01');
-        self::assertStringContainsString('Averaged Payor', self::dialogText());
-        self::assertStringContainsString('Weekly Payor', self::dialogText());
+        self::assertStringContainsString('Remote salary', self::dialogText());
+        self::assertStringContainsString('Camp host', self::dialogText());
         self::click('Close');
     }
 
@@ -624,9 +627,9 @@ final class CalendarTest extends TestCase
                 });
                 return named || paint;
             };
-            const income = chip('.day[data-date="2026-11-01"] .income-chip[title="Weekly Payor"]');
-            const bill = chip('.day[data-date="2026-11-19"] .bill-chip[title="Travel Bill"]');
-            const stay = chip('.day[data-date="2026-11-20"] .stay-chip[title="Stay 1"]');
+            const income = chip('.day[data-date="2026-11-01"] .income-chip[title="Camp host"]');
+            const bill = chip('.day[data-date="2026-11-19"] .bill-chip[title="America the Beautiful"]');
+            const stay = chip('.day[data-date="2026-11-20"] .stay-chip[title="Lost Dutchman"]');
             const stays = document.querySelectorAll('.stay-chip');
             const billFill = bill ? token(getComputedStyle(bill).backgroundColor) : '';
             probe.remove();

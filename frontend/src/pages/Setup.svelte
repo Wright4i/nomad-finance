@@ -5,10 +5,9 @@
   import { parseMajor } from '../lib/money';
   import { adoptUser } from '../lib/session.svelte.ts';
   import type { User } from '../lib/types';
+  import { vehicleKinds, vehicleTone, type VehicleKind } from '../lib/vehicleKinds';
 
   let { additional = false, onBack }: { additional?: boolean; onBack?: () => void } = $props();
-
-  const kinds = ['car', 'truck', 'motorcycle', 'rv', 'semi'] as const;
 
   function parseTenths(input: string): number | null {
     const trimmed = input.trim();
@@ -21,7 +20,7 @@
   let name = $state('');
   let password = $state('');
   let vehicleName = $state('Vehicle 1');
-  let kind = $state<(typeof kinds)[number]>('rv');
+  let kind = $state<VehicleKind>('rv');
   let mpgMin = $state('6.0');
   let mpgMax = $state('12.0');
   let currentOdometer = $state('');
@@ -107,8 +106,8 @@
     <div class="field">
       <span>Kind</span>
       <div class="flex flex-wrap gap-2">
-        {#each kinds as option}
-          <button class="choice" class:on={kind === option} type="button" style={`--tone: var(--tone-${option})`} aria-pressed={kind === option} onclick={() => (kind = option)}>
+        {#each vehicleKinds as option}
+          <button class="choice" class:on={kind === option} type="button" style={`--tone: var(--tone-${vehicleTone(option)})`} aria-pressed={kind === option} onclick={() => (kind = option)}>
             <Glyph name={option} mini />
             {option}
           </button>
