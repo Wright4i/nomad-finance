@@ -140,8 +140,6 @@
     if (!session.user || savingTheme) return;
     const previous = session.user.theme === 'light' ? 'light' : 'dark';
     if (previous === next) return;
-    applyTheme(next);
-    session.user = { ...session.user, theme: next };
     savingTheme = true;
     try {
       const data = await api<{ user: User }>('/api/settings', {
@@ -150,8 +148,7 @@
       });
       adoptUser(data.user);
     } catch {
-      applyTheme(previous);
-      if (session.user) session.user = { ...session.user, theme: previous };
+      // The pill stays on the saved theme when the request fails.
     } finally {
       savingTheme = false;
     }

@@ -414,35 +414,37 @@ final class CalendarTest extends TestCase
         });
     }
 
+    private static function monthOnScreen(): string
+    {
+        $current = self::driver()->executeScript(<<<'JS'
+            const node = document.querySelector('[data-month]');
+            return node ? node.getAttribute('data-month') : '';
+        JS);
+
+        return is_string($current) ? $current : '';
+    }
+
     private static function openMonth(string $month): void
     {
         self::wait()->until(function (): bool {
-            $current = self::driver()->executeScript(<<<'JS'
-                const node = document.querySelector('[data-month]');
-                return node ? node.getAttribute('data-month') : '';
-            JS);
-
-            return is_string($current) && preg_match('/^\d{4}-\d{2}$/', $current) === 1;
+            return preg_match('/^\d{4}-\d{2}$/', self::monthOnScreen()) === 1;
         });
         for ($step = 0; $step < 36; $step++) {
-            $current = self::driver()->executeScript(<<<'JS'
-                const node = document.querySelector('[data-month]');
-                return node ? node.getAttribute('data-month') : '';
-            JS);
+            $current = self::monthOnScreen();
             if ($current === $month) {
                 return;
             }
-            if (!is_string($current) || preg_match('/^\d{4}-\d{2}$/', $current) !== 1) {
+            if (preg_match('/^\d{4}-\d{2}$/', $current) !== 1) {
                 throw new RuntimeException('The calendar month is missing.');
             }
             $label = $current > $month ? 'Previous month' : 'Next month';
             $by = WebDriverBy::xpath('//button[normalize-space()=' . self::quote($label) . ']');
-            $element = self::wait()->until(WebDriverExpectedCondition::presenceOfElementLocated($by));
-            self::driver()->executeScript(
-                'arguments[0].scrollIntoView({block:"center", inline:"nearest"})',
-                [$element],
-            );
-            self::click($label);
+            self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by))->click();
+            self::wait()->until(function () use ($current): bool {
+                $next = self::monthOnScreen();
+
+                return preg_match('/^\d{4}-\d{2}$/', $next) === 1 && $next !== $current;
+            });
         }
 
         throw new RuntimeException('Could not reach ' . $month);

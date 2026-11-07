@@ -8,7 +8,7 @@
   import { api } from '../lib/api';
   import { dayChips, plannerDayDates, type DayBill, type DayPayday, type DayStay } from '../lib/daySquare';
   import { fitThree } from '../lib/fitThree';
-  import { formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import { wantGaugeLevels } from '../lib/wantGauge';
@@ -196,6 +196,13 @@
   let dragId = $state<string | null>(null);
   let drag: { id: string; pointerId: number; dx: number; dy: number } | null = null;
   let pieFocus = $state<{ currency: string; type: string; pull: boolean } | null>(null);
+  let monthOffset = $state(0);
+
+  function shiftMonth(month: string, by: number): string {
+    const [year, mon] = month.split('-').map(Number);
+    const date = new Date(year, (mon - 1) + by, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  }
 
   function fineHover(): boolean {
     return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -223,7 +230,7 @@
     return stroked ? `${tone}; stroke: var(--bg); stroke-width: 0.6` : tone;
   }
 
-  let billMonth = $derived((session.user?.acctPeriodStart ?? todayISO()).slice(0, 7));
+  let billMonth = $derived(shiftMonth(todayISO().slice(0, 7), monthOffset));
   let pies = $derived(data?.duePies[billMonth] ?? []);
   let isPayday = $derived(Boolean(data?.payday && data.payday.on === data.today));
   let gaugeRows = $derived(
@@ -709,12 +716,12 @@
                         {/if}
                       </div>
                       <div class="want-gauge-readout">
-                        {#if levels.over}
-                          <p class="want-gauge-warning m-0">Over <strong>{money(levels.overMinor)}</strong></p>
-                        {/if}
                         <p class="want-gauge-name m-0">{groupLabel[item.group]} · {item.targetPercent}%</p>
                         <p class="want-gauge-line m-0"><span>Assigned</span> <strong>{money(item.assignedMinor)}</strong></p>
                         <p class="want-gauge-line m-0"><span>Max</span> <strong>{money(item.targetMinor)}</strong></p>
+                        {#if levels.over}
+                          <p class="want-gauge-warning m-0">Over <strong>{money(levels.overMinor)}</strong></p>
+                        {/if}
                       </div>
                     </button>
                   {/each}
@@ -734,8 +741,12 @@
               <div class="planner-bills">
                 <div class="planner-bills-head">
                   <a class="planner-widget-title" href={widgetPage.bills} onclick={(event) => follow(event, widgetPage.bills)}>Bills</a>
+                  <div class="month-squares" role="group" aria-label="Month">
+                    <button class="choice month-square" class:on={monthOffset === 0} type="button" aria-pressed={monthOffset === 0} onclick={() => (monthOffset = 0)}>Current Month</button>
+                    <button class="choice month-square" class:on={monthOffset === 1} type="button" aria-pressed={monthOffset === 1} onclick={() => (monthOffset = 1)}>Next Month</button>
+                  </div>
                 </div>
-                <p class="muted m-0">{session.user ? `${formatChipDate(session.user.acctPeriodStart)} – ${formatChipDate(session.user.acctPeriodEnd)}` : formatMonth(billMonth)}</p>
+                <p class="muted m-0">{formatMonth(billMonth)}</p>
                 {#if pies.length === 0}
                   <p class="muted m-0">No bills due this month.</p>
                 {:else}

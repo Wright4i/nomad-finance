@@ -6,20 +6,24 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { paintLeg } from '../lib/legPaint';
-  import { exponentOf, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
-  import { periodCells, periodEnd } from '../lib/acctPeriod';
+  import { monthCells } from '../lib/dates';
+  import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { PAST_MONTHS_DEFAULT, pastMonthChoices, stayDrawn } from '../lib/pastMonths';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { DriveLeg, Trip } from '../lib/types';
 
   let trips = $state<Trip[]>([]);
   let legs = $state<DriveLeg[]>([]);
+  let pastMonths = $state(PAST_MONTHS_DEFAULT);
   let index = $state(0);
   let message = $state('');
   let loading = $state(true);
-  let acctPeriodStart = $derived(session.user?.acctPeriodStart ?? `${todayISO().slice(0, 7)}-01`);
-  let spanFinish = $derived(session.user?.acctPeriodEnd ?? periodEnd(acctPeriodStart, '1 month'));
-  let days = $derived(periodCells(acctPeriodStart, spanFinish));
+  let month = $state(todayISO().slice(0, 7));
+  let days = $derived.by(() => {
+    const [year, mon] = month.split('-').map(Number);
+    return monthCells(year, mon);
+  });
   let baseCurrency = $derived(session.user?.baseCurrency ?? 'USD');
   let baseExponent = $derived(exponentOf(baseCurrency));
 
@@ -41,7 +45,7 @@
 
   let selected = $derived(trips[index] ?? null);
   let selectedLeg = $derived(selected ? legs.find((item) => item.toId === selected.id) : undefined);
-  let drawnTrips = $derived(trips.filter((trip) => trip.arriveOn <= spanFinish && trip.departOn >= acctPeriodStart));
+  let drawnTrips = $derived(trips.filter((trip) => stayDrawn(trip.departOn, todayISO(), pastMonths)));
   let drawnIds = $derived(new Set(drawnTrips.map((trip) => trip.id)));
   let drawnLegs = $derived(
     legs
@@ -173,6 +177,14 @@
     const next = index + direction;
     if (next < 0 || next >= trips.length) return;
     index = next;
+    const arrival = trips[index]?.arriveOn.slice(0, 7);
+    if (arrival && arrival !== month) month = arrival;
+  }
+
+  function shiftMonth(by: number): void {
+    const [year, monthNumber] = month.split('-').map(Number);
+    const date = new Date(year, monthNumber - 1 + by, 1);
+    month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
   }
 
   function choose(id: number): void {
@@ -210,7 +222,7 @@
   }
 
   function overlaps(trip: Trip): boolean {
-    return trip.arriveOn <= spanFinish && trip.departOn >= acctPeriodStart;
+    return trip.arriveOn.slice(0, 7) <= month && trip.departOn.slice(0, 7) >= month;
   }
 
   let locateToken = $state(0);
@@ -481,6 +493,21 @@
   </div>
 
   <div class="globe-stage">
+    <label class="globe-past">
+      <span>Past months</span>
+      <select
+        name="pastMonths"
+        aria-label="Past months"
+        value={pastMonths}
+        onchange={(event) => {
+          pastMonths = Number(event.currentTarget.value);
+        }}
+      >
+        {#each pastMonthChoices as months (months)}
+          <option value={months}>{months}</option>
+        {/each}
+      </select>
+    </label>
     <Globe
       pins={drawnTrips.map((trip) => {
         const tripIndex = trips.findIndex((item) => item.id === trip.id);
@@ -513,7 +540,11 @@
   {/if}
 
   <section class="grid gap-2">
-    <h2 class="m-0 text-2xl" data-period={acctPeriodStart}>{formatChipDate(acctPeriodStart)} – {formatChipDate(spanFinish)}</h2>
+    <div class="flex items-center justify-between gap-3">
+      <button class="btn" type="button" onclick={() => shiftMonth(-1)}>Previous month</button>
+      <h2 class="m-0 text-2xl" data-month={month}>{formatMonth(month)}</h2>
+      <button class="btn" type="button" onclick={() => shiftMonth(1)}>Next month</button>
+    </div>
     <div class="grid grid-cols-7 gap-1 text-center text-sm">
       {#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as name (name)}
         <p class="kicker m-0">{name}</p>

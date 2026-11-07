@@ -293,7 +293,7 @@ The dates of one pay cycle that contain today. It starts on a payday and ends th
 _Avoid_: Horizon, accounting period
 
 **Accounting period**:
-The one window for Planner, Calendar, Trips, Bills, and Budget. The screens say period. Stored on the user as a start date and a length: 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months. The sidebar shows the dates, such as Nov 1 – Nov 30. A week is 7 days. A month runs from the start through the day before the same day that many months later, and a missing anniversary clamps to the last day of that month and then steps back one. Previous and Next move the start by that length. The accounting period that contains today is editable and available-to-assign follows it. One that ends before today is closed and read-only. One that starts after today can be planned, and available does not follow it.
+The one window for Planner, Calendar, Bills, and Budget. Those screens say period. Trips keeps its own month: Previous month and Next month move that calendar, and Past months chooses how far back the globe draws. Stored on the user as a start date and a length: 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months. The sidebar shows the dates, such as Nov 1 – Nov 30. A week is 7 days. A month runs from the start through the day before the same day that many months later, and a missing anniversary clamps to the last day of that month and then steps back one. Previous and Next move the start by that length. The accounting period that contains today is editable and available-to-assign follows it. One that ends before today is closed and read-only. One that starts after today can be planned, and available does not follow it.
 _Avoid_: Span, open period, horizon, calendar month
 
 **Horizon**:

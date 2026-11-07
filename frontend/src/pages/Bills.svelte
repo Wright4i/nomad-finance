@@ -214,7 +214,7 @@ import type { Account, Bill } from '../lib/types';
     <h1 class="text-3xl m-0">Bills</h1>
     <a class="btn primary" href="/bills/new" onclick={(event) => { event.preventDefault(); go('/bills/new'); }}>New bill</a>
   </div>
-  <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone. This list is the period.</p>
+  <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone. Scrolling loads later dates. Paid loads older dates.</p>
   {#if booting}
     <Spinner />
   {:else}

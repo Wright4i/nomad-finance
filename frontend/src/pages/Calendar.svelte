@@ -8,10 +8,10 @@
   import { calendarBillColor, calendarBillShown, calendarBillSide } from '../lib/calendarBill';
   import { fitThree } from '../lib/fitThree';
   import { exponentOf, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
-  import { periodCells, periodEnd } from '../lib/acctPeriod';
+  import { periodCells, periodEnd, periodShift, type PeriodLength } from '../lib/acctPeriod';
   import { follow } from '../lib/nav.svelte.ts';
-  import { session } from '../lib/session.svelte.ts';
-  import type { CalendarEntry, Trip } from '../lib/types';
+  import { adoptUser, session } from '../lib/session.svelte.ts';
+  import type { CalendarEntry, Trip, User } from '../lib/types';
 
   type Payday = { id: number; payor: string; on: string; paycheckMinor: number; length: string };
 
@@ -49,6 +49,25 @@
   let acctPeriodStart = $derived(session.user?.acctPeriodStart ?? `${todayISO().slice(0, 7)}-01`);
   let spanFinish = $derived(session.user?.acctPeriodEnd ?? periodEnd(acctPeriodStart, '1 month'));
   let days = $derived(periodCells(acctPeriodStart, spanFinish));
+  let savingPeriod = $state(false);
+
+  async function nudgePeriod(steps: number): Promise<void> {
+    if (!session.user || savingPeriod) return;
+    const length = session.user.acctPeriodLength;
+    savingPeriod = true;
+    try {
+      const data = await api<{ user: User }>('/api/settings', {
+        method: 'PATCH',
+        body: {
+          acctPeriodStart: periodShift(session.user.acctPeriodStart, length as PeriodLength, steps),
+          acctPeriodLength: length,
+        },
+      });
+      adoptUser(data.user);
+    } finally {
+      savingPeriod = false;
+    }
+  }
 
   function weekdayName(date: string): string {
     const [year, monthNumber, dayNumber] = date.split('-').map(Number);
@@ -236,7 +255,11 @@
   {#if loading || !tripsReady}
     <Spinner />
   {:else}
-  <p class="m-0" data-period={acctPeriodStart}>{formatChipDate(acctPeriodStart)} – {formatChipDate(spanFinish)}</p>
+  <div class="flex items-center justify-between gap-3">
+    <button class="btn" type="button" disabled={savingPeriod} onclick={() => void nudgePeriod(-1)}>Previous month</button>
+    <p class="m-0" data-month={acctPeriodStart.slice(0, 7)} data-period={acctPeriodStart}>{formatChipDate(acctPeriodStart)} – {formatChipDate(spanFinish)}</p>
+    <button class="btn" type="button" disabled={savingPeriod} onclick={() => void nudgePeriod(1)}>Next month</button>
+  </div>
   <div class="calendar-board">
     <div class="calendar-filters" role="group" aria-label="Show on the calendar">
       <label class="calendar-filter" style="--tone: var(--teal)">

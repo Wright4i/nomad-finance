@@ -8,6 +8,7 @@ use Facebook\WebDriver\Chrome\ChromeDriver;
 use Facebook\WebDriver\Chrome\ChromeDriverService;
 use Facebook\WebDriver\Chrome\ChromeOptions;
 use Facebook\WebDriver\Remote\DesiredCapabilities;
+use Facebook\WebDriver\Exception\NoSuchElementException;
 use Facebook\WebDriver\WebDriverBy;
 use Facebook\WebDriver\WebDriverDimension;
 use Facebook\WebDriver\WebDriverExpectedCondition;
@@ -299,7 +300,9 @@ final class WantLogGaugeTest extends TestCase
                 overColor: color ? { r: Number(color[0]), g: Number(color[1]), b: Number(color[2]) } : null,
             };
         JS);
-        self::assertIsArray($gauge);
+        if (!is_array($gauge)) {
+            throw new NoSuchElementException('The want gauge is not on screen.');
+        }
 
         return $gauge;
     }

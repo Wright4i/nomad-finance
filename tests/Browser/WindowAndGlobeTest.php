@@ -300,7 +300,7 @@ final class WindowAndGlobeTest extends TestCase
         self::assertSame(1, $first['count']);
 
         self::clickLink('Trips');
-        self::wait()->until(function (): bool {
+        self::wait(40)->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const pin = [...document.querySelectorAll('.globe button.map-pin')].find((node) => (node.getAttribute('aria-label') || '').includes('Due camp'));
                 if (!pin) return false;

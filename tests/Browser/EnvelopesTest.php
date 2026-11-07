@@ -413,7 +413,7 @@ final class EnvelopesTest extends TestCase
 
             return $value === '0.00';
         });
-        self::waitForText('when this month opens');
+        self::waitForText('a plan for this period');
         self::typeAssigned('Road cushion', '700.00');
         $started = microtime(true);
         self::wait()->until(function () use ($started): bool {
@@ -440,7 +440,7 @@ final class EnvelopesTest extends TestCase
             return $value === '115.00';
         });
         self::click('Previous month');
-        self::waitForText('A closed month can be read.');
+        self::waitForText('A closed period can be read.');
         $closed = self::driver()->executeScript(<<<'JS'
             const value = (name) => {
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes(name));
@@ -636,6 +636,19 @@ final class EnvelopesTest extends TestCase
             $healthcare = (int) $pdo->query("SELECT COUNT(*) FROM categories WHERE name = 'Healthcare'")->fetchColumn();
             self::fail("Healthcare fill was not planted (demo {$demo}, remote cycles {$cycles}, Nov 1 periods {$periods}, healthcare {$healthcare}).");
         }
+        // The earlier method recalculates the open period and drops the typed cushion.
+        $pdo->prepare(
+            "INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
+             SELECT p.id, c.id, 50000, 0
+             FROM pay_periods p
+             JOIN pay_cycles y ON y.id = p.pay_cycle_id
+             JOIN categories c ON c.user_id = p.user_id AND c.name = 'Road cushion'
+             JOIN user u ON u.id = p.user_id AND u.role = 'demo'
+             WHERE y.payor = 'Remote salary' AND p.period_start = '2026-11-01'
+             ON CONFLICT(pay_period_id, category_id) DO UPDATE SET
+                amount_minor = excluded.amount_minor,
+                filled_minor = excluded.filled_minor"
+        )->execute();
 
         self::driver()->get(self::$base . '/budget');
         self::waitForText('Oct 16');

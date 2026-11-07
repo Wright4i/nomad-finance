@@ -4,10 +4,12 @@
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
-  import { formatChipDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { periodShift, type PeriodLength } from '../lib/acctPeriod';
+  import { formatChipDate, formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
-  import type { Category, EnvelopeSheet } from '../lib/types';
+  import { adoptUser, session } from '../lib/session.svelte.ts';
+  import type { Category, EnvelopeSheet, User } from '../lib/types';
 
   const groups = [
     { id: 'needs', label: 'Needs' },
@@ -33,6 +35,24 @@
   let alive = true;
 
   let editable = $derived(sheet?.period?.editable === true);
+
+  async function nudgePeriod(steps: number): Promise<void> {
+    if (!session.user || saving) return;
+    const length = session.user.acctPeriodLength;
+    saving = true;
+    try {
+      const data = await api<{ user: User }>('/api/settings', {
+        method: 'PATCH',
+        body: {
+          acctPeriodStart: periodShift(session.user.acctPeriodStart, length as PeriodLength, steps),
+          acctPeriodLength: length,
+        },
+      });
+      adoptUser(data.user);
+    } finally {
+      saving = false;
+    }
+  }
 
   async function load(): Promise<void> {
     const params = new URLSearchParams({ today: todayISO(), acctPeriod: '1' });
@@ -306,7 +326,10 @@
 
       <div class="flex flex-wrap items-center gap-2">
         {#if sheet.acctPeriod}
+          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(-1)}>Previous month</button>
+          <p class="m-0" data-month={sheet.acctPeriod.start.slice(0, 7)}>{formatMonth(sheet.acctPeriod.start)}</p>
           <p class="m-0" data-period={sheet.acctPeriod.start}>{formatChipDate(sheet.acctPeriod.start)} – {formatChipDate(sheet.acctPeriod.end)}</p>
+          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(1)}>Next month</button>
         {/if}
         <button class="btn" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
         <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving || sheet.acctPeriod?.phase === 'future' || sheet.acctPeriod?.phase === 'closed'} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>

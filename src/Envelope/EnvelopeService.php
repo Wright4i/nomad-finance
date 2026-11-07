@@ -47,8 +47,12 @@ final class EnvelopeService
             'end' => $acctPeriod['end'],
             'phase' => $acctPeriod['phase'],
         ];
+        $viewPeriodId = $periodId;
+        if ($acctPeriod !== null && $acctPeriod['phase'] === 'closed' && $periodId === null && !$upcoming) {
+            $viewPeriodId = $this->closedPayPeriodId($payCycleId, $acctPeriod['start'], $today);
+        }
         try {
-            $sheet = $this->present($today, $payCycleId, $periodId, $upcoming, true);
+            $sheet = $this->present($today, $payCycleId, $viewPeriodId, $upcoming, true);
         } finally {
             $this->viewWindow = null;
         }
@@ -1527,6 +1531,24 @@ final class EnvelopeService
         return $row;
     }
 
+    /**
+     * The pay period on the cycle this sheet would select, when one starts on the closed window.
+     */
+    private function closedPayPeriodId(?int $payCycleId, string $start, string $today): ?int
+    {
+        $cycles = array_values(array_filter(
+            $this->cycles(),
+            static fn (array $cycle): bool => $cycle['archived_at'] === null,
+        ));
+        $selected = $this->selectCycle($cycles, $payCycleId, $today);
+        if ($selected === null) {
+            return null;
+        }
+        $row = $this->periodRow((int) $selected['id'], $start);
+
+        return $row === null ? null : (int) $row['id'];
+    }
+
     /** @return ?array<string, mixed> */
     private function periodRow(int $cycleId, string $start): ?array
     {
@@ -1674,6 +1696,7 @@ final class EnvelopeService
      */
     private function alignAcctPeriod(array $sheet, array $span, string $today): array
     {
+        $presentedStart = is_array($sheet['period'] ?? null) ? (string) $sheet['period']['start'] : '';
         if (is_array($sheet['period'] ?? null)) {
             $sheet['period']['start'] = $span['start'];
             $sheet['period']['end'] = $span['end'];
@@ -1683,6 +1706,11 @@ final class EnvelopeService
         $sheet['previousPeriod'] = null;
         $sheet['stepNext'] = null;
         if ($span['phase'] === 'current') {
+            return $sheet;
+        }
+        // A closed window that lines up with a pay period keeps that assignment.
+        // An empty plan must not wipe the amount that was already given.
+        if ($span['phase'] === 'closed' && $presentedStart === $span['start']) {
             return $sheet;
         }
         $plans = $this->acctPeriodPlans($span['start'], $span['length']);

@@ -76,36 +76,12 @@ final class BillService
                 'bill' => $bill,
             ];
         }
-        if ($this->isDay($start) && $this->isDay($end)) {
-            $rows = $this->rowsInSpan($rows, (string) $start, (string) $end, $section, $this->isDay($today) ? (string) $today : null);
-
-            return ['bills' => $this->billsFrom($rows), 'hasMore' => false];
-        }
+        // The period is the screen's window elsewhere. This list still opens on a few days
+        // and grows when the person scrolls, including dates outside that period.
+        unset($start, $end, $today);
         $minimum = $section === 'active' ? BillWindow::ACTIVE_MINIMUM : 2;
         $window = BillWindow::window($rows, $chunks, $section === 'paid', $minimum);
         return ['bills' => $this->billsFrom($window['rows']), 'hasMore' => $window['hasMore']];
-    }
-
-    /**
-     * @param list<array{id:int,name:string,shownOn:string,amountMinor:int,bill:array<string,mixed>}> $rows
-     * @return list<array{id:int,name:string,shownOn:string,amountMinor:int,bill:array<string,mixed>}>
-     */
-    private function rowsInSpan(array $rows, string $start, string $end, string $section, ?string $today): array
-    {
-        $overdue = $section === 'active' && $today !== null && $start <= $today && $today <= $end;
-        $kept = [];
-        foreach ($rows as $row) {
-            $on = $row['shownOn'];
-            if ($on >= $start && $on <= $end) {
-                $kept[] = $row;
-                continue;
-            }
-            if ($overdue && $on < $today) {
-                $kept[] = $row;
-            }
-        }
-
-        return BillWindow::order($kept);
     }
 
     /**
@@ -122,11 +98,6 @@ final class BillService
         }
 
         return $bills;
-    }
-
-    private function isDay(?string $value): bool
-    {
-        return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1;
     }
 
     /** @return array<string, mixed> */

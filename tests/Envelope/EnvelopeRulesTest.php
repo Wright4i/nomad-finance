@@ -1290,6 +1290,18 @@ final class EnvelopeRulesTest extends TestCase
         }
     }
 
+    public function testAClosedAccountingPeriodKeepsTheMatchingPayPeriodAssignment(): void
+    {
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-01', '1 month', $_SESSION['user_id']]);
+
+        $closed = $this->envelopes->show('2026-11-07', null, null, false, true);
+
+        self::assertSame('closed', $closed['acctPeriod']['phase']);
+        self::assertSame('2026-10-01', $closed['period']['start']);
+        self::assertSame(20000, $this->amount($closed, 'Road cushion') - $this->billMinor($closed, 'Road cushion'));
+    }
+
     public function testALaterPeriodsBillsDoNotRaiseThisPeriodsEnvelope(): void
     {
         $this->pdo->prepare(
