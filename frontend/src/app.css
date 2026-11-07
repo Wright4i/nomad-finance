@@ -329,6 +329,7 @@ a { color: inherit; }
 }
 
 .nav a.nav-log {
+  position: relative;
   justify-content: center;
   text-align: center;
   gap: 0;
@@ -341,10 +342,26 @@ a { color: inherit; }
 }
 
 .nav-log-label {
-  display: inline-flex;
-  align-items: center;
+  display: contents;
+}
+
+.nav a.nav-log .glyph,
+.nav button.nav-logout > .glyph {
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.nav button.nav-account,
+.nav button.nav-reset,
+.nav button.nav-logout {
   justify-content: center;
-  gap: 0.2rem;
+  text-align: center;
+}
+
+.nav button.nav-logout {
+  position: relative;
 }
 
 .nav .glyph {
@@ -2787,6 +2804,13 @@ a.bucket-tile .money {
     border-radius: 0.7rem;
     font-size: 1rem;
   }
+  .nav.collapsed a.nav-log .glyph,
+  .nav.collapsed button.nav-logout > .glyph {
+    position: static;
+    top: auto;
+    left: auto;
+    transform: none;
+  }
   .nav.collapsed .nav-account {
     display: grid;
     place-items: center;
@@ -2826,10 +2850,18 @@ a.bucket-tile .money {
     color: var(--text);
     cursor: pointer;
   }
-  .nav.collapsed .theme-pill > .theme-toggle .glyph {
+  .nav.collapsed .theme-pill > .theme-toggle .glyph,
+  .nav.collapsed .theme-pill .glyph {
     opacity: 1;
     transform: none;
     color: inherit;
+    margin: 0;
+  }
+
+  .nav.collapsed .glyph,
+  .nav.collapsed .glyph.mini {
+    transform: none;
+    margin-inline: auto;
   }
   .nav.collapsed .nav-logout {
     border-radius: 999px;
@@ -3981,58 +4013,43 @@ a.planner-stay {
 }
 
 /* Span and transfers */
-.span-open .glyph {
-  display: none;
-}
-
-.span-arrow {
-  display: none;
-}
-
-.span-step {
-  position: relative;
+.period-step {
   display: flex;
+  align-items: center;
+  gap: 0.15rem;
   width: 100%;
-  border-radius: 999px;
-  overflow: hidden;
-  isolation: isolate;
-  background: #000;
+  color: var(--muted);
 }
 
-.span-step-slant {
-  position: absolute;
-  inset: 0;
-  background: var(--teal);
-  clip-path: polygon(0 0, 64% 0, 36% 100%, 0 100%);
-  pointer-events: none;
-}
-
-.span-step button {
-  position: relative;
-  z-index: 1;
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 2.35rem;
+.period-step button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
   border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: #fff;
+  color: inherit;
   cursor: pointer;
 }
 
-.span-step button:first-of-type {
-  color: #000;
+.period-step button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
-html.light .span-step {
-  background: var(--teal);
+.period-step .glyph {
+  background: none;
+  color: inherit;
 }
 
-html.light .span-step-slant {
-  background: #fff;
-}
-
-html.light .span-step button:last-of-type {
-  color: #fff;
+.period-dates {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-weight: 650;
 }
 
 .planner-board .want-gauge-meter .want-gauge-warning {
@@ -4078,22 +4095,19 @@ html.light .span-step button:last-of-type {
 }
 
 @media (min-width: 768px) {
-  .nav.collapsed .span-open .glyph {
-    display: inline-flex;
+  .nav.collapsed .period-dates {
+    display: none;
   }
 
-  .nav.collapsed .span-arrow {
-    display: inline;
+  .nav.collapsed .period-step {
+    flex-direction: column;
+    width: auto;
+    margin-inline: auto;
+    gap: 0.35rem;
   }
 
-  .nav.collapsed .span-step {
+  .nav.collapsed .period-step button {
     width: 2.5rem;
     height: 2.5rem;
-    margin-inline: auto;
-  }
-
-  .nav.collapsed .span-step button {
-    min-height: 0;
-    padding: 0;
   }
 }

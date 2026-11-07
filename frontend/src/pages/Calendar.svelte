@@ -8,7 +8,7 @@
   import { calendarBillColor, calendarBillShown, calendarBillSide } from '../lib/calendarBill';
   import { fitThree } from '../lib/fitThree';
   import { exponentOf, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
-  import { spanCells, spanEnd } from '../lib/span';
+  import { periodCells, periodEnd } from '../lib/acctPeriod';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { CalendarEntry, Trip } from '../lib/types';
@@ -46,9 +46,9 @@
   let showPaidBills = $state(true);
   let showUnpaidBills = $state(true);
 
-  let spanStart = $derived(session.user?.spanStart ?? `${todayISO().slice(0, 7)}-01`);
-  let spanFinish = $derived(session.user?.spanEnd ?? spanEnd(spanStart, '1 month'));
-  let days = $derived(spanCells(spanStart, spanFinish));
+  let acctPeriodStart = $derived(session.user?.acctPeriodStart ?? `${todayISO().slice(0, 7)}-01`);
+  let spanFinish = $derived(session.user?.acctPeriodEnd ?? periodEnd(acctPeriodStart, '1 month'));
+  let days = $derived(periodCells(acctPeriodStart, spanFinish));
 
   function weekdayName(date: string): string {
     const [year, monthNumber, dayNumber] = date.split('-').map(Number);
@@ -84,7 +84,7 @@
   }
 
   async function reloadEntries(): Promise<void> {
-    const data = await api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?start=${spanStart}&end=${spanFinish}`);
+    const data = await api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?start=${acctPeriodStart}&end=${spanFinish}`);
     entries = data.entries;
   }
 
@@ -200,7 +200,7 @@
   });
 
   $effect(() => {
-    const start = spanStart;
+    const start = acctPeriodStart;
     const end = spanFinish;
     let stale = false;
     loading = true;
@@ -236,7 +236,7 @@
   {#if loading || !tripsReady}
     <Spinner />
   {:else}
-  <p class="m-0" data-span={spanStart}>{formatChipDate(spanStart)} – {formatChipDate(spanFinish)}</p>
+  <p class="m-0" data-period={acctPeriodStart}>{formatChipDate(acctPeriodStart)} – {formatChipDate(spanFinish)}</p>
   <div class="calendar-board">
     <div class="calendar-filters" role="group" aria-label="Show on the calendar">
       <label class="calendar-filter" style="--tone: var(--teal)">
@@ -271,11 +271,11 @@
       </label>
     </div>
     <div class="month-scroll">
-      <div class="month" aria-label="Span">
+      <div class="month" aria-label="Period">
         {#each weekdays as name}
           <p class="kicker m-0 month-head">{name}</p>
         {/each}
-        {#each days as date, index (`${spanStart}-${index}`)}
+        {#each days as date, index (`${acctPeriodStart}-${index}`)}
           {#if date}
             {@const count = dayItemCount(date)}
             <div

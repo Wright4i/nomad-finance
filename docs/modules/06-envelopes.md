@@ -8,7 +8,7 @@ Available to assign is income still coming in this month, plus every asset marke
 
 An assignment is zero or more. See [rollover](07-rollover.md).
 
-You assign to the span. The span that contains today is editable, and available-to-assign follows it. A span that ends before today is closed and read-only. A span that starts after today can be planned, and available does not follow it. Bills due in the span are auto-assigned. Fuel still includes trip fuel for stays in the span. Uncovered float on a paid-in-full credit or fuel card is subtracted from available, and the available list shows that card's balance, covered, and uncovered.
+You assign to the period. The period that contains today is editable, and available-to-assign follows it. A period that ends before today is closed and read-only. A period that starts after today can be planned, and available does not follow it. Bills due in the period are auto-assigned. Fuel still includes trip fuel for stays in the period. Uncovered float on a paid-in-full credit or fuel card is subtracted from available, and the available list shows that card's balance, covered, and uncovered.
 
 Each group heading names Needs, Wants, or Savings and, beside that name, Auto-assigned, Envelope, and Target for the month on screen, then that group's goal in parentheses. Auto-assigned is the sum of the auto-assigned amounts. Envelope is the sum of the envelopes. Target is the sum of the targets. The parenthetical is Needs 50%, Wants 30%, or Savings 20% of income still coming in plus the assets marked Include in Budget, half up to the cent, written as (50% goal - $1,234.56). That parenthetical turns red when the group's target is over the goal. The planner gauges keep their share of goal assignments.
 
@@ -20,4 +20,4 @@ Reaching zero available-to-assign celebrates once in that month.
 
 Demo seed: a current month with one assignment on Road cushion, and a closed month that still has its row. Camp jar and Glovebox are in the pool. Rig fund stays out of the pool and stays in net worth.
 
-Each payor has an open span. Available to assign is one total for the books, and an assignment is stored on one payor's span. See [one cash pool](../adr/0012-one-pool-across-payors.md). The pay-period tables keep their names.
+Each payor has an open period. Available to assign is one total for the books, and an assignment is stored on one payor's open period. See [one cash pool](../adr/0012-one-pool-across-payors.md). The pay-period tables keep their names.

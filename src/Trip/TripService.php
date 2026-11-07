@@ -554,7 +554,7 @@ final class TripService
     }
 
     /**
-     * Fuel estimates for stays that arrive in the span, inclusive.
+     * Fuel estimates for stays that arrive in the accounting period, inclusive.
      * A flight, a first stay, and a drive with no miles or no price add nothing.
      *
      * @return list<array{id:int,name:string,costMinor:int}>

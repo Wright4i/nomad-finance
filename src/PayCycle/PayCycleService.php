@@ -57,7 +57,7 @@ final class PayCycleService
      * Paydays in one month, with the preview paycheck for that date.
      * The amount is a label. It does not assign money or post it.
      *
-     * @return list<array{id:int,payor:string,on:string,paycheckMinor:int,length:string}>
+     * @return list<array{id:int,payor:string,on:string,paycheckMinor:int,length:string,posted:bool}>
      */
     public function monthPay(string $month, string $today): array
     {
@@ -94,12 +94,14 @@ final class PayCycleService
                 if ($amount === null) {
                     continue;
                 }
+                $entry = $this->entries((int) $cycle['id'])[$date] ?? null;
                 $listed[] = [
                     'id' => (int) $cycle['id'],
                     'payor' => (string) $cycle['payor'],
                     'on' => $date,
                     'paycheckMinor' => $amount,
                     'length' => (string) $cycle['length'],
+                    'posted' => is_array($entry) && ($entry['posted'] ?? false) === true,
                 ];
             }
         }
@@ -110,7 +112,7 @@ final class PayCycleService
     /**
      * Paydays inside a span. Income screens that are not the calendar keep the month.
      *
-     * @return list<array{id:int,payor:string,on:string,paycheckMinor:int,length:string}>
+     * @return list<array{id:int,payor:string,on:string,paycheckMinor:int,length:string,posted:bool}>
      */
     public function between(string $start, string $end, string $today): array
     {
@@ -481,8 +483,8 @@ final class PayCycleService
     }
 
     /**
-     * Income for one payor across a span, in cents.
-     * The opening payday uses the paycheck preview. A keyed amount inside the span is included once.
+     * Income for one payor across an accounting period, in cents.
+     * The opening payday uses the paycheck preview. A keyed amount inside the accounting period is included once.
      * An irregular salary that is not a paycheck adds nothing.
      */
     public function incomeBetween(int $id, string $start, ?string $end, string $today): int
@@ -498,6 +500,10 @@ final class PayCycleService
         }
         $total = 0;
         foreach (array_keys($dates) as $date) {
+            $entry = $this->entries($id)[$date] ?? null;
+            if (is_array($entry) && ($entry['posted'] ?? false) === true) {
+                continue;
+            }
             $amount = $this->projected($cycle, $date);
             if (is_int($amount) && $amount > 0) {
                 $total += $amount;
@@ -529,6 +535,7 @@ final class PayCycleService
                 'amountMinor' => $entry['amount'] ?? null,
                 'hours' => self::hoursText($entry['hours'] ?? null),
                 'keyed' => $entry !== null,
+                'posted' => is_array($entry) && ($entry['posted'] ?? false) === true,
                 'projectedMinor' => $this->projected($cycle, $date),
             ];
         }
@@ -553,13 +560,15 @@ final class PayCycleService
             throw new ApiException(422, 'Check the highlighted fields.', ['entries' => 'Send the pay dates.']);
         }
         $upsert = $this->pdo->prepare(
-            'INSERT INTO payroll_entries (pay_cycle_id, payday, amount_minor, hours_hundredths)
-             VALUES (?, ?, ?, ?)
+            'INSERT INTO payroll_entries (pay_cycle_id, payday, amount_minor, hours_hundredths, posted)
+             VALUES (?, ?, ?, ?, ?)
              ON CONFLICT(pay_cycle_id, payday) DO UPDATE SET
                 amount_minor = excluded.amount_minor,
-                hours_hundredths = excluded.hours_hundredths'
+                hours_hundredths = excluded.hours_hundredths,
+                posted = excluded.posted'
         );
         $delete = $this->pdo->prepare('DELETE FROM payroll_entries WHERE pay_cycle_id = ? AND payday = ?');
+        $cycle = $this->get($id, $today);
         foreach ($entries as $entry) {
             if (!is_array($entry)) {
                 throw new ApiException(422, 'Check the highlighted fields.', ['entries' => 'Send one amount per date.']);
@@ -568,12 +577,19 @@ final class PayCycleService
             if ($payday === null) {
                 throw new ApiException(422, 'Check the highlighted fields.', ['payday' => 'Use a YYYY-MM-DD date.']);
             }
+            $posted = !empty($entry['posted']);
             $amount = $entry['amountMinor'] ?? null;
-            if ($amount === null || $amount === '' || $amount === 0 || $amount === '0') {
+            $blank = $amount === null || $amount === '' || $amount === 0 || $amount === '0';
+            if ($blank && !$posted) {
                 $delete->execute([$id, $payday]);
                 continue;
             }
-            $minor = $this->asInt($amount);
+            if ($blank) {
+                $projected = $this->projected($cycle, $payday);
+                $minor = is_int($projected) ? $projected : 0;
+            } else {
+                $minor = $this->asInt($amount);
+            }
             if ($minor === null || $minor < 1) {
                 throw new ApiException(422, 'Check the highlighted fields.', ['amountMinor' => 'Enter an amount greater than zero, or leave it blank.']);
             }
@@ -584,7 +600,7 @@ final class PayCycleService
                     throw new ApiException(422, 'Check the highlighted fields.', ['hours' => 'Enter the hours.']);
                 }
             }
-            $upsert->execute([$id, $payday, $minor, $hours]);
+            $upsert->execute([$id, $payday, $minor, $hours, $posted ? 1 : 0]);
         }
         $this->entryCache = [];
 
@@ -616,7 +632,7 @@ final class PayCycleService
     }
 
     /**
-     * @return array<string, array{amount:int,hours:?int}>
+     * @return array<string, array{amount:int,hours:?int,posted:bool}>
      */
     private function entries(int $id): array
     {
@@ -624,7 +640,7 @@ final class PayCycleService
             return $this->entryCache[$id];
         }
         $stmt = $this->pdo->prepare(
-            'SELECT payday, amount_minor, hours_hundredths FROM payroll_entries WHERE pay_cycle_id = ? ORDER BY payday'
+            'SELECT payday, amount_minor, hours_hundredths, posted FROM payroll_entries WHERE pay_cycle_id = ? ORDER BY payday'
         );
         $stmt->execute([$id]);
         $listed = [];
@@ -635,6 +651,7 @@ final class PayCycleService
             $listed[(string) $row['payday']] = [
                 'amount' => (int) $row['amount_minor'],
                 'hours' => $row['hours_hundredths'] === null ? null : (int) $row['hours_hundredths'],
+                'posted' => (int) ($row['posted'] ?? 0) === 1,
             ];
         }
         $this->entryCache[$id] = $listed;

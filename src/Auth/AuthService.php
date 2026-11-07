@@ -9,7 +9,7 @@ use App\Dashboard\PlannerWidgets;
 use App\Demo\DemoLibrary;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
-use App\Span\Span;
+use App\AcctPeriod\AcctPeriod;
 use App\Money\UnknownCurrency;
 use PDO;
 
@@ -35,7 +35,7 @@ final class AuthService
         return (int) $this->pdo->query("SELECT COUNT(*) FROM user WHERE role = 'owner'")->fetchColumn() === 0;
     }
 
-    /** @return ?array{name:string,baseCurrency:string,theme:string,role:string,spanStart:string,spanEnd:string,spanLength:string,plannerOrder:list<string>,plannerSpans:array<string,int>} */
+    /** @return ?array{name:string,baseCurrency:string,theme:string,role:string,acctPeriodStart:string,acctPeriodEnd:string,acctPeriodLength:string,plannerOrder:list<string>,plannerSpans:array<string,int>} */
     public function current(): ?array
     {
         $id = $_SESSION['user_id'] ?? null;
@@ -44,7 +44,7 @@ final class AuthService
         }
 
         $stmt = $this->pdo->prepare(
-            'SELECT name, base_currency, theme, role, span_start, span_length, planner_order, planner_spans FROM user WHERE id = ?'
+            'SELECT name, base_currency, theme, role, acct_period_start, acct_period_length, planner_order, planner_spans FROM user WHERE id = ?'
         );
         $stmt->execute([$id]);
         $row = $stmt->fetch();
@@ -53,16 +53,16 @@ final class AuthService
 
             return null;
         }
-        $span = $this->rememberSpan($id, (string) $row['span_start'], (string) $row['span_length']);
+        $span = $this->rememberAcctPeriod($id, (string) $row['acct_period_start'], (string) $row['acct_period_length']);
 
         return [
             'name' => (string) $row['name'],
             'baseCurrency' => (string) $row['base_currency'],
             'theme' => (string) $row['theme'],
             'role' => (string) $row['role'],
-            'spanStart' => $span['start'],
-            'spanEnd' => $span['end'],
-            'spanLength' => $span['length'],
+            'acctPeriodStart' => $span['start'],
+            'acctPeriodEnd' => $span['end'],
+            'acctPeriodLength' => $span['length'],
             'plannerOrder' => PlannerWidgets::order($row['planner_order']),
             'plannerSpans' => PlannerWidgets::spans($row['planner_spans']),
         ];
@@ -191,7 +191,7 @@ final class AuthService
         return $user;
     }
 
-    /** @return array{name:string,baseCurrency:string,theme:string,role:string,spanStart:string,spanEnd:string,spanLength:string,plannerOrder:list<string>,plannerSpans:array<string,int>} */
+    /** @return array{name:string,baseCurrency:string,theme:string,role:string,acctPeriodStart:string,acctPeriodEnd:string,acctPeriodLength:string,plannerOrder:list<string>,plannerSpans:array<string,int>} */
     public function enterDemo(): array
     {
         if ($this->needsSetup()) {
@@ -247,12 +247,12 @@ final class AuthService
         } else {
             $theme = $current['theme'];
         }
-        $spanStart = array_key_exists('spanStart', $input)
-            ? $this->spanStart($input['spanStart'])
-            : $current['spanStart'];
-        $spanLength = array_key_exists('spanLength', $input)
-            ? $this->spanLength($input['spanLength'])
-            : $current['spanLength'];
+        $acctPeriodStart = array_key_exists('acctPeriodStart', $input)
+            ? $this->acctPeriodStart($input['acctPeriodStart'])
+            : $current['acctPeriodStart'];
+        $acctPeriodLength = array_key_exists('acctPeriodLength', $input)
+            ? $this->acctPeriodLength($input['acctPeriodLength'])
+            : $current['acctPeriodLength'];
         if (array_key_exists('plannerOrder', $input)) {
             $accepted = PlannerWidgets::accept($input['plannerOrder']);
             if ($accepted === null) {
@@ -287,12 +287,12 @@ final class AuthService
         if ($changingPassword) {
             $password = $this->password($password);
             $this->pdo->prepare(
-                'UPDATE user SET name = ?, base_currency = ?, theme = ?, span_start = ?, span_length = ?, planner_order = ?, planner_spans = ?, password_hash = ? WHERE id = ?'
-            )->execute([$name, $currency, $theme, $spanStart, $spanLength, $plannerOrder, $plannerSpans, password_hash($password, PASSWORD_DEFAULT), $id]);
+                'UPDATE user SET name = ?, base_currency = ?, theme = ?, acct_period_start = ?, acct_period_length = ?, planner_order = ?, planner_spans = ?, password_hash = ? WHERE id = ?'
+            )->execute([$name, $currency, $theme, $acctPeriodStart, $acctPeriodLength, $plannerOrder, $plannerSpans, password_hash($password, PASSWORD_DEFAULT), $id]);
         } else {
             $this->pdo->prepare(
-                'UPDATE user SET name = ?, base_currency = ?, theme = ?, span_start = ?, span_length = ?, planner_order = ?, planner_spans = ? WHERE id = ?'
-            )->execute([$name, $currency, $theme, $spanStart, $spanLength, $plannerOrder, $plannerSpans, $id]);
+                'UPDATE user SET name = ?, base_currency = ?, theme = ?, acct_period_start = ?, acct_period_length = ?, planner_order = ?, planner_spans = ? WHERE id = ?'
+            )->execute([$name, $currency, $theme, $acctPeriodStart, $acctPeriodLength, $plannerOrder, $plannerSpans, $id]);
         }
 
         $user = $this->current();
@@ -400,23 +400,23 @@ final class AuthService
         return $value;
     }
 
-    private function spanStart(mixed $value): string
+    private function acctPeriodStart(mixed $value): string
     {
         if (!is_string($value)) {
-            throw new ApiException(422, 'Check the highlighted fields.', ['spanStart' => 'Use a YYYY-MM-DD date.']);
+            throw new ApiException(422, 'Check the highlighted fields.', ['acctPeriodStart' => 'Use a YYYY-MM-DD date.']);
         }
         try {
             return \App\Support\Dates::parse($value)->format('Y-m-d');
         } catch (\InvalidArgumentException) {
-            throw new ApiException(422, 'Check the highlighted fields.', ['spanStart' => 'Use a YYYY-MM-DD date.']);
+            throw new ApiException(422, 'Check the highlighted fields.', ['acctPeriodStart' => 'Use a YYYY-MM-DD date.']);
         }
     }
 
-    private function spanLength(mixed $value): string
+    private function acctPeriodLength(mixed $value): string
     {
-        if (!is_string($value) || !Span::valid($value)) {
+        if (!is_string($value) || !AcctPeriod::valid($value)) {
             throw new ApiException(422, 'Check the highlighted fields.', [
-                'spanLength' => 'Choose 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months.',
+                'acctPeriodLength' => 'Choose 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months.',
             ]);
         }
 
@@ -424,16 +424,16 @@ final class AuthService
     }
 
     /** @return array{start:string,end:string,length:string} */
-    private function rememberSpan(int $id, string $start, string $length): array
+    private function rememberAcctPeriod(int $id, string $start, string $length): array
     {
         $today = gmdate('Y-m-d');
-        if ($start === '' || !Span::valid($length)) {
-            $start = Span::defaultStart($today);
+        if ($start === '' || !AcctPeriod::valid($length)) {
+            $start = AcctPeriod::defaultStart($today);
             $length = '1 month';
-            $this->pdo->prepare('UPDATE user SET span_start = ?, span_length = ? WHERE id = ?')
+            $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
                 ->execute([$start, $length, $id]);
         }
-        $described = Span::describe($start, $length, $today);
+        $described = AcctPeriod::describe($start, $length, $today);
 
         return [
             'start' => $described['start'],

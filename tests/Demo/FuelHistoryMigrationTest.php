@@ -37,7 +37,7 @@ final class FuelHistoryMigrationTest extends TestCase
         $pdo->exec('PRAGMA foreign_keys = OFF');
         foreach ($files as $file) {
             $base = basename($file);
-            if ($base === '024_dollars_drop_postings.sql' || $base === '025_locked_buckets_fuel_payroll.sql' || $base === '032_vehicle_kinds.sql' || $base === '033_stay_bill.sql' || $base === '034_account_star.sql' || $base === '035_bill_every.sql' || $base === '036_liability_schedule.sql' || $base === '039_account_in_budget.sql') {
+            if ($base === '024_dollars_drop_postings.sql' || $base === '025_locked_buckets_fuel_payroll.sql' || $base === '032_vehicle_kinds.sql' || $base === '033_stay_bill.sql' || $base === '034_account_star.sql' || $base === '035_bill_every.sql' || $base === '036_liability_schedule.sql' || $base === '039_account_in_budget.sql' || $base === '041_payroll_posted.sql') {
                 continue;
             }
             $sql = file_get_contents($file);
@@ -93,7 +93,7 @@ final class FuelHistoryMigrationTest extends TestCase
         $record = $pdo->prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)');
         foreach ($files as $file) {
             $id = basename($file);
-            if ($id === '024_dollars_drop_postings.sql' || $id === '025_locked_buckets_fuel_payroll.sql' || $id === '032_vehicle_kinds.sql' || $id === '033_stay_bill.sql' || $id === '034_account_star.sql' || $id === '035_bill_every.sql' || $id === '036_liability_schedule.sql' || $id === '039_account_in_budget.sql') {
+            if ($id === '024_dollars_drop_postings.sql' || $id === '025_locked_buckets_fuel_payroll.sql' || $id === '032_vehicle_kinds.sql' || $id === '033_stay_bill.sql' || $id === '034_account_star.sql' || $id === '035_bill_every.sql' || $id === '036_liability_schedule.sql' || $id === '039_account_in_budget.sql' || $id === '041_payroll_posted.sql') {
                 continue;
             }
             $record->execute([$id, $now]);

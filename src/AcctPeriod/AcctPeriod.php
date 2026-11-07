@@ -2,16 +2,17 @@
 
 declare(strict_types=1);
 
-namespace App\Span;
+namespace App\AcctPeriod;
 
 use App\Support\Dates;
 
 /**
- * The one window for Planner, Calendar, Trips, Bills, and Budget.
+ * The accounting period: the one window for Planner, Calendar, Trips, Bills, and Budget.
  * A week is 7 days. A month runs through the day before the same day N months later.
  * When that day does not exist, the anniversary clamps to the last day, then steps back one.
+ * Named apart from a pay period.
  */
-final class Span
+final class AcctPeriod
 {
     public const LENGTHS = ['1 week', '2 weeks', '4 weeks', '1 month', '2 months', '3 months'];
 
@@ -25,7 +26,7 @@ final class Span
         return Dates::parse($today)->format('Y-m-01');
     }
 
-    /** Inclusive last day of the span that starts on $start. */
+    /** Inclusive last day of the accounting period that starts on $start. */
     public static function end(string $start, string $length): string
     {
         return Dates::parse(self::shift($start, $length, 1))->modify('-1 day')->format('Y-m-d');
@@ -37,7 +38,7 @@ final class Span
     public static function shift(string $start, string $length, int $steps): string
     {
         if (!self::valid($length)) {
-            throw new \InvalidArgumentException('Choose a span length.');
+            throw new \InvalidArgumentException('Choose an accounting period length.');
         }
         $start = Dates::parse($start)->format('Y-m-d');
         if ($steps === 0) {
@@ -53,7 +54,7 @@ final class Span
         return self::addMonths($start, (int) self::months($length) * $steps);
     }
 
-    /** current when today is inside, closed when the span has ended, future when it has not started. */
+    /** current when today is inside, closed when the accounting period has ended, future when it has not started. */
     public static function phase(string $start, string $end, string $today): string
     {
         if ($end < $today) {

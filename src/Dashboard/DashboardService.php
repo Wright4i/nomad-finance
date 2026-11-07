@@ -14,7 +14,7 @@ use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
 use App\PayCycle\Paycheck;
 use App\PayCycle\Period;
-use App\Span\Span;
+use App\AcctPeriod\AcctPeriod;
 use App\Support\Dates;
 use App\Trip\TripService;
 use PDO;
@@ -42,9 +42,9 @@ final class DashboardService
         }
 
         $base = $this->actor->baseCurrency();
-        $span = $this->span($today);
-        $windowStart = $span['start'];
-        $windowEnd = $span['end'];
+        $acctPeriod = $this->acctPeriod($today);
+        $windowStart = $acctPeriod['start'];
+        $windowEnd = $acctPeriod['end'];
         $stmt = $this->pdo->prepare(
             'SELECT id, name, type, side, currency, balance_minor AS balanceMinor,
                     interest_bps AS interestBps
@@ -137,7 +137,7 @@ final class DashboardService
             'baseCurrency' => $base,
             'exponent' => $this->currencies->exponent($base),
             'today' => $today,
-            'span' => $span,
+            'acctPeriod' => $acctPeriod,
             'windowStart' => $windowStart,
             'windowEnd' => $windowEnd,
             'netWorthMinor' => $summary['netWorthMinor'],
@@ -258,19 +258,19 @@ final class DashboardService
     }
 
     /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} */
-    private function span(string $today): array
+    private function acctPeriod(string $today): array
     {
-        $stmt = $this->pdo->prepare('SELECT span_start, span_length FROM user WHERE id = ?');
+        $stmt = $this->pdo->prepare('SELECT acct_period_start, acct_period_length FROM user WHERE id = ?');
         $stmt->execute([$this->actor->id()]);
         $row = $stmt->fetch();
-        $start = is_array($row) ? (string) $row['span_start'] : '';
-        $length = is_array($row) ? (string) $row['span_length'] : '1 month';
-        if ($start === '' || !Span::valid($length)) {
-            $start = Span::defaultStart($today);
+        $start = is_array($row) ? (string) $row['acct_period_start'] : '';
+        $length = is_array($row) ? (string) $row['acct_period_length'] : '1 month';
+        if ($start === '' || !AcctPeriod::valid($length)) {
+            $start = AcctPeriod::defaultStart($today);
             $length = '1 month';
         }
 
-        return Span::describe($start, $length, $today);
+        return AcctPeriod::describe($start, $length, $today);
     }
 
     /**

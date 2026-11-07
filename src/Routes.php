@@ -422,7 +422,7 @@ final class Routes
                         $payCycleId,
                         $periodId,
                         ($query['upcoming'] ?? '') === '1',
-                        ($query['span'] ?? '') === '1',
+                        ($query['acctPeriod'] ?? '') === '1',
                     ));
                 });
                 $secure->get('/transfers/card', function (ServerRequestInterface $request, ResponseInterface $response) use ($transfers) {

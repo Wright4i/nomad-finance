@@ -223,7 +223,7 @@
     return stroked ? `${tone}; stroke: var(--bg); stroke-width: 0.6` : tone;
   }
 
-  let billMonth = $derived((session.user?.spanStart ?? todayISO()).slice(0, 7));
+  let billMonth = $derived((session.user?.acctPeriodStart ?? todayISO()).slice(0, 7));
   let pies = $derived(data?.duePies[billMonth] ?? []);
   let isPayday = $derived(Boolean(data?.payday && data.payday.on === data.today));
   let gaugeRows = $derived(
@@ -250,8 +250,8 @@
   async function load(): Promise<void> {
     try {
       const today = todayISO();
-      const start = session.user?.spanStart ?? `${today.slice(0, 7)}-01`;
-      const end = session.user?.spanEnd ?? today;
+      const start = session.user?.acctPeriodStart ?? `${today.slice(0, 7)}-01`;
+      const end = session.user?.acctPeriodEnd ?? today;
       const range = `start=${start}&end=${end}`;
       const [sheet, tripData, payData, billData, entryData] = await Promise.all([
         api<Dashboard>(`/api/dashboard?today=${today}`),
@@ -722,7 +722,7 @@
                 <p class="envelope-available">
                   <span>Available to assign</span>
                   <span class="money">{money(data.envelopes.availableMinor)}</span>
-                  <span class="muted" title="Income still coming in this month, plus every asset marked Include in Budget.">
+                  <span class="muted" title="Income still coming in this period, plus every asset marked Include in Budget.">
                     {money(data.envelopes.assignedMinor)} assigned of {money(data.envelopes.poolMinor)}
                   </span>
                 </p>
@@ -735,7 +735,7 @@
                 <div class="planner-bills-head">
                   <a class="planner-widget-title" href={widgetPage.bills} onclick={(event) => follow(event, widgetPage.bills)}>Bills</a>
                 </div>
-                <p class="muted m-0">{session.user ? `${formatChipDate(session.user.spanStart)} – ${formatChipDate(session.user.spanEnd)}` : formatMonth(billMonth)}</p>
+                <p class="muted m-0">{session.user ? `${formatChipDate(session.user.acctPeriodStart)} – ${formatChipDate(session.user.acctPeriodEnd)}` : formatMonth(billMonth)}</p>
                 {#if pies.length === 0}
                   <p class="muted m-0">No bills due this month.</p>
                 {:else}

@@ -1,0 +1,1 @@
+ALTER TABLE payroll_entries ADD COLUMN posted INTEGER NOT NULL DEFAULT 0;

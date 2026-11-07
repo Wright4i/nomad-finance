@@ -18,7 +18,7 @@
             <directory>tests/Money</directory>
             <directory>tests/PayCycle</directory>
             <directory>tests/Posting</directory>
-            <directory>tests/Span</directory>
+            <directory>tests/AcctPeriod</directory>
             <directory>tests/Support</directory>
             <directory>tests/Transfer</directory>
             <directory>tests/Trip</directory>

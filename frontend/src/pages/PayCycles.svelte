@@ -15,6 +15,7 @@
     amountMinor: number | null;
     hours: string | null;
     keyed: boolean;
+    posted?: boolean;
     projectedMinor: number | null;
   };
 
@@ -26,6 +27,7 @@
   let payrollRows = $state<PayrollRow[]>([]);
   let payrollDrafts = $state<Record<string, string>>({});
   let payrollHours = $state<Record<string, string>>({});
+  let payrollPosted = $state<Record<string, boolean>>({});
   let extraDate = $state('');
   let payrollDialog: HTMLDialogElement | undefined = $state();
 
@@ -57,12 +59,15 @@
     payrollRows = data.payroll.rows;
     const drafts: Record<string, string> = {};
     const hours: Record<string, string> = {};
+    const posted: Record<string, boolean> = {};
     for (const row of data.payroll.rows) {
       drafts[row.payday] = row.amountMinor === null ? '' : minorToInput(row.amountMinor, 2);
       hours[row.payday] = row.hours ?? '';
+      posted[row.payday] = row.posted === true;
     }
     payrollDrafts = drafts;
     payrollHours = hours;
+    payrollPosted = posted;
     extraDate = '';
     payrollDialog?.showModal();
   }
@@ -86,9 +91,11 @@
       amountMinor: null,
       hours: null,
       keyed: false,
+      posted: false,
       projectedMinor: null,
     }].sort((left, right) => left.payday.localeCompare(right.payday));
     payrollDrafts[payday] = '';
+    payrollPosted[payday] = false;
   }
 
   async function savePayroll(): Promise<void> {
@@ -99,6 +106,7 @@
         payday: row.payday,
         amountMinor: raw === '' ? null : parseMajor(raw, 2),
         hours: payrollCycle?.payKind === 'hourly' ? (payrollHours[row.payday] ?? '') : null,
+        posted: payrollPosted[row.payday] === true,
       };
     });
     await api(`/api/pay-cycles/${payrollCycle.id}/payroll`, {
@@ -207,6 +215,22 @@
               payrollDrafts[row.payday] = (event.currentTarget as HTMLInputElement).value;
             }}
           />
+        </span>
+        <span class="flex flex-wrap gap-2" role="group" aria-label={`Payroll ${formatDate(row.payday)}`}>
+          <button
+            class="choice"
+            class:on={payrollPosted[row.payday] !== true}
+            type="button"
+            aria-pressed={payrollPosted[row.payday] !== true}
+            onclick={() => (payrollPosted[row.payday] = false)}
+          >Incoming</button>
+          <button
+            class="choice"
+            class:on={payrollPosted[row.payday] === true}
+            type="button"
+            aria-pressed={payrollPosted[row.payday] === true}
+            onclick={() => (payrollPosted[row.payday] = true)}
+          >Posted</button>
         </span>
       </label>
     {/each}

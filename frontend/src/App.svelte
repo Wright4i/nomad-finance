@@ -63,7 +63,7 @@
   <Login />
 {:else}
   <Shell>
-    {#key `${route.path}:${session.books}:${session.user.spanStart}:${session.user.spanLength}`}
+    {#key `${route.path}:${session.books}:${session.user.acctPeriodStart}:${session.user.acctPeriodLength}`}
       {#if view.name === 'dashboard'}
         <Dashboard />
       {:else if view.name === 'accounts'}

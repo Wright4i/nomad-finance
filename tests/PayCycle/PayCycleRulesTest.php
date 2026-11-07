@@ -272,6 +272,7 @@ final class PayCycleRulesTest extends TestCase
             'on' => '2026-11-15',
             'paycheckMinor' => 250000,
             'length' => 'monthly',
+            'posted' => false,
         ]], $byPayor['Monthly Job']);
     }
 
@@ -333,5 +334,32 @@ final class PayCycleRulesTest extends TestCase
         } catch (ApiException $e) {
             self::assertArrayHasKey('rateMinor', $e->fields);
         }
+    }
+
+    public function testAPostedPaydayWithNoAmountKeepsTheProjectedCheck(): void
+    {
+        $cycle = $this->cycles->create([
+            'payor' => 'Posted blank',
+            'payday' => '2026-11-16',
+            'length' => 'monthly',
+            'payKind' => 'fixed',
+            'rateMinor' => 25000,
+        ], '2026-11-06');
+        $saved = $this->cycles->savePayroll((int) $cycle['id'], [
+            'entries' => [[
+                'payday' => '2026-11-16',
+                'amountMinor' => null,
+                'posted' => true,
+            ]],
+        ], '2026-11-06');
+        $row = null;
+        foreach ($saved['rows'] as $item) {
+            if ($item['payday'] === '2026-11-16') {
+                $row = $item;
+            }
+        }
+        self::assertIsArray($row);
+        self::assertTrue($row['posted']);
+        self::assertSame(25000, $row['amountMinor']);
     }
 }

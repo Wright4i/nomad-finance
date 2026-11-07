@@ -165,8 +165,9 @@
     {:else if mark === 'lock'}
       <rect x="6" y="10.5" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8" />
       <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-    {:else if mark === 'log'}
-      <path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'dollar'}
+      <path d="M12 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      <path d="M16.2 8.1c0-1.9-1.8-3-4.2-3s-4.2 1.2-4.2 3.1c0 1.6 1.2 2.2 4.2 2.7s4.2 1.1 4.2 2.9-1.7 3.1-4.2 3.1-4.2-1.3-4.2-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'envelope'}
       <path d="M4.5 7.5h15v9.5h-15zM4.5 8l7.5 5.2L19.5 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'sun'}

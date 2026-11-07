@@ -125,20 +125,9 @@
                 <span class="account-institution">{account.institution}</span>
               {/if}
             </span>
-            {#if account.side === 'asset'}
-              <span class="account-eye" role="img" data-budget={account.inBudget ? 'in' : 'out'} title={budgetLabel(account)} aria-label={budgetLabel(account)}>
-                {#if account.inBudget}
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
-                  </svg>
-                {:else}
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
-                    <path d="M4 20 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                  </svg>
-                {/if}
+            {#if account.side === 'asset' && account.inBudget}
+              <span class="account-budget" role="img" title={budgetLabel(account)} aria-label={budgetLabel(account)}>
+                <Glyph name="dollar" mini />
               </span>
             {/if}
           </span>
@@ -202,7 +191,7 @@
     overflow-wrap: anywhere;
   }
 
-  .account-eye {
+  .account-budget {
     flex: none;
     width: 1.15rem;
     height: 1.15rem;
@@ -210,10 +199,15 @@
     color: var(--text);
   }
 
-  .account-eye svg {
-    display: block;
-    width: 100%;
-    height: 100%;
+  .account-budget :global(.glyph) {
+    width: 1.15rem;
+    height: 1.15rem;
+    background: none;
+  }
+
+  .account-budget :global(svg) {
+    width: 1.15rem;
+    height: 1.15rem;
   }
 
   .bill-detail-chips {

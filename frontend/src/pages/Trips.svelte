@@ -7,7 +7,7 @@
   import { api, explain } from '../lib/api';
   import { paintLeg } from '../lib/legPaint';
   import { exponentOf, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
-  import { spanCells, spanEnd } from '../lib/span';
+  import { periodCells, periodEnd } from '../lib/acctPeriod';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { DriveLeg, Trip } from '../lib/types';
@@ -17,9 +17,9 @@
   let index = $state(0);
   let message = $state('');
   let loading = $state(true);
-  let spanStart = $derived(session.user?.spanStart ?? `${todayISO().slice(0, 7)}-01`);
-  let spanFinish = $derived(session.user?.spanEnd ?? spanEnd(spanStart, '1 month'));
-  let days = $derived(spanCells(spanStart, spanFinish));
+  let acctPeriodStart = $derived(session.user?.acctPeriodStart ?? `${todayISO().slice(0, 7)}-01`);
+  let spanFinish = $derived(session.user?.acctPeriodEnd ?? periodEnd(acctPeriodStart, '1 month'));
+  let days = $derived(periodCells(acctPeriodStart, spanFinish));
   let baseCurrency = $derived(session.user?.baseCurrency ?? 'USD');
   let baseExponent = $derived(exponentOf(baseCurrency));
 
@@ -41,7 +41,7 @@
 
   let selected = $derived(trips[index] ?? null);
   let selectedLeg = $derived(selected ? legs.find((item) => item.toId === selected.id) : undefined);
-  let drawnTrips = $derived(trips.filter((trip) => trip.arriveOn <= spanFinish && trip.departOn >= spanStart));
+  let drawnTrips = $derived(trips.filter((trip) => trip.arriveOn <= spanFinish && trip.departOn >= acctPeriodStart));
   let drawnIds = $derived(new Set(drawnTrips.map((trip) => trip.id)));
   let drawnLegs = $derived(
     legs
@@ -210,7 +210,7 @@
   }
 
   function overlaps(trip: Trip): boolean {
-    return trip.arriveOn <= spanFinish && trip.departOn >= spanStart;
+    return trip.arriveOn <= spanFinish && trip.departOn >= acctPeriodStart;
   }
 
   let locateToken = $state(0);
@@ -513,7 +513,7 @@
   {/if}
 
   <section class="grid gap-2">
-    <h2 class="m-0 text-2xl" data-span={spanStart}>{formatChipDate(spanStart)} – {formatChipDate(spanFinish)}</h2>
+    <h2 class="m-0 text-2xl" data-period={acctPeriodStart}>{formatChipDate(acctPeriodStart)} – {formatChipDate(spanFinish)}</h2>
     <div class="grid grid-cols-7 gap-1 text-center text-sm">
       {#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as name (name)}
         <p class="kicker m-0">{name}</p>

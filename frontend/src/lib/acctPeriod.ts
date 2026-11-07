@@ -1,6 +1,6 @@
-export const SPAN_LENGTHS = ['1 week', '2 weeks', '4 weeks', '1 month', '2 months', '3 months'] as const;
+export const PERIOD_LENGTHS = ['1 week', '2 weeks', '4 weeks', '1 month', '2 months', '3 months'] as const;
 
-export type SpanLength = (typeof SPAN_LENGTHS)[number];
+export type PeriodLength = (typeof PERIOD_LENGTHS)[number];
 
 const WEEK_DAYS: Record<string, number> = {
   '1 week': 7,
@@ -14,7 +14,7 @@ const MONTHS: Record<string, number> = {
   '3 months': 3,
 };
 
-export function spanShift(start: string, length: string, steps: number): string {
+export function periodShift(start: string, length: string, steps: number): string {
   if (steps === 0) return start;
   const weeks = WEEK_DAYS[length];
   if (weeks !== undefined) return addDays(start, weeks * steps);
@@ -23,11 +23,11 @@ export function spanShift(start: string, length: string, steps: number): string 
 }
 
 /** Inclusive last day. A month ends the day before the same day N months later. */
-export function spanEnd(start: string, length: string): string {
-  return addDays(spanShift(start, length, 1), -1);
+export function periodEnd(start: string, length: string): string {
+  return addDays(periodShift(start, length, 1), -1);
 }
 
-export function spanDays(start: string, end: string): string[] {
+export function periodDays(start: string, end: string): string[] {
   const days: string[] = [];
   let cursor = start;
   while (cursor <= end) {
@@ -37,11 +37,11 @@ export function spanDays(start: string, end: string): string[] {
   return days;
 }
 
-/** Leading empty cells put the start date under its weekday. No day outside the span. */
-export function spanCells(start: string, end: string): Array<string | null> {
+/** Leading empty cells put the start date under its weekday. No day outside the period. */
+export function periodCells(start: string, end: string): Array<string | null> {
   const [year, month, day] = start.split('-').map(Number);
   const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-  return [...Array.from({ length: weekday }, () => null), ...spanDays(start, end)];
+  return [...Array.from({ length: weekday }, () => null), ...periodDays(start, end)];
 }
 
 function addDays(iso: string, days: number): string {

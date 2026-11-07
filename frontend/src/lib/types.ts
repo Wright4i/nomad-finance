@@ -5,9 +5,9 @@ export type User = {
   baseCurrency: string;
   theme: 'dark' | 'light';
   role: 'owner' | 'demo' | 'user';
-  spanStart: string;
-  spanEnd: string;
-  spanLength: string;
+  acctPeriodStart: string;
+  acctPeriodEnd: string;
+  acctPeriodLength: string;
 };
 
 export type Account = {
@@ -129,7 +129,7 @@ export type EnvelopeSheet = {
     accounts: { id: number; name: string; type: string; amountMinor: number }[];
     floats?: { id: number; name: string; type: string; balanceMinor: number; coveredMinor: number; uncoveredMinor: number }[];
   };
-  span?: { start: string; end: string; length: string; phase: string; editable: boolean; upcoming: boolean };
+  acctPeriod?: { start: string; end: string; length: string; phase: string; editable: boolean; upcoming: boolean };
   categories: EnvelopeCategory[];
   groups: EnvelopeGroup[];
   celebrate: boolean;

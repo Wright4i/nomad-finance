@@ -48,54 +48,54 @@ final class HorizonSettingsTest extends TestCase
     {
         $opened = $this->auth->current();
         self::assertNotNull($opened);
-        self::assertSame('1 month', $opened['spanLength']);
-        self::assertSame(gmdate('Y-m-01'), $opened['spanStart']);
+        self::assertSame('1 month', $opened['acctPeriodLength']);
+        self::assertSame(gmdate('Y-m-01'), $opened['acctPeriodStart']);
         self::assertArrayNotHasKey('horizonDays', $opened);
         self::assertArrayNotHasKey('fuelPriceMinor', $opened);
         $hash = $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn();
 
         $saved = $this->auth->updateSettings([
-            'spanStart' => '2026-11-01',
-            'spanLength' => '2 weeks',
+            'acctPeriodStart' => '2026-11-01',
+            'acctPeriodLength' => '2 weeks',
             'theme' => 'light',
         ]);
         self::assertSame('Ada', $saved['name']);
         self::assertSame('USD', $saved['baseCurrency']);
-        self::assertSame('2026-11-01', $saved['spanStart']);
-        self::assertSame('2026-11-14', $saved['spanEnd']);
-        self::assertSame('2 weeks', $saved['spanLength']);
+        self::assertSame('2026-11-01', $saved['acctPeriodStart']);
+        self::assertSame('2026-11-14', $saved['acctPeriodEnd']);
+        self::assertSame('2 weeks', $saved['acctPeriodLength']);
         self::assertSame('light', $saved['theme']);
         self::assertSame($hash, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn());
 
         try {
-            $this->auth->updateSettings(['spanLength' => '5 weeks']);
-            self::fail('A span length outside the six stops was saved.');
+            $this->auth->updateSettings(['acctPeriodLength' => '5 weeks']);
+            self::fail('An accounting period length outside the six stops was saved.');
         } catch (ApiException $e) {
             self::assertSame(422, $e->status);
-            self::assertArrayHasKey('spanLength', $e->fields);
+            self::assertArrayHasKey('acctPeriodLength', $e->fields);
         }
-        self::assertSame('2 weeks', $this->auth->current()['spanLength']);
+        self::assertSame('2 weeks', $this->auth->current()['acctPeriodLength']);
     }
 
     public function testDemoCanChangeTheSpanAndKeepsItsName(): void
     {
         $demo = $this->auth->enterDemo();
-        self::assertSame('1 month', $demo['spanLength']);
+        self::assertSame('1 month', $demo['acctPeriodLength']);
         self::assertSame(400, (int) $this->pdo->query(
             "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo'"
         )->fetchColumn());
 
-        $saved = $this->auth->updateSettings(['spanLength' => '1 week', 'spanStart' => '2026-11-01']);
+        $saved = $this->auth->updateSettings(['acctPeriodLength' => '1 week', 'acctPeriodStart' => '2026-11-01']);
         self::assertSame('Demo', $saved['name']);
-        self::assertSame('2026-11-07', $saved['spanEnd']);
+        self::assertSame('2026-11-07', $saved['acctPeriodEnd']);
 
         try {
-            $this->auth->updateSettings(['name' => 'Someone else', 'spanLength' => '1 month']);
+            $this->auth->updateSettings(['name' => 'Someone else', 'acctPeriodLength' => '1 month']);
             self::fail('Demo renamed itself.');
         } catch (ApiException $e) {
             self::assertSame(403, $e->status);
         }
         self::assertSame('Demo', $this->auth->current()['name']);
-        self::assertSame('1 week', $this->auth->current()['spanLength']);
+        self::assertSame('1 week', $this->auth->current()['acctPeriodLength']);
     }
 }

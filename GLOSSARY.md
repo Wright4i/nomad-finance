@@ -101,7 +101,7 @@ The one amount on a bill, in cents.
 _Avoid_: Vendor amount, balance
 
 **Assignment**:
-Cash held in a bucket for the span on the Budget screen. Zero or more. The span that contains today is what you assign to. A locked bucket cannot be assigned less than its bills. Paying a paid-in-full card from the transfer screen is what lowers the bucket for the bills you select.
+Cash held in a bucket for the period on the Budget screen. Zero or more. The period that contains today is what you assign to. A locked bucket cannot be assigned less than its bills. Paying a paid-in-full card from the transfer screen is what lowers the bucket for the bills you select.
 _Avoid_: Posting, transaction
 
 **Overspend**:
@@ -109,11 +109,11 @@ Retired. An assignment cannot be negative.
 _Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-Income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full credit or fuel card. A payday before today is left out. Income is not filtered by the span. Credit cards, loans, fuel accounts, and tracking accounts stay out of the pool; the uncovered float is subtracted. Covered float is past unpaid bills drawn from that card, capped at the balance. The available list shows each such card's balance, covered, and uncovered. Needs is 50% of the pool, Wants 30%, and Savings 20%, half up to the cent. Available follows the span that contains today. A closed span is read-only. Planning a later span does not change the number. The number can be zero, and it can be negative when the buckets hold more than the pool.
+Income still coming inside the period, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full credit or fuel card. A payday before today, after the period, or marked posted is left out. Credit cards, loans, fuel accounts, and tracking accounts stay out of the pool; the uncovered float is subtracted. Covered float is past unpaid bills drawn from that card, capped at the balance. The available list shows each such card's balance, covered, and uncovered. Needs is 50% of the pool, Wants 30%, and Savings 20%, half up to the cent. Available follows the period that contains today. A closed period is read-only. Planning a later period does not change the number. The number can be zero, and it can be negative when the buckets hold more than the pool.
 _Avoid_: To be budgeted
 
 **Auto-assigned**:
-The bills due in the span, and on Fuel the trip fuel for stays in the span, already counted on a bucket. It is not typed.
+The bills due in the period, and on Fuel the trip fuel for stays in the period, already counted on a bucket. It is not typed.
 _Avoid_: Filled, bill total
 
 **Envelope**:
@@ -278,7 +278,7 @@ A checkbox on a pay cycle, off by default. When it is on and a payday has no pay
 _Avoid_: Rolling average, paycheck
 
 **Payroll entry**:
-One dollar amount on one payday of a pay cycle. A keyed amount always wins. An empty amount means that date is not keyed. A keyed irregular date does not change the stored next payday.
+One dollar amount on one payday of a pay cycle. A keyed amount always wins. An empty amount means that date is not keyed. Incoming is the default. Posted means the check is already in a checking balance and is left out of available to assign. A keyed irregular date does not change the stored next payday.
 _Avoid_: Paycheck, posting
 
 **Rolling average**:
@@ -289,15 +289,15 @@ _Avoid_: Average payroll
 The other day of the month a semimonthly pay cycle uses. The payday supplies the first day.
 
 **Open period**:
-The span of the pay cycle that contains today. It starts on a payday and ends the day before the next one. An irregular cycle with no next payday stays open. Pay cycles still calculate paychecks. They do not choose which days are on screen.
-_Avoid_: Horizon
+The dates of one pay cycle that contain today. It starts on a payday and ends the day before the next one. An irregular cycle with no next payday stays open. Pay cycles still calculate paychecks. They do not choose which days are on screen.
+_Avoid_: Horizon, accounting period
 
-**Span**:
-The one window for Planner, Calendar, Trips, Bills, and Budget. Stored on the user as a start date and a length: 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months. The button shows the dates, such as Nov 1 – Nov 30. A week is 7 days. A month runs from the start through the day before the same day that many months later, and a missing anniversary clamps to the last day of that month and then steps back one. Previous and Next move the start by that length. The span that contains today is editable and available-to-assign follows it. A span that ends before today is closed and read-only. A span that starts after today can be planned, and available does not follow it.
-_Avoid_: Period, horizon, calendar month
+**Accounting period**:
+The one window for Planner, Calendar, Trips, Bills, and Budget. The screens say period. Stored on the user as a start date and a length: 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months. The sidebar shows the dates, such as Nov 1 – Nov 30. A week is 7 days. A month runs from the start through the day before the same day that many months later, and a missing anniversary clamps to the last day of that month and then steps back one. Previous and Next move the start by that length. The accounting period that contains today is editable and available-to-assign follows it. One that ends before today is closed and read-only. One that starts after today can be planned, and available does not follow it.
+_Avoid_: Span, open period, horizon, calendar month
 
 **Horizon**:
-Retired. The span is the only window.
+Retired. The accounting period is the only window.
 _Avoid_: Pay period, open period
 
 **Calendar entry**:

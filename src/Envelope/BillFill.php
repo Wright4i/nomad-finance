@@ -16,7 +16,7 @@ use PDO;
 
 /**
  * Writes bill dues into the oldest active pay cycle.
- * A closed span is left alone. Mark paid does not call this.
+ * A closed accounting period is left alone. Mark paid does not call this.
  */
 final class BillFill
 {

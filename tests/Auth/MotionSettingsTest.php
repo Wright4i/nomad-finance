@@ -77,8 +77,8 @@ final class MotionSettingsTest extends TestCase
         self::assertSame('Ada', $saved['name']);
         self::assertSame('light', $saved['theme']);
         self::assertArrayNotHasKey('fuelPriceMinor', $saved);
-        self::assertSame('1 month', $saved['spanLength']);
-        self::assertSame(gmdate('Y-m-01'), $saved['spanStart']);
+        self::assertSame('1 month', $saved['acctPeriodLength']);
+        self::assertSame(gmdate('Y-m-01'), $saved['acctPeriodStart']);
         self::assertArrayNotHasKey('motionTicker', $saved);
         self::assertSame($hash, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn());
     }
@@ -100,9 +100,9 @@ final class MotionSettingsTest extends TestCase
         self::assertArrayNotHasKey('fuelPriceMinor', $owner);
         self::assertSame($hash, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn());
 
-        $demo = $this->pdo->query("SELECT span_length FROM user WHERE role = 'demo'")->fetch();
+        $demo = $this->pdo->query("SELECT acct_period_length FROM user WHERE role = 'demo'")->fetch();
         self::assertIsArray($demo);
-        self::assertSame('1 month', $demo['span_length']);
+        self::assertSame('1 month', $demo['acct_period_length']);
         self::assertSame(400, (int) $this->pdo->query(
             "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo'"
         )->fetchColumn());

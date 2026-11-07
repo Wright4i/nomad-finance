@@ -78,9 +78,9 @@
     if (filterAccount !== '') params.set('accountId', filterAccount);
     if (filterType !== '') params.set('type', filterType);
     if (filterAmount.trim() !== '') params.set('amount', filterAmount.trim());
-    if (session.user?.spanStart && session.user.spanEnd) {
-      params.set('start', session.user.spanStart);
-      params.set('end', session.user.spanEnd);
+    if (session.user?.acctPeriodStart && session.user.acctPeriodEnd) {
+      params.set('start', session.user.acctPeriodStart);
+      params.set('end', session.user.acctPeriodEnd);
       params.set('today', todayISO());
     }
     return `/api/bills?${params.toString()}`;
@@ -213,7 +213,7 @@
     <h1 class="text-3xl m-0">Bills</h1>
     <a class="btn primary" href="/bills/new" onclick={(event) => { event.preventDefault(); go('/bills/new'); }}>New bill</a>
   </div>
-  <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone. This list is the span.</p>
+  <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone. This list is the period.</p>
   {#if booting}
     <Spinner />
   {:else}

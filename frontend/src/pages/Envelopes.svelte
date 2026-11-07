@@ -34,7 +34,7 @@
   let editable = $derived(sheet?.period?.editable === true);
 
   async function load(): Promise<void> {
-    const params = new URLSearchParams({ today: todayISO(), span: '1' });
+    const params = new URLSearchParams({ today: todayISO(), acctPeriod: '1' });
     if (payCycleId !== null) params.set('payCycleId', String(payCycleId));
     const data = await api<EnvelopeSheet>(`/api/budget?${params}`);
     sheet = data;
@@ -145,7 +145,7 @@
       const planning = sheet.period?.upcoming === true;
       const data = await api<EnvelopeSheet>('/api/budget', {
         method: 'PUT',
-        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, upcoming: planning, span: '1' },
+        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, upcoming: planning, acctPeriod: '1' },
       });
       if (data.celebrate && !prefersReducedMotion()) {
         celebrateEase = true;
@@ -180,7 +180,7 @@
           today: todayISO(),
           payCycleId: sheet.payCycleId,
           upcoming: sheet.period?.upcoming === true,
-          span: '1',
+          acctPeriod: '1',
         },
       });
       sheet = data;
@@ -276,11 +276,11 @@
       {/if}
 
       <div class="flex flex-wrap items-center gap-2">
-        {#if sheet.span}
-          <p class="m-0" data-span={sheet.span.start}>{formatChipDate(sheet.span.start)} – {formatChipDate(sheet.span.end)}</p>
+        {#if sheet.acctPeriod}
+          <p class="m-0" data-period={sheet.acctPeriod.start}>{formatChipDate(sheet.acctPeriod.start)} – {formatChipDate(sheet.acctPeriod.end)}</p>
         {/if}
         <button class="btn" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
-        <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving || sheet.span?.phase === 'future' || sheet.span?.phase === 'closed'} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>
+        <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving || sheet.acctPeriod?.phase === 'future' || sheet.acctPeriod?.phase === 'closed'} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>
       </div>
       <dialog class="modal" bind:this={recalculateDialog} aria-labelledby="recalculate-title">
         <div class="modal-body">
@@ -292,10 +292,10 @@
           <button class="btn" type="button" onclick={() => recalculateDialog?.close()}>Cancel</button>
         </div>
       </dialog>
-      {#if sheet.span?.phase === 'future'}
-        <p class="muted m-0">These amounts are a plan for this span. Available to assign still follows the span that contains today.</p>
-      {:else if sheet.span?.phase === 'closed'}
-        <p class="muted m-0">A closed span can be read. A correction belongs in the span that contains today.</p>
+      {#if sheet.acctPeriod?.phase === 'future'}
+        <p class="muted m-0">These amounts are a plan for this period. Available to assign still follows the period that contains today.</p>
+      {:else if sheet.acctPeriod?.phase === 'closed'}
+        <p class="muted m-0">A closed period can be read. A correction belongs in the period that contains today.</p>
       {/if}
 
       {#each groups as group (group.id)}

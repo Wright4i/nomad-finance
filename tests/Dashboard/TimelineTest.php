@@ -122,7 +122,7 @@ final class TimelineTest extends TestCase
         self::assertNotNull($stays['Usery Mountain']['fuel']['miles']);
         self::assertContains('2026-11-22', $this->dates($sheet['timeline'], 'balanceDue', 'Lost Dutchman'));
 
-        $this->auth->updateSettings(['spanLength' => '2 weeks']);
+        $this->auth->updateSettings(['acctPeriodLength' => '2 weeks']);
         $shorter = $this->dashboard->show('2026-11-03');
         self::assertSame('2026-11-14', $shorter['windowEnd']);
         self::assertNotContains('2026-12-05', $this->dates($shorter['timeline'], 'bill', 'Park pass'));

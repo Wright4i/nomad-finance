@@ -12,7 +12,7 @@ use App\Category\SystemBuckets;
 use App\PayCycle\PayCycleService;
 use App\PayCycle\Period;
 use App\Account\FloatCover;
-use App\Span\Span;
+use App\AcctPeriod\AcctPeriod;
 use App\Support\Dates;
 use App\Target\TargetService;
 use App\Trip\Drive;
@@ -36,25 +36,25 @@ final class EnvelopeService
     private ?array $viewWindow = null;
 
     /** @return array<string, mixed> */
-    public function show(string $today, ?int $payCycleId = null, ?int $periodId = null, bool $upcoming = false, bool $useSpan = false): array
+    public function show(string $today, ?int $payCycleId = null, ?int $periodId = null, bool $upcoming = false, bool $useAcctPeriod = false): array
     {
         $today = $this->day($today);
         $this->fillIfWaiting($today);
         $this->prepare($today);
-        $span = $useSpan ? $this->storedSpan($today) : null;
-        $this->viewWindow = $span === null ? null : [
-            'start' => $span['start'],
-            'end' => $span['end'],
-            'phase' => $span['phase'],
+        $acctPeriod = $useAcctPeriod ? $this->storedAcctPeriod($today) : null;
+        $this->viewWindow = $acctPeriod === null ? null : [
+            'start' => $acctPeriod['start'],
+            'end' => $acctPeriod['end'],
+            'phase' => $acctPeriod['phase'],
         ];
         try {
             $sheet = $this->present($today, $payCycleId, $periodId, $upcoming, true);
         } finally {
             $this->viewWindow = null;
         }
-        $sheet['span'] = $this->storedSpan($today);
-        if ($span !== null) {
-            $sheet = $this->alignSpan($sheet, $span, $today);
+        $sheet['acctPeriod'] = $this->storedAcctPeriod($today);
+        if ($acctPeriod !== null) {
+            $sheet = $this->alignAcctPeriod($sheet, $acctPeriod, $today);
         }
 
         return $sheet;
@@ -67,13 +67,13 @@ final class EnvelopeService
     public function save(array $input): array
     {
         $today = $this->day(is_string($input['today'] ?? null) ? $input['today'] : '');
-        if ($this->usesSpan($input)) {
-            $span = $this->storedSpan($today);
+        if ($this->usesAcctPeriod($input)) {
+            $span = $this->storedAcctPeriod($today);
             if ($span['phase'] === 'closed') {
-                throw new ApiException(409, 'A closed span can be read.');
+                throw new ApiException(409, 'A closed period can be read.');
             }
             if ($span['phase'] === 'future') {
-                return $this->saveSpanPlan($input, $span, $today);
+                return $this->saveAcctPeriodPlan($input, $span, $today);
             }
         }
         $this->prepare($today);
@@ -170,7 +170,7 @@ final class EnvelopeService
             throw $e;
         }
 
-        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesSpan($input));
+        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesAcctPeriod($input));
     }
 
     /**
@@ -240,7 +240,7 @@ final class EnvelopeService
             throw $e;
         }
 
-        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesSpan($input));
+        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesAcctPeriod($input));
     }
 
     private function prepare(string $today): void
@@ -623,18 +623,19 @@ final class EnvelopeService
     }
 
     /**
-     * The amount under the headline is income still coming in this month
-     * plus every asset account marked Include in Budget. A payday before today is left out.
+     * The amount under the headline is income still coming inside the accounting period
+     * plus every asset account marked Include in Budget. A payday before today,
+     * after the accounting period, or already posted is left out.
      * Those lines are that total. The headline is the total minus what is already assigned.
      *
      * @return array{income: list<array{id:int,payor:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,amountMinor:int}>}
      */
     private function sources(string $today): array
     {
-        $month = substr($today, 0, 7);
+        $span = $this->storedAcctPeriod($today);
         $income = [];
-        foreach ($this->payCycles->monthPay($month, $today) as $row) {
-            if ((string) $row['on'] < $today) {
+        foreach ($this->payCycles->between($span['start'], $span['end'], $today) as $row) {
+            if ((string) $row['on'] < $today || ($row['posted'] ?? false) === true) {
                 continue;
             }
             $id = (int) $row['id'];
@@ -845,7 +846,7 @@ final class EnvelopeService
     }
 
     /**
-     * The selected payor's income for the span on screen.
+     * The selected payor's income for the accounting period on screen.
      * It is the paycheck preview for that span, including a keyed amount once.
      *
      * @param ?array<string, mixed> $cycle
@@ -1584,7 +1585,7 @@ final class EnvelopeService
      */
     private function openWindow(string $start, string $end, string $today): array
     {
-        $span = $this->storedSpan($today);
+        $span = $this->storedAcctPeriod($today);
         if ($span['phase'] === 'current') {
             return ['start' => $span['start'], 'end' => $span['end']];
         }
@@ -1593,25 +1594,25 @@ final class EnvelopeService
     }
 
     /** @param array<string, mixed> $input */
-    private function usesSpan(array $input): bool
+    private function usesAcctPeriod(array $input): bool
     {
-        return ($input['span'] ?? false) === true || ($input['span'] ?? null) === 1 || ($input['span'] ?? null) === '1';
+        return ($input['acctPeriod'] ?? false) === true || ($input['acctPeriod'] ?? null) === 1 || ($input['acctPeriod'] ?? null) === '1';
     }
 
     /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} */
-    private function storedSpan(string $today): array
+    private function storedAcctPeriod(string $today): array
     {
-        $stmt = $this->pdo->prepare('SELECT span_start, span_length FROM user WHERE id = ?');
+        $stmt = $this->pdo->prepare('SELECT acct_period_start, acct_period_length FROM user WHERE id = ?');
         $stmt->execute([$this->actor->id()]);
         $row = $stmt->fetch();
-        $start = is_array($row) ? (string) $row['span_start'] : '';
-        $length = is_array($row) ? (string) $row['span_length'] : '1 month';
-        if ($start === '' || !Span::valid($length)) {
-            $start = Span::defaultStart($today);
+        $start = is_array($row) ? (string) $row['acct_period_start'] : '';
+        $length = is_array($row) ? (string) $row['acct_period_length'] : '1 month';
+        if ($start === '' || !AcctPeriod::valid($length)) {
+            $start = AcctPeriod::defaultStart($today);
             $length = '1 month';
         }
 
-        return Span::describe($start, $length, $today);
+        return AcctPeriod::describe($start, $length, $today);
     }
 
     /**
@@ -1619,7 +1620,7 @@ final class EnvelopeService
      * @param array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} $span
      * @return array<string, mixed>
      */
-    private function alignSpan(array $sheet, array $span, string $today): array
+    private function alignAcctPeriod(array $sheet, array $span, string $today): array
     {
         if (is_array($sheet['period'] ?? null)) {
             $sheet['period']['start'] = $span['start'];
@@ -1632,7 +1633,7 @@ final class EnvelopeService
         if ($span['phase'] === 'current') {
             return $sheet;
         }
-        $plans = $this->spanPlans($span['start'], $span['length']);
+        $plans = $this->acctPeriodPlans($span['start'], $span['length']);
         $categories = is_array($sheet['categories'] ?? null) ? $sheet['categories'] : [];
         foreach ($categories as $index => $category) {
             if (!is_array($category)) {
@@ -1651,10 +1652,10 @@ final class EnvelopeService
     }
 
     /** @return array<int, int> */
-    private function spanPlans(string $start, string $length): array
+    private function acctPeriodPlans(string $start, string $length): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT category_id, amount_minor FROM span_assignments WHERE user_id = ? AND span_start = ? AND span_length = ?'
+            'SELECT category_id, amount_minor FROM acct_period_assignments WHERE user_id = ? AND acct_period_start = ? AND acct_period_length = ?'
         );
         $stmt->execute([$this->actor->id(), $start, $length]);
         $plans = [];
@@ -1672,16 +1673,16 @@ final class EnvelopeService
      * @param array{start:string,end:string,length:string} $span
      * @return array<string, mixed>
      */
-    private function saveSpanPlan(array $input, array $span, string $today): array
+    private function saveAcctPeriodPlan(array $input, array $span, string $today): array
     {
         $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
         $this->pdo->beginTransaction();
         try {
             $this->pdo->prepare(
-                'DELETE FROM span_assignments WHERE user_id = ? AND span_start = ? AND span_length = ?'
+                'DELETE FROM acct_period_assignments WHERE user_id = ? AND acct_period_start = ? AND acct_period_length = ?'
             )->execute([$this->actor->id(), $span['start'], $span['length']]);
             $insert = $this->pdo->prepare(
-                'INSERT INTO span_assignments (user_id, span_start, span_length, category_id, amount_minor) VALUES (?, ?, ?, ?, ?)'
+                'INSERT INTO acct_period_assignments (user_id, acct_period_start, acct_period_length, category_id, amount_minor) VALUES (?, ?, ?, ?, ?)'
             );
             foreach ($amounts as $categoryId => $amount) {
                 if ($amount < 1) {

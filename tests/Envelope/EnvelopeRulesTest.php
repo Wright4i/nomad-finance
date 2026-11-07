@@ -1230,6 +1230,45 @@ final class EnvelopeRulesTest extends TestCase
         return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
     }
 
+    public function testAPaydayOutsideTheSpanAndAPostedPaydayStayOutOfThePool(): void
+    {
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-15', '1 month', $_SESSION['user_id']]);
+        $pay = new PayCycleService($this->pdo, new Actor($this->pdo));
+        $cycle = $pay->create([
+            'payor' => 'Later check',
+            'payday' => '2026-11-16',
+            'length' => 'monthly',
+            'payKind' => 'fixed',
+            'rateMinor' => 25000,
+        ], '2026-11-06');
+        $outside = $this->envelopes->show('2026-11-06');
+        self::assertNotContains('Later check', array_column($outside['sources']['income'], 'payor'));
+
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
+            ->execute(['2026-11-01', $_SESSION['user_id']]);
+        $inside = $this->envelopes->show('2026-11-06');
+        self::assertContains('Later check', array_column($inside['sources']['income'], 'payor'));
+
+        $pay->savePayroll((int) $cycle['id'], [
+            'entries' => [[
+                'payday' => '2026-11-16',
+                'amountMinor' => 25000,
+                'posted' => true,
+            ]],
+        ], '2026-11-06');
+        $fresh = new EnvelopeService(
+            $this->pdo,
+            new Actor($this->pdo),
+            new CurrencyCatalog(),
+            new TargetService($this->pdo, new Actor($this->pdo)),
+            new PayCycleService($this->pdo, new Actor($this->pdo)),
+            new Drive(false),
+        );
+        $posted = $fresh->show('2026-11-06');
+        self::assertNotContains('Later check', array_column($posted['sources']['income'], 'payor'));
+    }
+
     private function balance(string $name): int
     {
         foreach ($this->accounts->list(true) as $account) {
