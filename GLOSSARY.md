@@ -109,7 +109,7 @@ Retired. An assignment cannot be negative.
 _Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-Income still coming inside the period, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full credit or fuel card. A payday before today, after the period, or marked posted is left out. Credit cards, loans, fuel accounts, and tracking accounts stay out of the pool; the uncovered float is subtracted. Covered float is past unpaid bills drawn from that card, capped at the balance. The available list shows each such card's balance, covered, and uncovered. Needs is 50% of the pool, Wants 30%, and Savings 20%, half up to the cent. Available follows the period that contains today. A closed period is read-only. Planning a later period does not change the number. The number can be zero, and it can be negative when the buckets hold more than the pool.
+Income still coming inside the period, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full credit or fuel card. A payday before today, after the period, or marked posted is left out. Credit cards, loans, fuel accounts, and tracking accounts stay out of the pool; the uncovered float is subtracted. Covered float is past unpaid bills drawn from that card, capped at the balance. The available list gives each paycheck still coming in its own line and its date, then each included account. A paid-in-full card appears only when uncovered float is not zero, and that line is the uncovered amount as a negative number. A section with no rows is left off. Needs is 50% of the pool, Wants 30%, and Savings 20%, half up to the cent. Available follows the period that contains today. A closed period is read-only. Planning a later period does not change the number. The number can be zero, and it can be negative when the buckets hold more than the pool.
 _Avoid_: To be budgeted
 
 **Auto-assigned**:
@@ -336,7 +336,7 @@ Recording a bill's occurrence on the due date it had. A repeating bill then roll
 The first-run screen that creates the owner: name, password, a starred vehicle, and that vehicle's fallback fuel price. An empty fuel price means miles only.
 
 **Holder**:
-A person or business an account belongs to, such as Joseph, Ester, or W4i.
+A person or business an account belongs to, such as Joseph, Ester, or W4i. An account dropdown reads Name - Institution (Holder), and leaves out a blank institution or holder.
 _Avoid_: Owner
 
 **Owner**:

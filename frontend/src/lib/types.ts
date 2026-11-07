@@ -125,9 +125,9 @@ export type EnvelopeSheet = {
   billLeftOut?: string[];
   incomeMinor: number;
   sources: {
-    income: { id: number; payor: string; length: string; amountMinor: number }[];
-    accounts: { id: number; name: string; type: string; amountMinor: number }[];
-    floats?: { id: number; name: string; type: string; balanceMinor: number; coveredMinor: number; uncoveredMinor: number }[];
+    income: { id: number; payor: string; on: string; length: string; amountMinor: number }[];
+    accounts: { id: number; name: string; type: string; institution: string | null; holder: string | null; amountMinor: number }[];
+    floats?: { id: number; name: string; type: string; institution: string | null; holder: string | null; balanceMinor: number; coveredMinor: number; uncoveredMinor: number }[];
   };
   acctPeriod?: { start: string; end: string; length: string; phase: string; editable: boolean; upcoming: boolean };
   categories: EnvelopeCategory[];

@@ -276,9 +276,11 @@ final class EnvelopesTest extends TestCase
             const accounts = dialog.querySelector('[data-source="accounts"]');
             const checking = dialog.querySelector('[data-type="checking"] .glyph');
             const cash = dialog.querySelector('[data-type="cash"] .glyph');
+            const floats = dialog.querySelector('[data-source="floats"]');
             return {
                 income: income ? income.innerText : '',
                 accounts: accounts ? accounts.innerText : '',
+                floats: floats ? floats.innerText : '',
                 incomeGlyph: Boolean(income && income.querySelector('.glyph')),
                 accountGlyph: Boolean(accounts && accounts.querySelector('.glyph')),
                 checking: checking ? getComputedStyle(checking).color : '',
@@ -287,7 +289,11 @@ final class EnvelopesTest extends TestCase
         JS);
         self::assertIsArray($sources);
         self::assertStringContainsString('Camp host', $sources['income']);
+        self::assertMatchesRegularExpression('/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}/', $sources['income']);
         self::assertStringContainsString('$', $sources['income']);
+        self::assertStringNotContainsString('covered', strtolower($sources['income'] . $sources['accounts'] . $sources['floats']));
+        self::assertStringNotContainsString('uncovered', strtolower($sources['floats']));
+        self::assertDoesNotMatchRegularExpression('/\$0\.00/', $sources['floats']);
         self::assertStringContainsString('Everyday checking', $sources['accounts']);
         self::assertStringNotContainsString('Savings', $sources['accounts']);
         self::assertStringContainsString('$', $sources['accounts']);

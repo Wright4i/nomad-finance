@@ -571,13 +571,71 @@ html.light .theme-pill .glyph {
 .source-row {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  flex-wrap: nowrap;
+  gap: 0.65rem;
   margin: 0;
+  min-width: 0;
+}
+
+.source-row .glyph {
+  flex: none;
+}
+
+.source-name,
+.source-institution,
+.source-date {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-name {
+  flex: 0 1 auto;
+}
+
+.source-institution {
+  flex: 0 100 auto;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.source-date {
+  flex: none;
+  color: var(--muted);
+  font-weight: 500;
 }
 
 .source-row strong {
   margin-left: auto;
+  flex: none;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.source-row strong.source-debit {
+  color: #ff6b6b;
+}
+
+:root.light .source-row strong.source-debit {
+  color: #b42318;
+}
+
+.source-row .bill-detail-chip {
+  flex: none;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-row .bill-detail-chip[data-chip='holder'] {
+  --tone: var(--plum);
+  color: var(--plum);
+}
+
+:root.light .source-row .bill-detail-chip[data-chip='holder'] {
+  color: color-mix(in oklab, var(--plum) 62%, #14211c);
 }
 
 .stat {
@@ -1622,6 +1680,51 @@ dialog.modal .modal-actions {
 }
 
 dialog.modal.wide { width: min(40rem, calc(100vw - 2rem)); }
+
+dialog.modal.available-modal {
+  flex-direction: column;
+  width: min(52rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
+  padding:
+    calc(1.15rem + env(safe-area-inset-top, 0px))
+    calc(1.35rem + env(safe-area-inset-right, 0px))
+    calc(1rem + env(safe-area-inset-bottom, 0px))
+    calc(1.35rem + env(safe-area-inset-left, 0px));
+}
+
+dialog.modal.available-modal[open] {
+  display: flex;
+}
+
+dialog.modal.available-modal .modal-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 0.85rem;
+}
+
+dialog.modal.available-modal .modal-actions {
+  flex: none;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 767px) {
+  dialog.modal.available-modal {
+    width: calc(100vw - 1rem);
+    max-width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  dialog.modal.available-modal .source-row {
+    gap: 0.4rem;
+  }
+
+  .source-row .bill-detail-chip {
+    max-width: 6.5rem;
+  }
+}
 
 dialog.modal::backdrop {
   background: color-mix(in oklab, black 55%, transparent);

@@ -628,7 +628,7 @@ final class EnvelopeService
      * after the accounting period, or already posted is left out.
      * Those lines are that total. The headline is the total minus what is already assigned.
      *
-     * @return array{income: list<array{id:int,payor:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,amountMinor:int}>}
+     * @return array{income: list<array{id:int,payor:string,on:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,institution:?string,holder:?string,amountMinor:int}>, floats: list<array{id:int,name:string,type:string,institution:?string,holder:?string,balanceMinor:int,coveredMinor:int,uncoveredMinor:int}>}
      */
     private function sources(string $today): array
     {
@@ -638,25 +638,25 @@ final class EnvelopeService
             if ((string) $row['on'] < $today || ($row['posted'] ?? false) === true) {
                 continue;
             }
-            $id = (int) $row['id'];
             $amount = (int) $row['paycheckMinor'];
             if ($amount === 0) {
                 continue;
             }
-            if (!isset($income[$id])) {
-                $income[$id] = [
-                    'id' => $id,
-                    'payor' => (string) $row['payor'],
-                    'length' => (string) $row['length'],
-                    'amountMinor' => 0,
-                ];
-            }
-            $income[$id]['amountMinor'] += $amount;
+            $income[] = [
+                'id' => (int) $row['id'],
+                'payor' => (string) $row['payor'],
+                'on' => (string) $row['on'],
+                'length' => (string) $row['length'],
+                'amountMinor' => $amount,
+            ];
         }
+        usort($income, static function (array $left, array $right): int {
+            return [$left['on'], $left['payor'], $left['id']] <=> [$right['on'], $right['payor'], $right['id']];
+        });
 
         $floats = $this->floats($today);
         $stmt = $this->pdo->prepare(
-            'SELECT id, name, type, balance_minor FROM accounts
+            'SELECT id, name, type, balance_minor, institution, holder FROM accounts
              WHERE user_id = ? AND archived_at IS NULL
                AND side = \'asset\' AND in_budget = 1
              ORDER BY name COLLATE NOCASE, id'
@@ -673,12 +673,24 @@ final class EnvelopeService
                     'id' => (int) $row['id'],
                     'name' => (string) $row['name'],
                     'type' => (string) $row['type'],
+                    'institution' => self::label($row['institution'] ?? null),
+                    'holder' => self::label($row['holder'] ?? null),
                     'amountMinor' => (int) $row['balance_minor'],
                 ];
             }
         }
 
         return ['income' => array_values($income), 'accounts' => $accounts, 'floats' => $floats];
+    }
+
+    private static function label(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 
     /**
@@ -689,7 +701,7 @@ final class EnvelopeService
     private function floats(string $today): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, name, type, balance_minor FROM accounts
+            'SELECT id, name, type, balance_minor, institution, holder FROM accounts
              WHERE user_id = ? AND archived_at IS NULL
                AND type IN (\'credit\', \'fuel\')
                AND autopay_choice = \'balance\' AND bank_autopay = 1
@@ -708,10 +720,15 @@ final class EnvelopeService
             }
             $covered->execute([(int) $row['id'], $today]);
             $split = FloatCover::split((int) $row['balance_minor'], (int) $covered->fetchColumn());
+            if ($split['uncovered'] === 0) {
+                continue;
+            }
             $rows[] = [
                 'id' => (int) $row['id'],
                 'name' => (string) $row['name'],
                 'type' => (string) $row['type'],
+                'institution' => self::label($row['institution'] ?? null),
+                'holder' => self::label($row['holder'] ?? null),
                 'balanceMinor' => (int) $row['balance_minor'],
                 'coveredMinor' => $split['covered'],
                 'uncoveredMinor' => $split['uncovered'],

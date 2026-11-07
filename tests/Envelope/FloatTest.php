@@ -117,4 +117,39 @@ final class FloatTest extends TestCase
         self::assertSame($before['poolMinor'] - 6000, $sheet['poolMinor']);
         self::assertNotContains('Float card', array_column($sheet['sources']['accounts'], 'name'));
     }
+
+    public function testACardWithNothingUncoveredIsLeftOffTheAvailableList(): void
+    {
+        $settled = $this->accounts->create([
+            'name' => 'Settled card',
+            'type' => 'credit',
+            'currency' => 'USD',
+            'balanceMinor' => 4000,
+            'autopayChoice' => 'balance',
+            'bankAutopay' => true,
+            'dueDay' => 15,
+        ]);
+        $this->bills->create([
+            'name' => 'Past lunch',
+            'type' => 'restaurants',
+            'accountId' => $settled['id'],
+            'amountMinor' => 4000,
+            'recurrence' => 'once',
+            'nextDueDate' => '2026-11-01',
+            'today' => '2026-11-06',
+        ]);
+        $this->accounts->create([
+            'name' => 'Empty card',
+            'type' => 'fuel',
+            'currency' => 'USD',
+            'balanceMinor' => 0,
+            'autopayChoice' => 'balance',
+            'bankAutopay' => true,
+            'dueDay' => 8,
+        ]);
+
+        $names = array_column($this->envelopes->show('2026-11-06')['sources']['floats'], 'name');
+        self::assertNotContains('Settled card', $names);
+        self::assertNotContains('Empty card', $names);
+    }
 }

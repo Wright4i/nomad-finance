@@ -1269,6 +1269,26 @@ final class EnvelopeRulesTest extends TestCase
         self::assertNotContains('Later check', array_column($posted['sources']['income'], 'payor'));
     }
 
+    public function testEachPaydayStillComingInIsItsOwnDatedLine(): void
+    {
+        $sheet = $this->envelopes->show('2026-11-03');
+        $camp = array_values(array_filter(
+            $sheet['sources']['income'],
+            static fn (array $row): bool => $row['payor'] === 'Camp host',
+        ));
+        self::assertGreaterThan(1, count($camp));
+        $dates = array_column($camp, 'on');
+        self::assertSame($dates, array_values(array_unique($dates)));
+        $sorted = $dates;
+        sort($sorted);
+        self::assertSame($sorted, $dates);
+        foreach ($camp as $row) {
+            self::assertGreaterThanOrEqual('2026-11-03', $row['on']);
+            self::assertLessThanOrEqual('2026-11-30', $row['on']);
+            self::assertGreaterThan(0, $row['amountMinor']);
+        }
+    }
+
     private function balance(string $name): int
     {
         foreach ($this->accounts->list(true) as $account) {

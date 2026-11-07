@@ -8,7 +8,8 @@
   import { formatDate, formatMinor, todayISO } from '../lib/money';
   import { go, route } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
-  import type { Account, Bill } from '../lib/types';
+  import { accountLabel } from '../lib/accountLabel';
+import type { Account, Bill } from '../lib/types';
 
   type SectionKey = 'active' | 'paused' | 'paid' | 'archived';
   const sectionOrder: SectionKey[] = ['active', 'paused', 'paid', 'archived'];
@@ -243,7 +244,7 @@
       <select name="billAccount" bind:value={filterAccount} onchange={rememberFilters}>
         <option value="">All accounts</option>
         {#each accounts as account (account.id)}
-          <option value={String(account.id)}>{account.name}</option>
+          <option value={String(account.id)}>{accountLabel(account)}</option>
         {/each}
       </select>
     </label>

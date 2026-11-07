@@ -222,42 +222,49 @@
         </p>
       </section>
 
-      <dialog class="modal wide" bind:this={sourcesDialog} aria-labelledby="available-title">
+      <dialog class="modal available-modal" bind:this={sourcesDialog} aria-labelledby="available-title">
         <div class="modal-body">
           <h2 id="available-title" class="m-0 text-2xl">Available to assign</h2>
-          <section class="grid gap-2" data-source="income">
-            <h3 class="m-0 text-lg">Still coming in</h3>
-            {#each sheet.sources.income as row (row.id)}
-              <p class="source-row" style={`--tone: var(--tone-${row.length})`}>
-                <Glyph name={row.length} />
-                <span>{row.payor}</span>
-                <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
-              </p>
-            {/each}
-          </section>
-          <section class="grid gap-2" data-source="accounts">
-            <h3 class="m-0 text-lg">Accounts</h3>
-            {#each sheet.sources.accounts as row (row.id)}
-              <p class="source-row" data-type={row.type} style={`--tone: var(--tone-${row.type})`}>
-                <Glyph name={row.type} />
-                <span>{row.name}</span>
-                <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
-              </p>
-            {/each}
-          </section>
-          {#if sheet.sources.floats && sheet.sources.floats.length > 0}
+          {#if sheet.sources.income.length > 0}
+            <section class="grid gap-2" data-source="income">
+              <h3 class="m-0 text-lg">Still coming in</h3>
+              {#each sheet.sources.income as row (`${row.id}-${row.on}`)}
+                <p class="source-row" style={`--tone: var(--tone-${row.length})`}>
+                  <Glyph name={row.length} />
+                  <span class="source-name">{row.payor}</span>
+                  <span class="source-date">{formatChipDate(row.on)}</span>
+                  <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+                </p>
+              {/each}
+            </section>
+          {/if}
+          {#if sheet.sources.accounts.length > 0}
+            <section class="grid gap-2" data-source="accounts">
+              <h3 class="m-0 text-lg">Accounts</h3>
+              {#each sheet.sources.accounts as row (row.id)}
+                <p class="source-row" data-type={row.type} style={`--tone: var(--tone-${row.type})`}>
+                  <Glyph name={row.type} />
+                  <span class="source-name">{row.name}</span>
+                  {#if row.institution}<span class="source-institution">{row.institution}</span>{/if}
+                  {#if row.holder}<span class="bill-detail-chip" data-chip="holder">{row.holder}</span>{/if}
+                  <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+                </p>
+              {/each}
+            </section>
+          {/if}
+          {#if sheet.sources.floats && sheet.sources.floats.some((row) => row.uncoveredMinor !== 0)}
             <section class="grid gap-2" data-source="floats">
               <h3 class="m-0 text-lg">Paid in full</h3>
               {#each sheet.sources.floats as row (row.id)}
-                <p class="source-row" data-type={row.type} style={`--tone: var(--tone-${row.type})`}>
-                  <Glyph name={row.type} />
-                  <span>{row.name}</span>
-                  <strong>
-                    {formatMinor(row.balanceMinor, sheet.baseCurrency, sheet.exponent)}
-                    · covered {formatMinor(row.coveredMinor, sheet.baseCurrency, sheet.exponent)}
-                    · uncovered {formatMinor(row.uncoveredMinor, sheet.baseCurrency, sheet.exponent)}
-                  </strong>
-                </p>
+                {#if row.uncoveredMinor !== 0}
+                  <p class="source-row" data-type={row.type} style={`--tone: var(--tone-${row.type})`}>
+                    <Glyph name={row.type} />
+                    <span class="source-name">{row.name}</span>
+                    {#if row.institution}<span class="source-institution">{row.institution}</span>{/if}
+                    {#if row.holder}<span class="bill-detail-chip" data-chip="holder">{row.holder}</span>{/if}
+                    <strong class="source-debit">{formatMinor(-row.uncoveredMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+                  </p>
+                {/if}
               {/each}
             </section>
           {/if}

@@ -7,7 +7,8 @@
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
   import { formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
-  import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from '../lib/types';
+  import { accountLabel } from '../lib/accountLabel';
+import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from '../lib/types';
   import { lockedBucketMaxMinor, wantGaugeLevels } from '../lib/wantGauge';
 
   const typesByKind = {
@@ -218,7 +219,7 @@
     <select name="accountId" bind:value={accountId}>
       <option value="">Choose an account</option>
       {#each (kind === 'fuel' && fuelAccounts.length > 0 ? fuelAccounts : accounts) as item}
-        <option value={String(item.id)}>{item.name}</option>
+        <option value={String(item.id)}>{accountLabel(item)}</option>
       {/each}
     </select>
     {#if fields.accountId}<em>{fields.accountId}</em>{/if}

@@ -8,7 +8,8 @@
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
   import { minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go, returnToBills } from '../lib/nav.svelte.ts';
-  import type { Account, Bill, Category } from '../lib/types';
+  import { accountLabel } from '../lib/accountLabel';
+import type { Account, Bill, Category } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
 
@@ -129,6 +130,8 @@
           billRecurrence: 'monthly',
           billEvery: 1,
           institution: null,
+          holder: null,
+          inBudget: false,
           notes: null,
           starred: false,
           archivedAt: 'archived',
@@ -243,7 +246,7 @@
     <select name="accountId" bind:value={accountId}>
       <option value="">Choose an account</option>
       {#each accounts as item}
-        <option value={String(item.id)}>{item.name}</option>
+        <option value={String(item.id)}>{accountLabel(item)}</option>
       {/each}
     </select>
     {#if fields.accountId}<em>{fields.accountId}</em>{/if}

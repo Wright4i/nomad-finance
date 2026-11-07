@@ -6,7 +6,8 @@
   import { api, explain } from '../lib/api';
   import { formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { session } from '../lib/session.svelte.ts';
-  import type { Account } from '../lib/types';
+  import { accountLabel } from '../lib/accountLabel';
+import type { Account } from '../lib/types';
 
   type Charge = {
     id: number;
@@ -226,7 +227,7 @@
         <select name="cardId" bind:value={cardId} onchange={() => void loadCard()}>
           <option value="">Choose a paid-in-full card</option>
           {#each cards as card (card.id)}
-            <option value={String(card.id)}>{card.name}</option>
+            <option value={String(card.id)}>{accountLabel(card)}</option>
           {/each}
         </select>
       </label>
@@ -239,7 +240,7 @@
           <select name="sourceId" bind:value={sourceId}>
             <option value="">Choose an account</option>
             {#each assets as account (account.id)}
-              <option value={String(account.id)}>{account.name}</option>
+              <option value={String(account.id)}>{accountLabel(account)}</option>
             {/each}
           </select>
         </label>
@@ -286,7 +287,7 @@
         <select name="moveSource" bind:value={sourceId} onchange={() => (confirming = false)}>
           <option value="">Choose an account</option>
           {#each assets as account (account.id)}
-            <option value={String(account.id)}>{account.name}</option>
+            <option value={String(account.id)}>{accountLabel(account)}</option>
           {/each}
         </select>
       </label>
@@ -295,7 +296,7 @@
         <select name="moveDestination" bind:value={destinationId} onchange={() => (confirming = false)}>
           <option value="">Choose an account</option>
           {#each assets as account (account.id)}
-            <option value={String(account.id)}>{account.name}</option>
+            <option value={String(account.id)}>{accountLabel(account)}</option>
           {/each}
         </select>
       </label>
