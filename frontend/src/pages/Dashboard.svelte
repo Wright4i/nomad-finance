@@ -4,11 +4,13 @@
   import Globe from '../components/Globe.svelte';
   import Glyph from '../components/Glyph.svelte';
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { api } from '../lib/api';
   import { dayChips, plannerDayDates, type DayBill, type DayPayday, type DayStay } from '../lib/daySquare';
   import { fitThree } from '../lib/fitThree';
-  import { formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
+  import { session } from '../lib/session.svelte.ts';
   import { wantGaugeLevels } from '../lib/wantGauge';
   import type { CalendarEntry, Dashboard, DuePie, EnvelopeCategory, EnvelopeGroup, PlannerStay, PlannerWidget } from '../lib/types';
 
@@ -116,12 +118,6 @@
     return seen.size === WIDGETS.length ? next : { ...DEFAULT_SPANS };
   }
 
-  function shiftMonth(base: string, by: number): string {
-    const [year, monthNumber] = base.split('-').map(Number);
-    const date = new Date(year, monthNumber - 1 + by, 1);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  }
-
   function weekdayName(iso: string): string {
     const [year, monthNumber, dayNumber] = iso.split('-').map(Number);
     return weekdays[new Date(year, monthNumber - 1, dayNumber).getDay()] ?? '';
@@ -185,7 +181,6 @@
 
   let data = $state<Dashboard | null>(null);
   let message = $state('');
-  let monthOffset = $state(0);
   let gauge = $state<EnvelopeGroup['group'] | null>(null);
   let gaugeDialog: HTMLDialogElement | undefined = $state();
   let gaugeToken = 0;
@@ -228,7 +223,7 @@
     return stroked ? `${tone}; stroke: var(--bg); stroke-width: 0.6` : tone;
   }
 
-  let billMonth = $derived(shiftMonth(todayISO().slice(0, 7), monthOffset));
+  let billMonth = $derived((session.user?.spanStart ?? todayISO()).slice(0, 7));
   let pies = $derived(data?.duePies[billMonth] ?? []);
   let isPayday = $derived(Boolean(data?.payday && data.payday.on === data.today));
   let gaugeRows = $derived(
@@ -255,24 +250,20 @@
   async function load(): Promise<void> {
     try {
       const today = todayISO();
-      const monthKey = today.slice(0, 7);
-      const nextKey = shiftMonth(monthKey, 1);
-      const [sheet, tripData, payData, nextPay, billData, nextBills, entryData, nextEntries] = await Promise.all([
+      const start = session.user?.spanStart ?? `${today.slice(0, 7)}-01`;
+      const end = session.user?.spanEnd ?? today;
+      const range = `start=${start}&end=${end}`;
+      const [sheet, tripData, payData, billData, entryData] = await Promise.all([
         api<Dashboard>(`/api/dashboard?today=${today}`),
         api<{ trips: DayStay[] }>(`/api/trips?today=${today}&fuel=0`),
-        api<{ paydays: DayPayday[] }>(`/api/pay-cycles/month?month=${monthKey}&today=${today}`),
-        api<{ paydays: DayPayday[] }>(`/api/pay-cycles/month?month=${nextKey}&today=${today}`),
-        api<{ occurrences: DayBill[] }>(`/api/bills/calendar?month=${monthKey}`),
-        api<{ occurrences: DayBill[] }>(`/api/bills/calendar?month=${nextKey}`),
-        api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${monthKey}`),
-        api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${nextKey}`),
+        api<{ paydays: DayPayday[] }>(`/api/pay-cycles/month?${range}&today=${today}`),
+        api<{ occurrences: DayBill[] }>(`/api/bills/calendar?${range}`),
+        api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?${range}`),
       ]);
       stays = tripData.trips;
-      paydays = [...payData.paydays, ...nextPay.paydays];
-      dayBills = [...billData.occurrences, ...nextBills.occurrences];
-      const byId = new Map<number, CalendarEntry>();
-      for (const entry of [...entryData.entries, ...nextEntries.entries]) byId.set(entry.id, entry);
-      entries = [...byId.values()];
+      paydays = payData.paydays;
+      dayBills = billData.occurrences;
+      entries = entryData.entries;
       data = sheet;
       const next = normalize(sheet.plannerOrder);
       order = next;
@@ -504,7 +495,9 @@
   <h1 class="m-0 text-3xl" class:display-phrase={data?.headingItalic === true}>{data?.heading ?? 'Planner'}</h1>
   <Note bind:message />
 
-  {#if data}
+  {#if !data && message === ''}
+    <Spinner />
+  {:else if data}
     <div class="planner-board" data-order={order.join(',')} data-saved={saved} data-spans={savedSpans}>
       <section class="hero planner-net">
         <p class="kicker">Net worth</p>
@@ -716,12 +709,12 @@
                         {/if}
                       </div>
                       <div class="want-gauge-readout">
-                        <p class="want-gauge-name m-0">{groupLabel[item.group]} · {item.targetPercent}%</p>
-                        <p class="want-gauge-line m-0"><span>Assigned</span> <strong>{money(item.assignedMinor)}</strong></p>
-                        <p class="want-gauge-line m-0"><span>Max</span> <strong>{money(item.targetMinor)}</strong></p>
                         {#if levels.over}
                           <p class="want-gauge-warning m-0">Over <strong>{money(levels.overMinor)}</strong></p>
                         {/if}
+                        <p class="want-gauge-name m-0">{groupLabel[item.group]} · {item.targetPercent}%</p>
+                        <p class="want-gauge-line m-0"><span>Assigned</span> <strong>{money(item.assignedMinor)}</strong></p>
+                        <p class="want-gauge-line m-0"><span>Max</span> <strong>{money(item.targetMinor)}</strong></p>
                       </div>
                     </button>
                   {/each}
@@ -741,12 +734,8 @@
               <div class="planner-bills">
                 <div class="planner-bills-head">
                   <a class="planner-widget-title" href={widgetPage.bills} onclick={(event) => follow(event, widgetPage.bills)}>Bills</a>
-                  <div class="month-squares" role="group" aria-label="Month">
-                    <button class="choice month-square" class:on={monthOffset === 0} type="button" aria-pressed={monthOffset === 0} onclick={() => (monthOffset = 0)}>Current Month</button>
-                    <button class="choice month-square" class:on={monthOffset === 1} type="button" aria-pressed={monthOffset === 1} onclick={() => (monthOffset = 1)}>Next Month</button>
-                  </div>
                 </div>
-                <p class="muted m-0">{formatMonth(billMonth)}</p>
+                <p class="muted m-0">{session.user ? `${formatChipDate(session.user.spanStart)} – ${formatChipDate(session.user.spanEnd)}` : formatMonth(billMonth)}</p>
                 {#if pies.length === 0}
                   <p class="muted m-0">No bills due this month.</p>
                 {:else}

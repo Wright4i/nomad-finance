@@ -164,7 +164,7 @@ final class NewUserTest extends TestCase
     private function userWhere(string $where): array
     {
         $row = $this->pdo->query(
-            'SELECT id, name, password_hash, base_currency, theme, role, horizon_days FROM user WHERE ' . $where
+            'SELECT id, name, password_hash, base_currency, theme, role, span_length FROM user WHERE ' . $where
         )->fetch();
         self::assertIsArray($row);
 

@@ -2,11 +2,12 @@
   import { onMount, tick } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
-  import { formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { formatChipDate, formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
-  import type { Category, EnvelopeSheet, PeriodStep } from '../lib/types';
+  import type { Category, EnvelopeSheet } from '../lib/types';
 
   const groups = [
     { id: 'needs', label: 'Needs' },
@@ -33,10 +34,8 @@
   let editable = $derived(sheet?.period?.editable === true);
 
   async function load(): Promise<void> {
-    const params = new URLSearchParams({ today: todayISO() });
+    const params = new URLSearchParams({ today: todayISO(), span: '1' });
     if (payCycleId !== null) params.set('payCycleId', String(payCycleId));
-    if (upcoming) params.set('upcoming', '1');
-    else if (periodId !== null) params.set('periodId', String(periodId));
     const data = await api<EnvelopeSheet>(`/api/budget?${params}`);
     sheet = data;
     payCycleId = data.payCycleId;
@@ -58,16 +57,6 @@
       ready = true;
     });
   });
-
-  function step(target: PeriodStep | null): void {
-    if (!target) return;
-    upcoming = target.upcoming;
-    periodId = target.upcoming ? null : target.id;
-    message = '';
-    void load().catch((err: unknown) => {
-      message = explain(err).message;
-    });
-  }
 
   function inGroup(id: string): EnvelopeSheet['categories'] {
     return (sheet?.categories ?? [])
@@ -156,7 +145,7 @@
       const planning = sheet.period?.upcoming === true;
       const data = await api<EnvelopeSheet>('/api/budget', {
         method: 'PUT',
-        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, upcoming: planning },
+        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, upcoming: planning, span: '1' },
       });
       if (data.celebrate && !prefersReducedMotion()) {
         celebrateEase = true;
@@ -191,6 +180,7 @@
           today: todayISO(),
           payCycleId: sheet.payCycleId,
           upcoming: sheet.period?.upcoming === true,
+          span: '1',
         },
       });
       sheet = data;
@@ -214,10 +204,11 @@
     <h1 class="text-3xl m-0">Budget</h1>
     <a class="btn primary" href="/buckets/new" onclick={(event) => { event.preventDefault(); go('/buckets/new'); }}>Add bucket</a>
   </div>
-  <p class="muted m-0">Available to assign is income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold. An assignment does not change an account balance.</p>
+  <p class="muted m-0">Available to assign is income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full card. An assignment does not change an account balance.</p>
   <Note bind:message />
-
-  {#if ready && sheet}
+  {#if !ready}
+    <Spinner />
+  {:else if sheet}
     {#if sheet.payors.length === 0}
       <p class="m-0">Add a pay cycle before assigning. <a href="/pay-cycles/new" onclick={(event) => { event.preventDefault(); go('/pay-cycles/new'); }}>New pay cycle</a></p>
     {/if}
@@ -254,6 +245,22 @@
               </p>
             {/each}
           </section>
+          {#if sheet.sources.floats && sheet.sources.floats.length > 0}
+            <section class="grid gap-2" data-source="floats">
+              <h3 class="m-0 text-lg">Paid in full</h3>
+              {#each sheet.sources.floats as row (row.id)}
+                <p class="source-row" data-type={row.type} style={`--tone: var(--tone-${row.type})`}>
+                  <Glyph name={row.type} />
+                  <span>{row.name}</span>
+                  <strong>
+                    {formatMinor(row.balanceMinor, sheet.baseCurrency, sheet.exponent)}
+                    · covered {formatMinor(row.coveredMinor, sheet.baseCurrency, sheet.exponent)}
+                    · uncovered {formatMinor(row.uncoveredMinor, sheet.baseCurrency, sheet.exponent)}
+                  </strong>
+                </p>
+              {/each}
+            </section>
+          {/if}
         </div>
         <div class="modal-actions">
           <button class="btn" type="button" onclick={() => sourcesDialog?.close()}>Close</button>
@@ -269,13 +276,11 @@
       {/if}
 
       <div class="flex flex-wrap items-center gap-2">
-        <button class="btn" type="button" disabled={sheet.previousPeriod === null} onclick={() => step(sheet ? sheet.previousPeriod : null)}>Previous month</button>
-        <button class="btn" type="button" disabled={sheet.stepNext === null} onclick={() => step(sheet ? sheet.stepNext : null)}>Next month</button>
-        {#if sheet.period}
-          <p class="m-0" data-month={sheet.period.start.slice(0, 7)}>{formatMonth(sheet.period.start)}</p>
+        {#if sheet.span}
+          <p class="m-0" data-span={sheet.span.start}>{formatChipDate(sheet.span.start)} – {formatChipDate(sheet.span.end)}</p>
         {/if}
         <button class="btn" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
-        <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>
+        <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving || sheet.span?.phase === 'future' || sheet.span?.phase === 'closed'} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>
       </div>
       <dialog class="modal" bind:this={recalculateDialog} aria-labelledby="recalculate-title">
         <div class="modal-body">
@@ -287,10 +292,10 @@
           <button class="btn" type="button" onclick={() => recalculateDialog?.close()}>Cancel</button>
         </div>
       </dialog>
-      {#if sheet.period?.upcoming}
-        <p class="muted m-0">These amounts are in place when this month opens. Available to assign still follows the current month.</p>
-      {:else if !editable && sheet.period}
-        <p class="muted m-0">A closed month can be read. A correction belongs in the current month.</p>
+      {#if sheet.span?.phase === 'future'}
+        <p class="muted m-0">These amounts are a plan for this span. Available to assign still follows the span that contains today.</p>
+      {:else if sheet.span?.phase === 'closed'}
+        <p class="muted m-0">A closed span can be read. A correction belongs in the span that contains today.</p>
       {/if}
 
       {#each groups as group (group.id)}

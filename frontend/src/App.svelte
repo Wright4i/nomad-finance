@@ -18,6 +18,7 @@
   import TripForm from './pages/TripForm.svelte';
   import Log from './pages/Log.svelte';
   import Calendar from './pages/Calendar.svelte';
+  import Transfers from './pages/Transfers.svelte';
   import Vehicles from './pages/Vehicles.svelte';
   import VehicleForm from './pages/VehicleForm.svelte';
 
@@ -62,7 +63,7 @@
   <Login />
 {:else}
   <Shell>
-    {#key `${route.path}:${session.books}`}
+    {#key `${route.path}:${session.books}:${session.user.spanStart}:${session.user.spanLength}`}
       {#if view.name === 'dashboard'}
         <Dashboard />
       {:else if view.name === 'accounts'}
@@ -89,6 +90,8 @@
         <Log />
       {:else if view.name === 'calendar'}
         <Calendar />
+      {:else if view.name === 'transfers'}
+        <Transfers />
       {:else if view.name === 'vehicles'}
         <Vehicles />
       {:else if view.name === 'vehicle-form'}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
@@ -20,6 +21,7 @@
   let dueDay = $state('');
   let creditLimit = $state('');
   let institution = $state('');
+  let holder = $state('');
   let notes = $state('');
   let autopayChoice = $state<'none' | 'minimum' | 'balance'>('none');
   let bankAutopay = $state(false);
@@ -33,6 +35,7 @@
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
+  let loading = $state(id !== null);
 
   let showLiability = $derived(type === 'credit' || type === 'loan' || type === 'fuel');
   let showLimit = $derived(type === 'credit' || type === 'fuel');
@@ -67,6 +70,7 @@
       dueDay = account.dueDay === null ? '' : String(account.dueDay);
       creditLimit = account.creditLimitMinor === null ? '' : minorToInput(account.creditLimitMinor, 2);
       institution = account.institution ?? '';
+      holder = account.holder ?? '';
       notes = account.notes ?? '';
       archivedAt = account.archivedAt;
       autopayChoice = account.autopayChoice ?? 'none';
@@ -78,6 +82,8 @@
       inBudget = account.inBudget;
     } catch (err) {
       message = explain(err).message;
+    } finally {
+      loading = false;
     }
   });
 
@@ -135,6 +141,7 @@
       billRecurrence: showLiability ? billRecurrence : 'monthly',
       billEvery: showLiability ? billEvery : 1,
       institution,
+      holder,
       notes,
       starred,
       inBudget: showBudget && inBudget,
@@ -183,13 +190,20 @@
   }
 </script>
 
-<form class="grid gap-4 max-w-xl" onsubmit={submit}>
+<form class="grid gap-4 max-w-xl" aria-busy={loading} onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit account' : 'New account'}</h1>
   <p class="muted m-0">The balance is the amount on deposit, or the amount owed on a card or loan. It stays until you type a new one.</p>
+  <Note bind:message />
+  <div class="form-body grid gap-4" aria-busy={loading} inert={loading}>
+    {#if loading}
+      <div class="form-cover">
+        <Spinner label="Loading account" />
+      </div>
+    {/if}
+    <div class="grid gap-4">
   {#if showStar}
     <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} disabled={archivedAt !== null} onclick={() => (starred = !starred)}>{starred ? '★ Default account' : '☆ Make this the default'}</button>
   {/if}
-  <Note bind:message />
   <label class="field">
     <span>Name</span>
     <input name="name" bind:value={name} />
@@ -316,6 +330,11 @@
     {#if fields.institution}<em>{fields.institution}</em>{/if}
   </label>
   <label class="field">
+    <span>Holder</span>
+    <input name="holder" bind:value={holder} />
+    {#if fields.holder}<em>{fields.holder}</em>{/if}
+  </label>
+  <label class="field">
     <span>Notes</span>
     <textarea name="notes" bind:value={notes}></textarea>
     {#if fields.notes}<em>{fields.notes}</em>{/if}
@@ -329,5 +348,7 @@
     {#if id && archivedAt}
       <button class="btn" type="button" title="Put this account back on the list." disabled={saving} onclick={unarchive}>Unarchive</button>
     {/if}
+  </div>
+  </div>
   </div>
 </form>

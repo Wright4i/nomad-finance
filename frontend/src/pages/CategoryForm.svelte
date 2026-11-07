@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
@@ -31,6 +32,7 @@
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
+  let ready = $state(false);
   let dialog: HTMLDialogElement | undefined = $state();
 
   onMount(async () => {
@@ -49,6 +51,8 @@
       }
     } catch (err) {
       message = explain(err).message;
+    } finally {
+      ready = true;
     }
   });
 
@@ -124,6 +128,7 @@
   <h1 class="text-3xl m-0">{id ? name || 'Edit bucket' : 'New bucket'}</h1>
   <p class="muted m-0">Name the bucket and put it in Needs, Wants, or Savings. This screen does not assign money.</p>
   <Note bind:message />
+  <div class="form-body grid gap-4" aria-busy={id != null && !ready} inert={id != null && !ready}>
   {#if locked}
     <p class="m-0">Name <strong>{name}</strong></p>
   {:else}
@@ -191,6 +196,12 @@
     {#if id && archivedAt}
       <button class="btn" type="button" title="Put this bucket back on the list." disabled={saving} onclick={unarchive}>Unarchive</button>
     {/if}
+  </div>
+  {#if id && !ready}
+    <div class="form-cover" aria-busy="true">
+      <Spinner />
+    </div>
+  {/if}
   </div>
 </form>
 

@@ -11,6 +11,8 @@ use App\Money\CurrencyCatalog;
 use App\Category\SystemBuckets;
 use App\PayCycle\PayCycleService;
 use App\PayCycle\Period;
+use App\Account\FloatCover;
+use App\Span\Span;
 use App\Support\Dates;
 use App\Target\TargetService;
 use App\Trip\Drive;
@@ -30,14 +32,32 @@ final class EnvelopeService
     ) {
     }
 
+    /** @var ?array{start:string,end:string,phase:string} */
+    private ?array $viewWindow = null;
+
     /** @return array<string, mixed> */
-    public function show(string $today, ?int $payCycleId = null, ?int $periodId = null, bool $upcoming = false): array
+    public function show(string $today, ?int $payCycleId = null, ?int $periodId = null, bool $upcoming = false, bool $useSpan = false): array
     {
         $today = $this->day($today);
         $this->fillIfWaiting($today);
         $this->prepare($today);
+        $span = $useSpan ? $this->storedSpan($today) : null;
+        $this->viewWindow = $span === null ? null : [
+            'start' => $span['start'],
+            'end' => $span['end'],
+            'phase' => $span['phase'],
+        ];
+        try {
+            $sheet = $this->present($today, $payCycleId, $periodId, $upcoming, true);
+        } finally {
+            $this->viewWindow = null;
+        }
+        $sheet['span'] = $this->storedSpan($today);
+        if ($span !== null) {
+            $sheet = $this->alignSpan($sheet, $span, $today);
+        }
 
-        return $this->present($today, $payCycleId, $periodId, $upcoming, true);
+        return $sheet;
     }
 
     /**
@@ -47,6 +67,15 @@ final class EnvelopeService
     public function save(array $input): array
     {
         $today = $this->day(is_string($input['today'] ?? null) ? $input['today'] : '');
+        if ($this->usesSpan($input)) {
+            $span = $this->storedSpan($today);
+            if ($span['phase'] === 'closed') {
+                throw new ApiException(409, 'A closed span can be read.');
+            }
+            if ($span['phase'] === 'future') {
+                return $this->saveSpanPlan($input, $span, $today);
+            }
+        }
         $this->prepare($today);
         $cycle = $this->cycle($this->asInt($input['payCycleId'] ?? null) ?? 0);
         if ($cycle['archived_at'] !== null) {
@@ -141,7 +170,7 @@ final class EnvelopeService
             throw $e;
         }
 
-        return $this->present($today, (int) $cycle['id'], null, $upcoming, true);
+        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesSpan($input));
     }
 
     /**
@@ -211,7 +240,7 @@ final class EnvelopeService
             throw $e;
         }
 
-        return $this->present($today, (int) $cycle['id'], null, $upcoming, true);
+        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesSpan($input));
     }
 
     private function prepare(string $today): void
@@ -624,6 +653,7 @@ final class EnvelopeService
             $income[$id]['amountMinor'] += $amount;
         }
 
+        $floats = $this->floats($today);
         $stmt = $this->pdo->prepare(
             'SELECT id, name, type, balance_minor FROM accounts
              WHERE user_id = ? AND archived_at IS NULL
@@ -647,7 +677,47 @@ final class EnvelopeService
             }
         }
 
-        return ['income' => array_values($income), 'accounts' => $accounts];
+        return ['income' => array_values($income), 'accounts' => $accounts, 'floats' => $floats];
+    }
+
+    /**
+     * Paid-in-full credit and fuel cards. Past unpaid charges drawn from the card cover the balance, up to the balance.
+     *
+     * @return list<array{id:int,name:string,type:string,balanceMinor:int,coveredMinor:int,uncoveredMinor:int}>
+     */
+    private function floats(string $today): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, name, type, balance_minor FROM accounts
+             WHERE user_id = ? AND archived_at IS NULL
+               AND type IN (\'credit\', \'fuel\')
+               AND autopay_choice = \'balance\' AND bank_autopay = 1
+             ORDER BY name COLLATE NOCASE, id'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $covered = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(amount_minor), 0) FROM bills
+             WHERE account_id = ? AND status = \'active\' AND next_due_date < ?
+               AND (source_account_id IS NULL OR source_account_id != account_id)'
+        );
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $covered->execute([(int) $row['id'], $today]);
+            $split = FloatCover::split((int) $row['balance_minor'], (int) $covered->fetchColumn());
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['name'],
+                'type' => (string) $row['type'],
+                'balanceMinor' => (int) $row['balance_minor'],
+                'coveredMinor' => $split['covered'],
+                'uncoveredMinor' => $split['uncovered'],
+            ];
+        }
+
+        return $rows;
     }
 
     /** @param array{income: list<array{amountMinor:int}>, accounts: list<array{amountMinor:int}>} $sources */
@@ -659,6 +729,9 @@ final class EnvelopeService
         }
         foreach ($sources['accounts'] as $row) {
             $total += (int) $row['amountMinor'];
+        }
+        foreach ($sources['floats'] ?? [] as $row) {
+            $total -= (int) $row['uncoveredMinor'];
         }
 
         return $total;
@@ -876,10 +949,11 @@ final class EnvelopeService
     {
         $open = $this->openSpan($cycle, $today);
         $end = $open['end'] ?? null;
+        $window = $this->openWindow($open['start'], is_string($end) ? $end : $open['start'], $today);
         $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
             $today,
-            $open['start'],
-            is_string($end) ? $end : null,
+            $window['start'],
+            $window['end'],
             true,
         );
         $locked = [];
@@ -897,8 +971,7 @@ final class EnvelopeService
                 $total += (int) $bill['amountMinor'];
             }
         }
-        $month = $this->calendarMonth($open['start']);
-        foreach ($this->stayFuel($month['start'], $month['end'], $today) as $stay) {
+        foreach ($this->stayFuel($window['start'], $window['end'], $today) as $stay) {
             $total += $stay['costMinor'];
         }
 
@@ -927,16 +1000,18 @@ final class EnvelopeService
      */
     private function monthBillSums(string $day, bool $overdue, string $today): array
     {
-        $month = $this->calendarMonth($day);
+        $window = $overdue
+            ? $this->openWindow($this->calendarMonth($day)['start'], $this->calendarMonth($day)['end'], $today)
+            : $this->calendarMonth($day);
         $picture = $this->withStayFuel(
             (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
                 $today,
-                $month['start'],
-                $month['end'],
+                $window['start'],
+                $window['end'],
                 $overdue,
             ),
-            $month['start'],
-            $month['end'],
+            $window['start'],
+            $window['end'],
             $today,
         );
         $sums = [];
@@ -1470,20 +1545,159 @@ final class EnvelopeService
         if ($period === null) {
             return ['bills' => [], 'leftOut' => []];
         }
-        $month = $this->calendarMonth((string) $period['start']);
         $overdue = ($period['editable'] ?? false) === true && ($period['upcoming'] ?? false) !== true;
+        if ($this->viewWindow !== null) {
+            $start = $this->viewWindow['start'];
+            $end = $this->viewWindow['end'];
+            $overdue = $this->viewWindow['phase'] === 'current';
+        } elseif ($overdue) {
+            $window = $this->openWindow(
+                $this->calendarMonth((string) $period['start'])['start'],
+                $this->calendarMonth((string) $period['start'])['end'],
+                $today,
+            );
+            $start = $window['start'];
+            $end = $window['end'];
+        } else {
+            $month = $this->calendarMonth((string) $period['start']);
+            $start = $month['start'];
+            $end = $month['end'];
+        }
 
         return $this->withStayFuel(
             (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
                 $today,
-                $month['start'],
-                $month['end'],
+                $start,
+                $end,
                 $overdue,
             ),
-            $month['start'],
-            $month['end'],
+            $start,
+            $end,
             $today,
         );
+    }
+
+    /**
+     * The span that contains today replaces the calendar month. Any other window stays a calendar month.
+     *
+     * @return array{start:string,end:string}
+     */
+    private function openWindow(string $start, string $end, string $today): array
+    {
+        $span = $this->storedSpan($today);
+        if ($span['phase'] === 'current') {
+            return ['start' => $span['start'], 'end' => $span['end']];
+        }
+
+        return ['start' => $start, 'end' => $end];
+    }
+
+    /** @param array<string, mixed> $input */
+    private function usesSpan(array $input): bool
+    {
+        return ($input['span'] ?? false) === true || ($input['span'] ?? null) === 1 || ($input['span'] ?? null) === '1';
+    }
+
+    /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} */
+    private function storedSpan(string $today): array
+    {
+        $stmt = $this->pdo->prepare('SELECT span_start, span_length FROM user WHERE id = ?');
+        $stmt->execute([$this->actor->id()]);
+        $row = $stmt->fetch();
+        $start = is_array($row) ? (string) $row['span_start'] : '';
+        $length = is_array($row) ? (string) $row['span_length'] : '1 month';
+        if ($start === '' || !Span::valid($length)) {
+            $start = Span::defaultStart($today);
+            $length = '1 month';
+        }
+
+        return Span::describe($start, $length, $today);
+    }
+
+    /**
+     * @param array<string, mixed> $sheet
+     * @param array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} $span
+     * @return array<string, mixed>
+     */
+    private function alignSpan(array $sheet, array $span, string $today): array
+    {
+        if (is_array($sheet['period'] ?? null)) {
+            $sheet['period']['start'] = $span['start'];
+            $sheet['period']['end'] = $span['end'];
+            $sheet['period']['editable'] = $span['editable'];
+            $sheet['period']['upcoming'] = $span['upcoming'];
+        }
+        $sheet['previousPeriod'] = null;
+        $sheet['stepNext'] = null;
+        if ($span['phase'] === 'current') {
+            return $sheet;
+        }
+        $plans = $this->spanPlans($span['start'], $span['length']);
+        $categories = is_array($sheet['categories'] ?? null) ? $sheet['categories'] : [];
+        foreach ($categories as $index => $category) {
+            if (!is_array($category)) {
+                continue;
+            }
+            $planned = $plans[(int) $category['id']] ?? 0;
+            $bills = (int) ($category['billMinor'] ?? 0);
+            $categories[$index]['amountMinor'] = ($category['role'] ?? '') === 'locked'
+                ? max($planned, $bills)
+                : $planned;
+        }
+        $sheet['categories'] = $categories;
+        unset($today);
+
+        return $sheet;
+    }
+
+    /** @return array<int, int> */
+    private function spanPlans(string $start, string $length): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT category_id, amount_minor FROM span_assignments WHERE user_id = ? AND span_start = ? AND span_length = ?'
+        );
+        $stmt->execute([$this->actor->id(), $start, $length]);
+        $plans = [];
+        while ($row = $stmt->fetch()) {
+            if (is_array($row)) {
+                $plans[(int) $row['category_id']] = (int) $row['amount_minor'];
+            }
+        }
+
+        return $plans;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array{start:string,end:string,length:string} $span
+     * @return array<string, mixed>
+     */
+    private function saveSpanPlan(array $input, array $span, string $today): array
+    {
+        $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare(
+                'DELETE FROM span_assignments WHERE user_id = ? AND span_start = ? AND span_length = ?'
+            )->execute([$this->actor->id(), $span['start'], $span['length']]);
+            $insert = $this->pdo->prepare(
+                'INSERT INTO span_assignments (user_id, span_start, span_length, category_id, amount_minor) VALUES (?, ?, ?, ?, ?)'
+            );
+            foreach ($amounts as $categoryId => $amount) {
+                if ($amount < 1) {
+                    continue;
+                }
+                $insert->execute([$this->actor->id(), $span['start'], $span['length'], $categoryId, $amount]);
+            }
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return $this->show($today, $this->asInt($input['payCycleId'] ?? null), null, false, true);
     }
 
     /**

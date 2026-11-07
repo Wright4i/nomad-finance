@@ -38,6 +38,7 @@ export function explain(err: unknown): { message: string; fields: Record<string,
 }
 
 export async function api<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  await new Promise((resolve) => setTimeout(resolve, 800));
   const method = opts.method ?? 'GET';
   const headers = new Headers({ Accept: 'application/json' });
   if (opts.body !== undefined) {

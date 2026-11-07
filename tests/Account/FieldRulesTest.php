@@ -233,6 +233,53 @@ final class FieldRulesTest extends TestCase
         self::assertFalse($forced['inBudget']);
     }
 
+    public function testHolderRoundTripsAndABlankStoresNull(): void
+    {
+        $account = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'balanceMinor' => 100,
+            'holder' => '  Ester  ',
+        ]);
+        self::assertSame('Ester', $account['holder']);
+        self::assertSame('Ester', $this->accounts->get($account['id'])['holder']);
+
+        $renamed = $this->accounts->update($account['id'], [
+            'name' => 'Checking',
+            'type' => 'checking',
+            'balanceMinor' => 100,
+            'holder' => 'W4i',
+        ]);
+        self::assertSame('W4i', $renamed['holder']);
+
+        $cleared = $this->accounts->update($account['id'], [
+            'name' => 'Checking',
+            'type' => 'checking',
+            'balanceMinor' => 100,
+            'holder' => '',
+        ]);
+        self::assertNull($cleared['holder']);
+
+        $blank = $this->accounts->create([
+            'name' => 'Wallet',
+            'type' => 'cash',
+            'balanceMinor' => 50,
+            'holder' => '   ',
+        ]);
+        self::assertNull($blank['holder']);
+
+        $card = $this->accounts->create([
+            'name' => 'Card',
+            'type' => 'credit',
+            'balanceMinor' => 100,
+            'holder' => 'Joseph',
+            'inBudget' => true,
+        ]);
+        self::assertSame('Joseph', $card['holder']);
+        self::assertSame('liability', $card['side']);
+        self::assertFalse($card['inBudget']);
+    }
+
     public function testOtherRequiresASide(): void
     {
         try {

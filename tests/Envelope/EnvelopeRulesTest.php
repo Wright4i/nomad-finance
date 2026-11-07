@@ -1075,6 +1075,9 @@ final class EnvelopeRulesTest extends TestCase
         foreach ($sheet['sources']['accounts'] as $row) {
             $total += (int) $row['amountMinor'];
         }
+        foreach ($sheet['sources']['floats'] ?? [] as $row) {
+            $total -= (int) $row['uncoveredMinor'];
+        }
 
         return $total;
     }

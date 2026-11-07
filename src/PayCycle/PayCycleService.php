@@ -107,6 +107,31 @@ final class PayCycleService
         return $listed;
     }
 
+    /**
+     * Paydays inside a span. Income screens that are not the calendar keep the month.
+     *
+     * @return list<array{id:int,payor:string,on:string,paycheckMinor:int,length:string}>
+     */
+    public function between(string $start, string $end, string $today): array
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) !== 1 || preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) !== 1 || $end < $start) {
+            throw new ApiException(422, 'Use a start and end date.');
+        }
+        $cursor = Dates::parse($start)->modify('first day of this month');
+        $last = Dates::parse($end)->modify('first day of this month');
+        $listed = [];
+        while ($cursor <= $last) {
+            foreach ($this->monthPay($cursor->format('Y-m'), $today) as $row) {
+                if ($row['on'] >= $start && $row['on'] <= $end) {
+                    $listed[] = $row;
+                }
+            }
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        return $listed;
+    }
+
     /** @return array<string, mixed> */
     public function get(int $id, string $today): array
     {

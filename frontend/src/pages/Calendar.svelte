@@ -1,12 +1,14 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import CalendarEntryDialog from '../components/CalendarEntryDialog.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api } from '../lib/api';
   import { calendarBillColor, calendarBillShown, calendarBillSide } from '../lib/calendarBill';
   import { fitThree } from '../lib/fitThree';
-  import { exponentOf, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { exponentOf, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
+  import { spanCells, spanEnd } from '../lib/span';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { CalendarEntry, Trip } from '../lib/types';
@@ -35,7 +37,8 @@
   let entryOpen = $state(false);
   let editing = $state<CalendarEntry | null>(null);
   let message = $state('');
-  let month = $state(todayISO().slice(0, 7));
+  let tripsReady = $state(false);
+  let loading = $state(true);
   let day = $state<string | null>(null);
   let dialog: HTMLDialogElement | undefined = $state();
   let showIncome = $state(true);
@@ -43,22 +46,9 @@
   let showPaidBills = $state(true);
   let showUnpaidBills = $state(true);
 
-  function shift(by: number): void {
-    const [year, monthNumber] = month.split('-').map(Number);
-    const date = new Date(year, monthNumber - 1 + by, 1);
-    month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  }
-
-  function cells(value: string): Array<string | null> {
-    const [year, monthNumber] = value.split('-').map(Number);
-    const first = new Date(year, monthNumber - 1, 1).getDay();
-    const count = new Date(year, monthNumber, 0).getDate();
-    const listed: Array<string | null> = Array.from({ length: first }, () => null);
-    for (let index = 1; index <= count; index += 1) {
-      listed.push(`${value}-${String(index).padStart(2, '0')}`);
-    }
-    return listed;
-  }
+  let spanStart = $derived(session.user?.spanStart ?? `${todayISO().slice(0, 7)}-01`);
+  let spanFinish = $derived(session.user?.spanEnd ?? spanEnd(spanStart, '1 month'));
+  let days = $derived(spanCells(spanStart, spanFinish));
 
   function weekdayName(date: string): string {
     const [year, monthNumber, dayNumber] = date.split('-').map(Number);
@@ -94,7 +84,7 @@
   }
 
   async function reloadEntries(): Promise<void> {
-    const data = await api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${month}`);
+    const data = await api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?start=${spanStart}&end=${spanFinish}`);
     entries = data.entries;
   }
 
@@ -163,7 +153,7 @@
       + visibleBills(date).length;
   }
 
-  let shown = $derived(cells(month).flatMap((date) => (date === null ? [] : [...incomeMarks(date), ...billMarks(date)])));
+  let shown = $derived(days.flatMap((date) => (date === null ? [] : [...incomeMarks(date), ...billMarks(date)])));
 
   let totals = $derived.by(() => {
     let income = 0;
@@ -204,48 +194,32 @@
       trips = data.trips;
     }).catch((err: unknown) => {
       message = err instanceof Error ? err.message : 'Could not load stays.';
+    }).finally(() => {
+      tripsReady = true;
     });
   });
 
   $effect(() => {
-    const current = month;
+    const start = spanStart;
+    const end = spanFinish;
     let stale = false;
-    api<{ paydays: Payday[] }>(`/api/pay-cycles/month?month=${current}&today=${todayISO()}`)
-      .then((data) => {
-        if (!stale) paydays = data.paydays;
-      })
-      .catch((err: unknown) => {
-        if (!stale) message = err instanceof Error ? err.message : 'Could not load income.';
-      });
-    return () => {
-      stale = true;
-    };
-  });
-
-  $effect(() => {
-    const current = month;
-    let stale = false;
-    api<{ occurrences: Occurrence[] }>(`/api/bills/calendar?month=${current}`)
-      .then((data) => {
-        if (!stale) occurrences = data.occurrences;
+    loading = true;
+    Promise.all([
+      api<{ paydays: Payday[] }>(`/api/pay-cycles/month?start=${start}&end=${end}&today=${todayISO()}`),
+      api<{ occurrences: Occurrence[] }>(`/api/bills/calendar?start=${start}&end=${end}`),
+      api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?start=${start}&end=${end}`),
+    ])
+      .then(([payData, billData, entryData]) => {
+        if (stale) return;
+        paydays = payData.paydays;
+        occurrences = billData.occurrences;
+        entries = entryData.entries;
       })
       .catch((err: unknown) => {
         if (!stale) message = err instanceof Error ? err.message : 'Could not load the calendar.';
-      });
-    return () => {
-      stale = true;
-    };
-  });
-
-  $effect(() => {
-    const current = month;
-    let stale = false;
-    api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?month=${current}`)
-      .then((data) => {
-        if (!stale) entries = data.entries;
       })
-      .catch((err: unknown) => {
-        if (!stale) message = err instanceof Error ? err.message : 'Could not load calendar entries.';
+      .finally(() => {
+        if (!stale) loading = false;
       });
     return () => {
       stale = true;
@@ -259,11 +233,10 @@
     <button class="btn primary" type="button" onclick={addEntry}>Add entry</button>
   </div>
   <Note bind:message />
-  <div class="flex flex-wrap items-center gap-2">
-    <button class="btn" type="button" onclick={() => shift(-1)}>Previous month</button>
-    <button class="btn" type="button" onclick={() => shift(1)}>Next month</button>
-    <p class="m-0" data-month={month}>{formatMonth(month)}</p>
-  </div>
+  {#if loading || !tripsReady}
+    <Spinner />
+  {:else}
+  <p class="m-0" data-span={spanStart}>{formatChipDate(spanStart)} – {formatChipDate(spanFinish)}</p>
   <div class="calendar-board">
     <div class="calendar-filters" role="group" aria-label="Show on the calendar">
       <label class="calendar-filter" style="--tone: var(--teal)">
@@ -298,11 +271,11 @@
       </label>
     </div>
     <div class="month-scroll">
-      <div class="month" aria-label="Month">
+      <div class="month" aria-label="Span">
         {#each weekdays as name}
           <p class="kicker m-0 month-head">{name}</p>
         {/each}
-        {#each cells(month) as date, index (`${month}-${index}`)}
+        {#each days as date, index (`${spanStart}-${index}`)}
           {#if date}
             {@const count = dayItemCount(date)}
             <div
@@ -383,7 +356,7 @@
       </div>
     </div>
     <div class="month-total">
-      <p class="kicker m-0">Month total</p>
+      <p class="kicker m-0">Total</p>
       <p class="month-total-figures m-0">
         <span class="month-income">Income <strong class="money">{formatMinor(totals.income, baseCurrency, baseExponent)}</strong></span>
         <span class="month-debt">Debt <strong class="money">{formatMinor(totals.debt, baseCurrency, baseExponent)}</strong></span>
@@ -396,6 +369,7 @@
       </p>
     </div>
   </div>
+  {/if}
 </div>
 
 <dialog class="modal" bind:this={dialog} aria-labelledby="day-title" onclose={() => (day = null)}>

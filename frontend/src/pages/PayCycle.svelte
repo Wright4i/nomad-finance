@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -120,6 +121,7 @@
       })
       .catch((err: unknown) => {
         message = explain(err).message;
+        ready = true;
       });
   });
 
@@ -206,6 +208,7 @@
   <h1 class="text-3xl m-0">{id ? payor || 'Edit pay cycle' : 'New pay cycle'}</h1>
   <p class="muted m-0">One payor, one cycle. There is no close button.</p>
   <Note bind:message />
+  <div class="form-body grid gap-4" aria-busy={id != null && !ready} inert={id != null && !ready}>
   {#if cycle}
     <div class="grid gap-1">
       <p class="group-title text-2xl m-0" style={`--tone: var(--tone-${cycle.length})`}>
@@ -348,6 +351,12 @@
     {#if id && cycle?.archivedAt}
       <button class="btn" type="button" title="Put this payor back on the list." disabled={saving} onclick={unarchive}>Unarchive</button>
     {/if}
+  </div>
+  {#if id && !ready}
+    <div class="form-cover" aria-busy="true">
+      <Spinner />
+    </div>
+  {/if}
   </div>
 </form>
 

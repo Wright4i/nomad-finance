@@ -5,7 +5,9 @@ export type User = {
   baseCurrency: string;
   theme: 'dark' | 'light';
   role: 'owner' | 'demo' | 'user';
-  horizonDays: number;
+  spanStart: string;
+  spanEnd: string;
+  spanLength: string;
 };
 
 export type Account = {
@@ -25,6 +27,7 @@ export type Account = {
   billRecurrence: 'daily' | 'monthly' | 'yearly';
   billEvery: number;
   institution: string | null;
+  holder: string | null;
   notes: string | null;
   starred: boolean;
   inBudget: boolean;
@@ -124,7 +127,9 @@ export type EnvelopeSheet = {
   sources: {
     income: { id: number; payor: string; length: string; amountMinor: number }[];
     accounts: { id: number; name: string; type: string; amountMinor: number }[];
+    floats?: { id: number; name: string; type: string; balanceMinor: number; coveredMinor: number; uncoveredMinor: number }[];
   };
+  span?: { start: string; end: string; length: string; phase: string; editable: boolean; upcoming: boolean };
   categories: EnvelopeCategory[];
   groups: EnvelopeGroup[];
   celebrate: boolean;
@@ -468,7 +473,6 @@ export type Dashboard = {
   baseCurrency: string;
   exponent: number;
   today: string;
-  horizonDays: 30 | 60;
   windowStart: string;
   windowEnd: string;
   netWorthMinor: number | null;

@@ -852,6 +852,18 @@ a.planner-stay:active {
 
 .glyph.mini svg { width: 1rem; height: 1rem; }
 
+.nav a .glyph.mini,
+.nav .nav-logout .glyph.mini {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.nav a .glyph.mini svg,
+.nav .nav-logout .glyph.mini svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
 .choice .glyph { color: var(--tone, currentColor); }
 .choice.on .glyph { color: currentColor; }
 
@@ -2399,6 +2411,10 @@ button.entry-chip {
   gap: 0.75rem;
 }
 
+.bucket-board.account-board {
+  grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
+}
+
 .bucket-board:has(.bucket-cell) {
   align-items: stretch;
   column-gap: 0.75rem;
@@ -3030,10 +3046,18 @@ a.bucket-tile .money {
 }
 
 .want-gauge-readout {
+  position: relative;
   display: grid;
   gap: 0.2rem;
   align-content: end;
   min-width: 0;
+  min-height: 7.5rem;
+}
+
+.want-gauge.over .want-gauge-warning {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .want-gauge-name {
@@ -3895,5 +3919,181 @@ a.planner-stay {
 
   .fuel-actions {
     justify-content: flex-end;
+  }
+}
+
+/* Loading */
+.page-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  min-height: 5rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.page-spinner-mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  border-radius: 999px;
+  border: 2px solid color-mix(in oklab, var(--muted) 45%, transparent);
+  border-top-color: var(--teal);
+  animation: page-spinner-spin 0.7s var(--ease-in-out) infinite;
+}
+
+.page-spinner-label {
+  font-size: 0.95rem;
+}
+
+@keyframes page-spinner-spin {
+  to { transform: rotate(360deg); }
+}
+
+.form-body {
+  position: relative;
+  min-width: 0;
+  isolation: isolate;
+}
+
+.form-body > .form-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  border-radius: 1.15rem;
+  background: var(--bg);
+  pointer-events: auto;
+}
+
+.form-body[aria-busy='true'] > :not(.form-cover),
+.form-body:has(> .form-cover) > :not(.form-cover) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-spinner-mark {
+    animation: none;
+  }
+}
+
+/* Span and transfers */
+.span-open .glyph {
+  display: none;
+}
+
+.span-arrow {
+  display: none;
+}
+
+.span-step {
+  position: relative;
+  display: flex;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  isolation: isolate;
+  background: #000;
+}
+
+.span-step-slant {
+  position: absolute;
+  inset: 0;
+  background: var(--teal);
+  clip-path: polygon(0 0, 64% 0, 36% 100%, 0 100%);
+  pointer-events: none;
+}
+
+.span-step button {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 2.35rem;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.span-step button:first-of-type {
+  color: #000;
+}
+
+html.light .span-step {
+  background: var(--teal);
+}
+
+html.light .span-step-slant {
+  background: #fff;
+}
+
+html.light .span-step button:last-of-type {
+  color: #fff;
+}
+
+.planner-board .want-gauge-meter .want-gauge-warning {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 0.35rem);
+  z-index: 2;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.transfer-move {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+}
+
+.transfer-end {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--tone, var(--teal)) 22%, transparent);
+  color: var(--tone, var(--text));
+}
+
+.transfer-end[data-type] {
+  --tone: var(--tone-checking);
+}
+
+.transfer-end[data-type='savings'] { --tone: var(--tone-savings); }
+.transfer-end[data-type='cash'] { --tone: var(--tone-cash); }
+.transfer-end[data-type='credit'] { --tone: var(--tone-credit); }
+.transfer-end[data-type='fuel'] { --tone: var(--tone-fuel); }
+.transfer-end[data-type='loan'] { --tone: var(--tone-loan); }
+
+.transfer-amount {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 650;
+}
+
+@media (min-width: 768px) {
+  .nav.collapsed .span-open .glyph {
+    display: inline-flex;
+  }
+
+  .nav.collapsed .span-arrow {
+    display: inline;
+  }
+
+  .nav.collapsed .span-step {
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-inline: auto;
+  }
+
+  .nav.collapsed .span-step button {
+    min-height: 0;
+    padding: 0;
   }
 }

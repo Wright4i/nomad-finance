@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import DateField from '../components/DateField.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -39,6 +40,7 @@
   onMount(() => {
     load().catch((err: unknown) => {
       message = explain(err).message;
+      ready = true;
     });
   });
 
@@ -142,9 +144,11 @@
     onclick={toggle}
   >{includeArchived ? 'Hide archived' : 'Show archived'}</button>
   <Note bind:message />
-  {#if ready && cycles.length === 0}
+  {#if !ready}
+    <Spinner />
+  {:else if cycles.length === 0}
     <p class="muted m-0">No pay cycles yet.</p>
-  {:else if cycles.length > 0}
+  {:else}
     <div class="payor-columns">
       {#each cycles as cycle (cycle.id)}
         <article class="card stripe grid gap-1" style={`--tone: var(--tone-${cycle.length})`}>

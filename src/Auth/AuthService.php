@@ -9,6 +9,7 @@ use App\Dashboard\PlannerWidgets;
 use App\Demo\DemoLibrary;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
+use App\Span\Span;
 use App\Money\UnknownCurrency;
 use PDO;
 
@@ -34,7 +35,7 @@ final class AuthService
         return (int) $this->pdo->query("SELECT COUNT(*) FROM user WHERE role = 'owner'")->fetchColumn() === 0;
     }
 
-    /** @return ?array{name:string,baseCurrency:string,theme:string,role:string,horizonDays:int,plannerOrder:list<string>,plannerSpans:array<string,int>} */
+    /** @return ?array{name:string,baseCurrency:string,theme:string,role:string,spanStart:string,spanEnd:string,spanLength:string,plannerOrder:list<string>,plannerSpans:array<string,int>} */
     public function current(): ?array
     {
         $id = $_SESSION['user_id'] ?? null;
@@ -43,7 +44,7 @@ final class AuthService
         }
 
         $stmt = $this->pdo->prepare(
-            'SELECT name, base_currency, theme, role, horizon_days, planner_order, planner_spans FROM user WHERE id = ?'
+            'SELECT name, base_currency, theme, role, span_start, span_length, planner_order, planner_spans FROM user WHERE id = ?'
         );
         $stmt->execute([$id]);
         $row = $stmt->fetch();
@@ -52,13 +53,16 @@ final class AuthService
 
             return null;
         }
+        $span = $this->rememberSpan($id, (string) $row['span_start'], (string) $row['span_length']);
 
         return [
             'name' => (string) $row['name'],
             'baseCurrency' => (string) $row['base_currency'],
             'theme' => (string) $row['theme'],
             'role' => (string) $row['role'],
-            'horizonDays' => (int) $row['horizon_days'] === 30 ? 30 : 60,
+            'spanStart' => $span['start'],
+            'spanEnd' => $span['end'],
+            'spanLength' => $span['length'],
             'plannerOrder' => PlannerWidgets::order($row['planner_order']),
             'plannerSpans' => PlannerWidgets::spans($row['planner_spans']),
         ];
@@ -187,7 +191,7 @@ final class AuthService
         return $user;
     }
 
-    /** @return array{name:string,baseCurrency:string,theme:string,role:string,horizonDays:int,plannerOrder:list<string>,plannerSpans:array<string,int>} */
+    /** @return array{name:string,baseCurrency:string,theme:string,role:string,spanStart:string,spanEnd:string,spanLength:string,plannerOrder:list<string>,plannerSpans:array<string,int>} */
     public function enterDemo(): array
     {
         if ($this->needsSetup()) {
@@ -243,9 +247,12 @@ final class AuthService
         } else {
             $theme = $current['theme'];
         }
-        $horizonDays = array_key_exists('horizonDays', $input)
-            ? $this->horizonDays($input['horizonDays'])
-            : $current['horizonDays'];
+        $spanStart = array_key_exists('spanStart', $input)
+            ? $this->spanStart($input['spanStart'])
+            : $current['spanStart'];
+        $spanLength = array_key_exists('spanLength', $input)
+            ? $this->spanLength($input['spanLength'])
+            : $current['spanLength'];
         if (array_key_exists('plannerOrder', $input)) {
             $accepted = PlannerWidgets::accept($input['plannerOrder']);
             if ($accepted === null) {
@@ -280,12 +287,12 @@ final class AuthService
         if ($changingPassword) {
             $password = $this->password($password);
             $this->pdo->prepare(
-                'UPDATE user SET name = ?, base_currency = ?, theme = ?, horizon_days = ?, planner_order = ?, planner_spans = ?, password_hash = ? WHERE id = ?'
-            )->execute([$name, $currency, $theme, $horizonDays, $plannerOrder, $plannerSpans, password_hash($password, PASSWORD_DEFAULT), $id]);
+                'UPDATE user SET name = ?, base_currency = ?, theme = ?, span_start = ?, span_length = ?, planner_order = ?, planner_spans = ?, password_hash = ? WHERE id = ?'
+            )->execute([$name, $currency, $theme, $spanStart, $spanLength, $plannerOrder, $plannerSpans, password_hash($password, PASSWORD_DEFAULT), $id]);
         } else {
             $this->pdo->prepare(
-                'UPDATE user SET name = ?, base_currency = ?, theme = ?, horizon_days = ?, planner_order = ?, planner_spans = ? WHERE id = ?'
-            )->execute([$name, $currency, $theme, $horizonDays, $plannerOrder, $plannerSpans, $id]);
+                'UPDATE user SET name = ?, base_currency = ?, theme = ?, span_start = ?, span_length = ?, planner_order = ?, planner_spans = ? WHERE id = ?'
+            )->execute([$name, $currency, $theme, $spanStart, $spanLength, $plannerOrder, $plannerSpans, $id]);
         }
 
         $user = $this->current();
@@ -393,21 +400,46 @@ final class AuthService
         return $value;
     }
 
-    private function horizonDays(mixed $value): int
+    private function spanStart(mixed $value): string
     {
-        $days = null;
-        if (is_int($value)) {
-            $days = $value;
-        } elseif (is_string($value) && preg_match('/^\d+$/', $value) === 1) {
-            $days = (int) $value;
+        if (!is_string($value)) {
+            throw new ApiException(422, 'Check the highlighted fields.', ['spanStart' => 'Use a YYYY-MM-DD date.']);
         }
-        if ($days !== 30 && $days !== 60) {
+        try {
+            return \App\Support\Dates::parse($value)->format('Y-m-d');
+        } catch (\InvalidArgumentException) {
+            throw new ApiException(422, 'Check the highlighted fields.', ['spanStart' => 'Use a YYYY-MM-DD date.']);
+        }
+    }
+
+    private function spanLength(mixed $value): string
+    {
+        if (!is_string($value) || !Span::valid($value)) {
             throw new ApiException(422, 'Check the highlighted fields.', [
-                'horizonDays' => 'Choose 30 or 60 days.',
+                'spanLength' => 'Choose 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months.',
             ]);
         }
 
-        return $days;
+        return $value;
+    }
+
+    /** @return array{start:string,end:string,length:string} */
+    private function rememberSpan(int $id, string $start, string $length): array
+    {
+        $today = gmdate('Y-m-d');
+        if ($start === '' || !Span::valid($length)) {
+            $start = Span::defaultStart($today);
+            $length = '1 month';
+            $this->pdo->prepare('UPDATE user SET span_start = ?, span_length = ? WHERE id = ?')
+                ->execute([$start, $length, $id]);
+        }
+        $described = Span::describe($start, $length, $today);
+
+        return [
+            'start' => $described['start'],
+            'end' => $described['end'],
+            'length' => $described['length'],
+        ];
     }
 
     private function fuelPrice(mixed $value): ?int

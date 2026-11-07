@@ -4,7 +4,10 @@
   import { follow, route } from '../lib/nav.svelte.ts';
   import { adoptUser, applyTheme, loadSession, session } from '../lib/session.svelte.ts';
   import type { User } from '../lib/types';
+  import DateField from './DateField.svelte';
   import Glyph from './Glyph.svelte';
+  import { formatChipDate } from '../lib/dates';
+  import { SPAN_LENGTHS, spanEnd, spanShift, type SpanLength } from '../lib/span';
 
   let { children }: { children: Snippet } = $props();
   let open = $state(false);
@@ -19,6 +22,20 @@
   let accountMessage = $state('');
   let accountFields = $state<Record<string, string>>({});
   let savingAccount = $state(false);
+  let spanDialog: HTMLDialogElement | undefined = $state();
+  let spanOpen = $state(false);
+  let spanStart = $state('');
+  let spanLength = $state<SpanLength>('1 month');
+  let spanStop = $state(3);
+  let savingSpan = $state(false);
+  let spanMessage = $state('');
+
+  let spanLabel = $derived(
+    session.user?.spanStart && session.user.spanEnd
+      ? `${formatChipDate(session.user.spanStart)} – ${formatChipDate(session.user.spanEnd)}`
+      : '',
+  );
+  let draftEnd = $derived(spanStart ? spanEnd(spanStart, spanLength) : '');
 
   function openAccountDialog(node: HTMLDialogElement): { destroy: () => void } {
     node.showModal();
@@ -40,12 +57,13 @@
       { href: '/trips', label: 'Trips', mark: 'transport' },
     ],
     [
-      { href: '/pay-cycles', label: 'Income', mark: 'cash' },
       { href: '/bills', label: 'Bills', mark: 'debt' },
       { href: '/budget', label: 'Budget', mark: 'envelope' },
+      { href: '/transfers', label: 'Transfers', mark: 'cash' },
     ],
     [
       { href: '/accounts', label: 'Accounts', mark: 'vault' },
+      { href: '/pay-cycles', label: 'Income', mark: 'cash' },
       { href: '/vehicles', label: 'Vehicles', mark: 'vehicle' },
     ],
   ];
@@ -84,6 +102,60 @@
     await loadSession();
     open = false;
     follow(new MouseEvent('click'), '/');
+  }
+
+  function openSpan(): void {
+    if (!session.user) return;
+    spanStart = session.user.spanStart;
+    const length = SPAN_LENGTHS.find((item) => item === session.user?.spanLength) ?? '1 month';
+    spanLength = length;
+    spanStop = SPAN_LENGTHS.indexOf(length);
+    spanMessage = '';
+    spanOpen = true;
+  }
+
+  function setStop(value: number): void {
+    const next = SPAN_LENGTHS[value] ?? '1 month';
+    spanStop = SPAN_LENGTHS.indexOf(next);
+    spanLength = next;
+  }
+
+  async function applySpan(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (!session.user || savingSpan) return;
+    savingSpan = true;
+    spanMessage = '';
+    try {
+      const data = await api<{ user: User }>('/api/settings', {
+        method: 'PATCH',
+        body: { spanStart, spanLength },
+      });
+      adoptUser(data.user);
+      spanDialog?.close();
+    } catch (err) {
+      spanMessage = explain(err).message;
+    } finally {
+      savingSpan = false;
+    }
+  }
+
+  async function nudgeSpan(steps: number): Promise<void> {
+    if (!session.user || savingSpan) return;
+    savingSpan = true;
+    try {
+      const data = await api<{ user: User }>('/api/settings', {
+        method: 'PATCH',
+        body: {
+          spanStart: spanShift(session.user.spanStart, session.user.spanLength, steps),
+          spanLength: session.user.spanLength,
+        },
+      });
+      adoptUser(data.user);
+    } catch (err) {
+      spanMessage = explain(err).message;
+    } finally {
+      savingSpan = false;
+    }
   }
 
   function askReset(): void {
@@ -132,7 +204,6 @@
         body: {
           name: accountName,
           password: accountPassword,
-          horizonDays: session.user.horizonDays,
         },
       });
       adoptUser(data.user);
@@ -296,6 +367,23 @@
           {resetting ? 'Resetting…' : 'Reset demo data'}
         </button>
       {/if}
+      {#if spanLabel}
+        <button class="linkish span-open" type="button" use:tip={spanLabel} onclick={openSpan}>
+          <Glyph name="monthly" mini />
+          <span class="nav-label">{spanLabel}</span>
+        </button>
+        <div class="span-step" role="group" aria-label={spanLabel}>
+          <span class="span-step-slant" aria-hidden="true"></span>
+          <button type="button" aria-label="Previous" disabled={savingSpan} onclick={() => void nudgeSpan(-1)}>
+            <span class="nav-label">Previous</span>
+            <span class="span-arrow" aria-hidden="true">‹</span>
+          </button>
+          <button type="button" aria-label="Next" disabled={savingSpan} onclick={() => void nudgeSpan(1)}>
+            <span class="nav-label">Next</span>
+            <span class="span-arrow" aria-hidden="true">›</span>
+          </button>
+        </div>
+      {/if}
       <hr class="nav-rule" />
       <div class="theme-pill" class:light={theme === 'light'} role="group" aria-label="Theme">
         <span class="theme-slant night" aria-hidden="true"></span>
@@ -363,6 +451,39 @@
       <div class="modal-actions">
         <button class="btn primary" type="submit" disabled={savingAccount}>{savingAccount ? 'Saving…' : 'Save'}</button>
         <button class="btn" type="button" onclick={() => accountDialog?.close()}>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+{/if}
+
+{#if spanOpen}
+  <dialog class="modal" bind:this={spanDialog} use:openAccountDialog aria-labelledby="span-title" onclose={() => (spanOpen = false)}>
+    <form onsubmit={applySpan}>
+      <div class="modal-body">
+        <h2 id="span-title" class="m-0 text-2xl">{spanLabel}</h2>
+        {#if spanMessage}<p class="banner m-0">{spanMessage}</p>{/if}
+        <label class="field">
+          <span>Start</span>
+          <DateField name="spanStart" bind:value={spanStart} />
+        </label>
+        <label class="field">
+          <span>{spanLength}</span>
+          <input
+            name="spanLength"
+            type="range"
+            min="0"
+            max="5"
+            step="1"
+            value={spanStop}
+            aria-valuetext={spanLength}
+            oninput={(event) => setStop(Number(event.currentTarget.value))}
+          />
+        </label>
+        <p class="m-0">Through {draftEnd ? formatChipDate(draftEnd) : ''}</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="submit" disabled={savingSpan || spanStart === ''}>{savingSpan ? 'Saving…' : 'Apply'}</button>
+        <button class="btn" type="button" onclick={() => spanDialog?.close()}>Cancel</button>
       </div>
     </form>
   </dialog>

@@ -145,17 +145,13 @@ final class LiabilityBill
      */
     public static function amount(string $choice, mixed $minimum, int $balance): ?int
     {
+        unset($balance);
+        if ($choice !== 'minimum') {
+            return null;
+        }
         $due = is_int($minimum) ? $minimum : (is_numeric($minimum) ? (int) $minimum : 0);
-        $minimumAmount = $due > 0 ? $due : null;
-        $balanceAmount = $balance > 0 ? $balance : null;
-        if ($choice === 'minimum') {
-            return $minimumAmount ?? $balanceAmount;
-        }
-        if ($choice === 'balance') {
-            return $balanceAmount ?? $minimumAmount;
-        }
 
-        return null;
+        return $due > 0 ? $due : null;
     }
 
     public static function upcoming(int $dueDay, string $today, ?string $lastPaid, int $every = 1): string

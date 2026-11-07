@@ -104,8 +104,8 @@ final class DemoLibrary
         $now = gmdate('c');
         SystemBuckets::ensure($this->pdo, $userId);
         $this->pdo->prepare(
-            'UPDATE user SET horizon_days = 60 WHERE id = ?'
-        )->execute([$userId]);
+            'UPDATE user SET span_start = ?, span_length = \'1 month\' WHERE id = ?'
+        )->execute([gmdate('Y-m-01'), $userId]);
         // Solo full-timer in a Class C. Three paychecks are live. The other pay lengths stay archived so Show archived still has one of each.
         $checking = $this->account($userId, [
             'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000, 'starred' => true,

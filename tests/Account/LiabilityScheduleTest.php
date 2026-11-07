@@ -68,9 +68,30 @@ final class LiabilityScheduleTest extends TestCase
             'billRecurrence' => 'daily',
             'billEvery' => 3,
         ]));
+        self::assertNull($this->one('Card'));
+
+        $this->accounts->update($card['id'], $this->body($card['id'], [
+            'balanceMinor' => 4200,
+            'minimumDueMinor' => 0,
+            'autopayChoice' => 'minimum',
+            'bankAutopay' => true,
+            'billRecurrence' => 'daily',
+            'billEvery' => 3,
+        ]));
+        self::assertNull($this->one('Card'));
+
+        $this->accounts->update($card['id'], $this->body($card['id'], [
+            'balanceMinor' => 4200,
+            'minimumDueMinor' => 1800,
+            'dueDay' => 15,
+            'autopayChoice' => 'minimum',
+            'bankAutopay' => true,
+            'billRecurrence' => 'daily',
+            'billEvery' => 3,
+        ]));
         $bill = $this->one('Card');
         self::assertIsArray($bill);
-        self::assertSame(4200, $bill['amountMinor']);
+        self::assertSame(1800, $bill['amountMinor']);
         self::assertSame('daily', $bill['recurrence']);
         self::assertSame(3, $bill['every']);
         self::assertTrue($bill['autopay']);
@@ -87,7 +108,8 @@ final class LiabilityScheduleTest extends TestCase
 
         $this->accounts->update($card['id'], $this->body($card['id'], [
             'balanceMinor' => 0,
-            'autopayChoice' => 'balance',
+            'minimumDueMinor' => 0,
+            'autopayChoice' => 'minimum',
             'bankAutopay' => true,
             'billRecurrence' => 'daily',
             'billEvery' => 3,
@@ -104,9 +126,7 @@ final class LiabilityScheduleTest extends TestCase
             'billRecurrence' => 'monthly',
             'billEvery' => 2,
         ]));
-        $fromMinimum = $this->one('Card');
-        self::assertIsArray($fromMinimum);
-        self::assertSame(1800, $fromMinimum['amountMinor']);
+        self::assertNull($this->one('Card'));
 
         $this->accounts->update($card['id'], $this->body($card['id'], [
             'balanceMinor' => 0,

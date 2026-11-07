@@ -13,6 +13,7 @@ use App\Category\CategoryService;
 use App\Dashboard\DashboardService;
 use App\Demo\DemoLibrary;
 use App\Envelope\EnvelopeService;
+use App\Transfer\TransferService;
 use App\Trip\PlaceSearch;
 use App\Trip\TripService;
 use App\Vehicle\VehicleService;
@@ -42,6 +43,7 @@ final class Routes
         private readonly CalendarEntryService $entries,
         private readonly Actor $actor,
         private readonly DemoLibrary $demo,
+        private readonly TransferService $transfers,
     ) {
     }
 
@@ -60,8 +62,9 @@ final class Routes
         $entries = $this->entries;
         $actor = $this->actor;
         $demo = $this->demo;
+        $transfers = $this->transfers;
 
-        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo): void {
+        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo, $transfers): void {
             $group->get('/session', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                 return Json::write($response, [
                     'needsSetup' => $auth->needsSetup(),
@@ -92,7 +95,7 @@ final class Routes
                 });
             })->add(CsrfMiddleware::class);
 
-            $group->group('', function (RouteCollectorProxy $secure) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo): void {
+            $group->group('', function (RouteCollectorProxy $secure) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo, $transfers): void {
                 $secure->post('/logout', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                     $auth->logout();
 
@@ -172,7 +175,13 @@ final class Routes
                     ]);
                 });
                 $secure->get('/calendar-entries', function (ServerRequestInterface $request, ResponseInterface $response) use ($entries) {
-                    $month = $request->getQueryParams()['month'] ?? '';
+                    $params = $request->getQueryParams();
+                    $start = $params['start'] ?? '';
+                    $end = $params['end'] ?? '';
+                    if (is_string($start) && is_string($end) && $start !== '' && $end !== '') {
+                        return Json::write($response, ['entries' => $entries->between($start, $end)]);
+                    }
+                    $month = $params['month'] ?? '';
 
                     return Json::write($response, ['entries' => $entries->month(is_string($month) ? $month : '')]);
                 });
@@ -241,14 +250,23 @@ final class Routes
                             'type' => is_string($params['type'] ?? null) ? $params['type'] : '',
                             'amount' => is_string($params['amount'] ?? null) ? $params['amount'] : '',
                         ];
+                        $start = is_string($params['start'] ?? null) ? $params['start'] : null;
+                        $end = is_string($params['end'] ?? null) ? $params['end'] : null;
+                        $today = is_string($params['today'] ?? null) ? $params['today'] : null;
 
-                        return Json::write($response, $bills->section($section, is_numeric($chunks) ? (int) $chunks : 1, $filter));
+                        return Json::write($response, $bills->section($section, is_numeric($chunks) ? (int) $chunks : 1, $filter, $start, $end, $today));
                     }
 
                     return Json::write($response, ['bills' => $bills->list()]);
                 });
                 $secure->get('/bills/calendar', function (ServerRequestInterface $request, ResponseInterface $response) use ($bills) {
-                    $month = $request->getQueryParams()['month'] ?? '';
+                    $params = $request->getQueryParams();
+                    $start = $params['start'] ?? '';
+                    $end = $params['end'] ?? '';
+                    if (is_string($start) && is_string($end) && $start !== '' && $end !== '') {
+                        return Json::write($response, ['occurrences' => $bills->calendarBetween($start, $end)]);
+                    }
+                    $month = $params['month'] ?? '';
 
                     return Json::write($response, ['occurrences' => $bills->calendar(is_string($month) ? $month : '')]);
                 });
@@ -328,6 +346,13 @@ final class Routes
 
                 $secure->get('/pay-cycles/month', function (ServerRequestInterface $request, ResponseInterface $response) use ($payCycle) {
                     $query = $request->getQueryParams();
+                    $start = $query['start'] ?? '';
+                    $end = $query['end'] ?? '';
+                    if (is_string($start) && is_string($end) && $start !== '' && $end !== '') {
+                        return Json::write($response, [
+                            'paydays' => $payCycle->between($start, $end, (string) ($query['today'] ?? '')),
+                        ]);
+                    }
 
                     return Json::write($response, [
                         'paydays' => $payCycle->monthPay((string) ($query['month'] ?? ''), (string) ($query['today'] ?? '')),
@@ -397,7 +422,25 @@ final class Routes
                         $payCycleId,
                         $periodId,
                         ($query['upcoming'] ?? '') === '1',
+                        ($query['span'] ?? '') === '1',
                     ));
+                });
+                $secure->get('/transfers/card', function (ServerRequestInterface $request, ResponseInterface $response) use ($transfers) {
+                    $query = $request->getQueryParams();
+
+                    return Json::write($response, $transfers->cardPreview(
+                        (int) ($query['cardId'] ?? 0),
+                        (string) ($query['today'] ?? ''),
+                    ));
+                });
+                $secure->post('/transfers/card', function (ServerRequestInterface $request, ResponseInterface $response) use ($transfers) {
+                    return Json::write($response, $transfers->payCard(self::body($request)));
+                });
+                $secure->post('/transfers/preview', function (ServerRequestInterface $request, ResponseInterface $response) use ($transfers) {
+                    return Json::write($response, $transfers->previewMove(self::body($request)));
+                });
+                $secure->post('/transfers', function (ServerRequestInterface $request, ResponseInterface $response) use ($transfers) {
+                    return Json::write($response, $transfers->move(self::body($request)));
                 });
                 $secure->put('/budget', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {
                     return Json::write($response, $envelopes->save(self::body($request)));

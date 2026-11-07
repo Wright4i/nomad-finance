@@ -24,7 +24,7 @@ _Avoid_: Off-budget, investment account
 Whether an account adds to or subtracts from net worth: asset or liability. Checking, savings, and cash are assets. Credit, loan, and fuel are liabilities. Other stores the side you choose.
 
 **Balance**:
-The amount stored for an account, as a zero-or-greater integer in cents. On an asset it is the amount on deposit. On a liability it is the amount owed. It changes only when you type a new figure.
+The amount stored for an account, as a zero-or-greater integer in cents. On an asset it is the amount on deposit. On a liability it is the amount owed. It changes when you type a new figure, or when a transfer moves money between two accounts. A bill does not move a balance by itself.
 _Avoid_: Signed balance, running balance
 
 **Minor unit**:
@@ -101,7 +101,7 @@ The one amount on a bill, in cents.
 _Avoid_: Vendor amount, balance
 
 **Assignment**:
-Cash held in a bucket for one month on the Budget screen. Zero or more. A new month starts empty, and recurring bills are the exception. A locked bucket cannot be assigned less than its bills. It leaves the account balance as you last typed it.
+Cash held in a bucket for the span on the Budget screen. Zero or more. The span that contains today is what you assign to. A locked bucket cannot be assigned less than its bills. Paying a paid-in-full card from the transfer screen is what lowers the bucket for the bills you select.
 _Avoid_: Posting, transaction
 
 **Overspend**:
@@ -109,11 +109,11 @@ Retired. An assignment cannot be negative.
 _Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-Income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold. A payday before today is left out. Credit cards, loans, fuel accounts, and tracking accounts stay out. The line under the number is what is already assigned of that income plus those accounts. Needs is 50% of that income plus those accounts, Wants 30%, and Savings 20%, half up to the cent. A closed or upcoming month does not change the number. The number can be zero, and it can be negative when the buckets hold more than that income and those accounts.
+Income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full credit or fuel card. A payday before today is left out. Income is not filtered by the span. Credit cards, loans, fuel accounts, and tracking accounts stay out of the pool; the uncovered float is subtracted. Covered float is past unpaid bills drawn from that card, capped at the balance. The available list shows each such card's balance, covered, and uncovered. Needs is 50% of the pool, Wants 30%, and Savings 20%, half up to the cent. Available follows the span that contains today. A closed span is read-only. Planning a later span does not change the number. The number can be zero, and it can be negative when the buckets hold more than the pool.
 _Avoid_: To be budgeted
 
 **Auto-assigned**:
-The bills, and on Fuel the trip fuel, already counted on a bucket for the month. It is not typed.
+The bills due in the span, and on Fuel the trip fuel for stays in the span, already counted on a bucket. It is not typed.
 _Avoid_: Filled, bill total
 
 **Envelope**:
@@ -289,11 +289,15 @@ _Avoid_: Average payroll
 The other day of the month a semimonthly pay cycle uses. The payday supplies the first day.
 
 **Open period**:
-The span of the pay cycle that contains today. It starts on a payday and ends the day before the next one. An irregular cycle with no next payday stays open. Budget calls that span the current month and the following span the next month.
+The span of the pay cycle that contains today. It starts on a payday and ends the day before the next one. An irregular cycle with no next payday stays open. Pay cycles still calculate paychecks. They do not choose which days are on screen.
 _Avoid_: Horizon
 
+**Span**:
+The one window for Planner, Calendar, Trips, Bills, and Budget. Stored on the user as a start date and a length: 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months. The button shows the dates, such as Nov 1 – Nov 30. A week is 7 days. A month runs from the start through the day before the same day that many months later, and a missing anniversary clamps to the last day of that month and then steps back one. Previous and Next move the start by that length. The span that contains today is editable and available-to-assign follows it. A span that ends before today is closed and read-only. A span that starts after today can be planned, and available does not follow it.
+_Avoid_: Period, horizon, calendar month
+
 **Horizon**:
-The 30- or 60-day calendar window saved on the user: today through the next 29 days, or today through the next 59 days. The default is 60. It is not an assignment period.
+Retired. The span is the only window.
 _Avoid_: Pay period, open period
 
 **Calendar entry**:
@@ -330,6 +334,10 @@ Recording a bill's occurrence on the due date it had. A repeating bill then roll
 
 **Setup**:
 The first-run screen that creates the owner: name, password, a starred vehicle, and that vehicle's fallback fuel price. An empty fuel price means miles only.
+
+**Holder**:
+A person or business an account belongs to, such as Joseph, Ester, or W4i.
+_Avoid_: Owner
 
 **Owner**:
 The person who created the books at setup. Their accounts and bills stay theirs.

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -203,6 +204,7 @@
     <p>Create an account first. <a href="/accounts/new" onclick={(event) => { event.preventDefault(); go('/accounts/new'); }}>New account</a></p>
   {/if}
   <Note bind:message />
+  <div class="form-body grid gap-4" aria-busy={id != null && !ready} inert={id != null && !ready}>
   <label class="field">
     <span>Name</span>
     <input name="name" bind:value={name} />
@@ -341,5 +343,11 @@
     {#if id && status === 'paid'}
       <button class="btn" type="button" disabled={saving} onclick={() => act('unpay')}>Unpay</button>
     {/if}
+  </div>
+  {#if id && !ready}
+    <div class="form-cover" aria-busy="true">
+      <Spinner />
+    </div>
+  {/if}
   </div>
 </form>

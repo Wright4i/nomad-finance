@@ -73,14 +73,14 @@ final class AccountService
                 'INSERT INTO accounts (
                     user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                     due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
-                    institution, notes, starred, in_budget, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    institution, holder, notes, starred, in_budget, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $this->actor->id(),
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
-                $data['institution'], $data['notes'], $data['starred'], $data['inBudget'], $now, $now,
+                $data['institution'], $data['holder'], $data['notes'], $data['starred'], $data['inBudget'], $now, $now,
             ]);
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->commit();
@@ -117,13 +117,13 @@ final class AccountService
                     name = ?, type = ?, side = ?, currency = ?, balance_minor = ?, interest_bps = ?,
                     minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, autopay_choice = ?,
                     bank_autopay = ?, bill_recurrence = ?, bill_every = ?,
-                    institution = ?, notes = ?, starred = ?, in_budget = ?, updated_at = ?
+                    institution = ?, holder = ?, notes = ?, starred = ?, in_budget = ?, updated_at = ?
                  WHERE id = ? AND user_id = ?'
             )->execute([
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
-                $data['institution'], $data['notes'], $data['starred'], $data['inBudget'], $now,
+                $data['institution'], $data['holder'], $data['notes'], $data['starred'], $data['inBudget'], $now,
                 $id, $this->actor->id(),
             ]);
             $this->pdo->commit();
@@ -174,7 +174,7 @@ final class AccountService
      *    name:string,type:string,side:string,currency:string,balanceMinor:int,
      *    interestBps:?int,minimumDueMinor:?int,dueDay:?int,creditLimitMinor:?int,
      *    autopayChoice:string,bankAutopay:int,billRecurrence:string,billEvery:int,
-     *    institution:?string,notes:?string,starred:int,inBudget:int
+     *    institution:?string,holder:?string,notes:?string,starred:int,inBudget:int
      *  }
      */
     private function validate(array $input, int $starredFallback, ?array $existing = null): array
@@ -282,6 +282,11 @@ final class AccountService
             $errors['institution'] = 'Keep the institution to 120 characters.';
             $institution = null;
         }
+        $holder = $this->optionalText($input['holder'] ?? null, 120);
+        if ($holder === false) {
+            $errors['holder'] = 'Keep the holder to 120 characters.';
+            $holder = null;
+        }
         $notes = $this->optionalText($input['notes'] ?? null, 2000);
         if ($notes === false) {
             $errors['notes'] = 'Keep notes to 2000 characters.';
@@ -322,6 +327,7 @@ final class AccountService
             'billRecurrence' => $billRecurrence,
             'billEvery' => $billEvery,
             'institution' => is_string($institution) ? $institution : null,
+            'holder' => is_string($holder) ? $holder : null,
             'notes' => is_string($notes) ? $notes : null,
             'starred' => array_key_exists('starred', $input) ? (!empty($input['starred']) ? 1 : 0) : $starredFallback,
             'inBudget' => $inBudget,
@@ -485,6 +491,7 @@ final class AccountService
             'billRecurrence' => (string) ($row['bill_recurrence'] ?? 'monthly'),
             'billEvery' => max(1, (int) ($row['bill_every'] ?? 1)),
             'institution' => $row['institution'],
+            'holder' => $row['holder'],
             'notes' => $row['notes'],
             'starred' => (int) ($row['starred'] ?? 0) === 1,
             'inBudget' => (int) ($row['in_budget'] ?? 0) === 1,

@@ -14,6 +14,7 @@ use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
 use App\PayCycle\Paycheck;
 use App\PayCycle\Period;
+use App\Span\Span;
 use App\Support\Dates;
 use App\Trip\TripService;
 use PDO;
@@ -41,8 +42,9 @@ final class DashboardService
         }
 
         $base = $this->actor->baseCurrency();
-        $horizon = $this->horizonDays();
-        $windowEnd = Dates::parse($today)->modify('+' . ($horizon - 1) . ' days')->format('Y-m-d');
+        $span = $this->span($today);
+        $windowStart = $span['start'];
+        $windowEnd = $span['end'];
         $stmt = $this->pdo->prepare(
             'SELECT id, name, type, side, currency, balance_minor AS balanceMinor,
                     interest_bps AS interestBps
@@ -92,7 +94,7 @@ final class DashboardService
             if (is_int($paycheck)) {
                 $incomeMinor += $paycheck;
             }
-            foreach ($this->paydays($cycle, $today, $windowEnd) as $date) {
+            foreach ($this->paydays($cycle, $windowStart, $windowEnd) as $date) {
                 $preview = $this->paycheckOn($cycle, $date);
                 $timeline[] = [
                     'kind' => 'payday',
@@ -110,9 +112,9 @@ final class DashboardService
         $heading = PlannerHeading::label($listed, $today);
         $timeline = array_merge(
             $timeline,
-            $this->bills($today, $windowEnd),
-            $this->stays($listed, $today, $windowEnd),
-            $this->entryMarks($today, $windowEnd),
+            $this->bills($windowStart, $windowEnd),
+            $this->stays($listed, $windowStart, $windowEnd),
+            $this->entryMarks($windowStart, $windowEnd),
         );
         usort($timeline, static function (array $left, array $right): int {
             $date = strcmp((string) $left['on'], (string) $right['on']);
@@ -135,8 +137,8 @@ final class DashboardService
             'baseCurrency' => $base,
             'exponent' => $this->currencies->exponent($base),
             'today' => $today,
-            'horizonDays' => $horizon,
-            'windowStart' => $today,
+            'span' => $span,
+            'windowStart' => $windowStart,
             'windowEnd' => $windowEnd,
             'netWorthMinor' => $summary['netWorthMinor'],
             'assetsMinor' => $summary['assetsMinor'],
@@ -255,13 +257,20 @@ final class DashboardService
         ];
     }
 
-    private function horizonDays(): int
+    /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} */
+    private function span(string $today): array
     {
-        $stmt = $this->pdo->prepare('SELECT horizon_days FROM user WHERE id = ?');
+        $stmt = $this->pdo->prepare('SELECT span_start, span_length FROM user WHERE id = ?');
         $stmt->execute([$this->actor->id()]);
-        $days = (int) $stmt->fetchColumn();
+        $row = $stmt->fetch();
+        $start = is_array($row) ? (string) $row['span_start'] : '';
+        $length = is_array($row) ? (string) $row['span_length'] : '1 month';
+        if ($start === '' || !Span::valid($length)) {
+            $start = Span::defaultStart($today);
+            $length = '1 month';
+        }
 
-        return $days === 30 ? 30 : 60;
+        return Span::describe($start, $length, $today);
     }
 
     /**

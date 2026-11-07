@@ -1,11 +1,13 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { billDays } from '../lib/billDays';
   import { formatDate, formatMinor, todayISO } from '../lib/money';
   import { go, route } from '../lib/nav.svelte.ts';
+  import { session } from '../lib/session.svelte.ts';
   import type { Account, Bill } from '../lib/types';
 
   type SectionKey = 'active' | 'paused' | 'paid' | 'archived';
@@ -68,6 +70,7 @@
   const requested: Record<SectionKey, number> = { active: 1, paused: 1, paid: 1, archived: 1 };
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
   let epoch = 0;
+  let booting = $state(true);
 
   function query(section: SectionKey, count: number): string {
     const params = new URLSearchParams({ section, chunks: String(count) });
@@ -75,6 +78,11 @@
     if (filterAccount !== '') params.set('accountId', filterAccount);
     if (filterType !== '') params.set('type', filterType);
     if (filterAmount.trim() !== '') params.set('amount', filterAmount.trim());
+    if (session.user?.spanStart && session.user.spanEnd) {
+      params.set('start', session.user.spanStart);
+      params.set('end', session.user.spanEnd);
+      params.set('today', todayISO());
+    }
     return `/api/bills?${params.toString()}`;
   }
 
@@ -89,7 +97,11 @@
   }
 
   async function load(): Promise<void> {
-    await Promise.all(sectionOrder.map((section) => loadSection(section, chunks[section])));
+    try {
+      await Promise.all(sectionOrder.map((section) => loadSection(section, chunks[section])));
+    } finally {
+      booting = false;
+    }
   }
 
   function scheduleLoad(): void {
@@ -201,7 +213,10 @@
     <h1 class="text-3xl m-0">Bills</h1>
     <a class="btn primary" href="/bills/new" onclick={(event) => { event.preventDefault(); go('/bills/new'); }}>New bill</a>
   </div>
-  <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone.</p>
+  <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone. This list is the span.</p>
+  {#if booting}
+    <Spinner />
+  {:else}
   <div class="bill-tabs" role="tablist" aria-label="Bill status">
     {#each tabs as tab (tab.key)}
       <button
@@ -325,4 +340,5 @@
   {#each tabs as tab (tab.key)}
     {@render group(tab.title, tab.key, tab.unpay)}
   {/each}
+  {/if}
 </div>

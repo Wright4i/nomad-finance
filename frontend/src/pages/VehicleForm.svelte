@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
@@ -39,6 +40,7 @@
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
+  let ready = $state(false);
   let rangeHelp: HTMLDialogElement | undefined = $state();
   let fuelDialog: HTMLDialogElement | undefined = $state();
   let editBillId = $state<number | null>(null);
@@ -62,6 +64,7 @@
     starred = data.vehicle.starred;
     currentOdometer = String(data.vehicle.currentOdometerMiles);
     fuelPrice = data.vehicle.fuelPriceMinor == null ? '' : minorToInput(data.vehicle.fuelPriceMinor, 2);
+    ready = true;
   }
 
   onMount(() => {
@@ -74,6 +77,7 @@
       });
     load().catch((err: unknown) => {
       message = explain(err).message;
+      ready = true;
     });
   });
 
@@ -210,6 +214,7 @@
 <form class="grid gap-4 max-w-3xl" onsubmit={saveVehicle}>
   <h1 class="m-0 text-4xl">{id ? name || 'Edit vehicle' : 'New vehicle'}</h1>
   <Note bind:message />
+  <div class="form-body grid gap-4" aria-busy={id != null && !ready} inert={id != null && !ready}>
   <label class="field">
     <span>Name</span>
     <input name="name" bind:value={name} />
@@ -260,6 +265,12 @@
   <div class="flex flex-wrap gap-2">
     <button class="btn primary" type="submit" disabled={saving} aria-busy={saving}>{saving ? 'Saving…' : 'Save vehicle'}</button>
     <a class="btn" href="/vehicles" onclick={(event) => follow(event, '/vehicles')}>Back</a>
+  </div>
+  {#if id && !ready}
+    <div class="form-cover" aria-busy="true">
+      <Spinner />
+    </div>
+  {/if}
   </div>
 </form>
 

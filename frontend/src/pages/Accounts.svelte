@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import Note from '../components/Note.svelte';
   import { api } from '../lib/api';
   import { formatBps, formatMinor } from '../lib/money';
@@ -22,12 +23,45 @@
   onMount(() => {
     load().catch((err: unknown) => {
       message = err instanceof Error ? err.message : 'Could not load accounts.';
+      ready = true;
     });
   });
 
   function toggle(): void {
     includeArchived = !includeArchived;
     void load();
+  }
+
+  function chipsFor(account: Account): { key: string; label: string }[] {
+    const chips: { key: string; label: string }[] = [];
+    if ((account.type === 'credit' || account.type === 'fuel') && account.creditLimitMinor !== null) {
+      chips.push({
+        key: 'limit',
+        label: `Credit limit ${formatMinor(account.creditLimitMinor, account.currency, account.exponent)}`,
+      });
+    }
+    if (account.interestBps !== null) {
+      chips.push({ key: 'apr', label: `APR ${formatBps(account.interestBps)}%` });
+    }
+    if (account.side === 'liability' && account.minimumDueMinor !== null) {
+      chips.push({
+        key: 'minimum',
+        label: `Minimum ${formatMinor(account.minimumDueMinor, account.currency, account.exponent)}`,
+      });
+    }
+    if (account.bankAutopay && account.autopayChoice === 'minimum') {
+      chips.push({ key: 'autopay-min', label: 'Autopay min' });
+    } else if (account.bankAutopay && account.autopayChoice === 'balance') {
+      chips.push({ key: 'autopay-full', label: 'Autopay full' });
+    }
+    if (account.holder) {
+      chips.push({ key: 'holder', label: account.holder });
+    }
+    return chips;
+  }
+
+  function budgetLabel(account: Account): string {
+    return account.inBudget ? 'Included in available to assign' : 'Left out of available to assign';
   }
 
   async function star(account: Account): Promise<void> {
@@ -49,6 +83,7 @@
           billRecurrence: account.billRecurrence,
           billEvery: account.billEvery,
           institution: account.institution,
+          holder: account.holder,
           notes: account.notes,
           starred: !account.starred,
         },
@@ -67,12 +102,14 @@
   </div>
   <button class="btn w-fit" type="button" onclick={toggle}>{includeArchived ? 'Hide archived' : 'Show archived'}</button>
   <Note bind:message />
-  {#if ready && accounts.length === 0}
+  {#if !ready}
+    <Spinner />
+  {:else if accounts.length === 0}
     <p class="muted">No accounts yet. A balance is a number you type.</p>
-  {/if}
-  {#if accounts.length > 0}
-  <div class="bucket-board">
+  {:else}
+  <div class="bucket-board account-board">
     {#each accounts as account, index (account.id)}
+      {@const chips = chipsFor(account)}
       <div class="account-tile" style={`--stagger: ${index}`}>
         <a
           class="bucket-tile"
@@ -80,15 +117,42 @@
           href={`/accounts/${account.id}`}
           onclick={(event) => { event.preventDefault(); go(`/accounts/${account.id}`); }}
         >
-          <span class="flex items-center gap-1">
+          <span class="account-id">
             <Glyph name={account.type} mini />
-            <strong>{account.name}</strong>
+            <span class="account-id-text">
+              <strong>{account.name}</strong>
+              {#if account.institution}
+                <span class="account-institution">{account.institution}</span>
+              {/if}
+            </span>
+            {#if account.side === 'asset'}
+              <span class="account-eye" role="img" data-budget={account.inBudget ? 'in' : 'out'} title={budgetLabel(account)} aria-label={budgetLabel(account)}>
+                {#if account.inBudget}
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
+                  </svg>
+                {:else}
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
+                    <path d="M4 20 20 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  </svg>
+                {/if}
+              </span>
+            {/if}
           </span>
           <span class="muted text-sm">
             <span class="type-label">{account.type}</span>
-            {#if account.interestBps !== null} · {formatBps(account.interestBps)}%{/if}
             {#if account.archivedAt} · archived{/if}
           </span>
+          {#if chips.length > 0}
+            <span class="bill-detail-chips">
+              {#each chips as chip (chip.key)}
+                <span class="bill-detail-chip" data-chip={chip.key}>{chip.label}</span>
+              {/each}
+            </span>
+          {/if}
           <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
         </a>
         {#if !account.archivedAt && (account.starred || !hasStar)}
@@ -101,3 +165,80 @@
   </div>
   {/if}
 </div>
+
+<style>
+  a.bucket-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    height: 100%;
+  }
+
+  .account-id {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    min-width: 0;
+  }
+
+  .account-id-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .account-id-text strong {
+    overflow-wrap: anywhere;
+  }
+
+  .account-institution {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 500;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .account-eye {
+    flex: none;
+    width: 1.15rem;
+    height: 1.15rem;
+    margin-top: 0.12rem;
+    color: var(--text);
+  }
+
+  .account-eye svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .bill-detail-chips {
+    min-width: 0;
+  }
+
+  .bill-detail-chip {
+    overflow-wrap: anywhere;
+    color: var(--tone, var(--text));
+    background: color-mix(in oklab, var(--tone, var(--teal)) 24%, transparent);
+  }
+
+  .bill-detail-chip[data-chip='limit'] { --tone: var(--iris); }
+  .bill-detail-chip[data-chip='apr'] { --tone: var(--amber); }
+  .bill-detail-chip[data-chip='minimum'] { --tone: var(--rose); }
+  .bill-detail-chip[data-chip='autopay-full'] { --tone: var(--teal); }
+  .bill-detail-chip[data-chip='autopay-min'] { --tone: var(--lime); }
+  .bill-detail-chip[data-chip='holder'] { --tone: var(--plum); }
+
+  :global(html.light) .bill-detail-chip[data-chip],
+  :global(:root.light) .bill-detail-chip[data-chip] {
+    color: color-mix(in oklab, var(--tone) 62%, #14211c);
+  }
+
+  .money {
+    margin-top: auto;
+  }
+</style>

@@ -1,22 +1,25 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onDestroy, onMount } from 'svelte';
   import Globe from '../components/Globe.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { paintLeg } from '../lib/legPaint';
-  import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
-  import { PAST_MONTHS_DEFAULT, pastMonthChoices, stayDrawn } from '../lib/pastMonths';
+  import { exponentOf, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
+  import { spanCells, spanEnd } from '../lib/span';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { DriveLeg, Trip } from '../lib/types';
 
   let trips = $state<Trip[]>([]);
   let legs = $state<DriveLeg[]>([]);
-  let pastMonths = $state(PAST_MONTHS_DEFAULT);
   let index = $state(0);
   let message = $state('');
-  let month = $state(todayISO().slice(0, 7));
+  let loading = $state(true);
+  let spanStart = $derived(session.user?.spanStart ?? `${todayISO().slice(0, 7)}-01`);
+  let spanFinish = $derived(session.user?.spanEnd ?? spanEnd(spanStart, '1 month'));
+  let days = $derived(spanCells(spanStart, spanFinish));
   let baseCurrency = $derived(session.user?.baseCurrency ?? 'USD');
   let baseExponent = $derived(exponentOf(baseCurrency));
 
@@ -38,7 +41,7 @@
 
   let selected = $derived(trips[index] ?? null);
   let selectedLeg = $derived(selected ? legs.find((item) => item.toId === selected.id) : undefined);
-  let drawnTrips = $derived(trips.filter((trip) => stayDrawn(trip.departOn, todayISO(), pastMonths)));
+  let drawnTrips = $derived(trips.filter((trip) => trip.arriveOn <= spanFinish && trip.departOn >= spanStart));
   let drawnIds = $derived(new Set(drawnTrips.map((trip) => trip.id)));
   let drawnLegs = $derived(
     legs
@@ -109,26 +112,23 @@
     return covering.find((trip) => trip.arriveOn === date) ?? covering[0];
   }
 
-  function pickInitial(rows: Trip[]): { index: number; month: string } {
+  function pickInitial(rows: Trip[]): number {
     const today = todayISO();
-    const thisMonth = today.slice(0, 7);
     const covering = rows.filter((trip) => trip.arriveOn <= today && trip.departOn >= today);
     const arriving = covering.find((trip) => trip.arriveOn === today);
     const open = arriving ?? covering[0];
-    if (open) return { index: rows.indexOf(open), month: thisMonth };
+    if (open) return rows.indexOf(open);
     const upcoming = rows
       .filter((trip) => trip.departOn >= today)
       .sort((left, right) => left.arriveOn.localeCompare(right.arriveOn))[0];
-    if (!upcoming) return { index: 0, month: thisMonth };
-    return { index: rows.indexOf(upcoming), month: upcoming.arriveOn.slice(0, 7) };
+    if (!upcoming) return 0;
+    return rows.indexOf(upcoming);
   }
 
   async function load(): Promise<void> {
     const tripData = await api<{ trips: Trip[] }>(`/api/trips?today=${todayISO()}`);
     trips = tripData.trips;
-    const picked = pickInitial(trips);
-    index = picked.index;
-    month = picked.month;
+    index = pickInitial(trips);
     await Promise.all([fillPlaces(), loadRoute()]);
   }
 
@@ -159,9 +159,13 @@
   }
 
   onMount(() => {
-    load().catch((err: unknown) => {
-      message = explain(err).message;
-    });
+    load()
+      .catch((err: unknown) => {
+        message = explain(err).message;
+      })
+      .finally(() => {
+        loading = false;
+      });
   });
 
   function step(direction: number): void {
@@ -169,8 +173,6 @@
     const next = index + direction;
     if (next < 0 || next >= trips.length) return;
     index = next;
-    const arrival = trips[index]?.arriveOn.slice(0, 7);
-    if (arrival && arrival !== month) month = arrival;
   }
 
   function choose(id: number): void {
@@ -207,19 +209,8 @@
     }
   }
 
-  function shiftMonth(by: number): void {
-    const [year, monthNumber] = month.split('-').map(Number);
-    const date = new Date(year, monthNumber - 1 + by, 1);
-    month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  }
-
-  function daysInMonth(value: string): number {
-    const [year, monthNumber] = value.split('-').map(Number);
-    return new Date(year, monthNumber, 0).getDate();
-  }
-
   function overlaps(trip: Trip): boolean {
-    return trip.arriveOn.slice(0, 7) <= month && trip.departOn.slice(0, 7) >= month;
+    return trip.arriveOn <= spanFinish && trip.departOn >= spanStart;
   }
 
   let locateToken = $state(0);
@@ -413,11 +404,14 @@
         <p class="muted m-0">The road route is unavailable.</p>
       {/if}
     </article>
-  {:else}
+  {:else if !loading}
     <p class="m-0">No stays yet</p>
   {/if}
 
   <Note bind:message />
+  {#if loading}
+    <Spinner />
+  {:else}
 
   <div class="stay-toolbar">
     <div class="stay-toolbar-nav">
@@ -487,21 +481,6 @@
   </div>
 
   <div class="globe-stage">
-    <label class="globe-past">
-      <span>Past months</span>
-      <select
-        name="pastMonths"
-        aria-label="Past months"
-        value={pastMonths}
-        onchange={(event) => {
-          pastMonths = Number(event.currentTarget.value);
-        }}
-      >
-        {#each pastMonthChoices as months (months)}
-          <option value={months}>{months}</option>
-        {/each}
-      </select>
-    </label>
     <Globe
       pins={drawnTrips.map((trip) => {
         const tripIndex = trips.findIndex((item) => item.id === trip.id);
@@ -534,14 +513,13 @@
   {/if}
 
   <section class="grid gap-2">
-    <div class="flex items-center justify-between gap-3">
-      <button class="btn" type="button" onclick={() => shiftMonth(-1)}>Previous month</button>
-      <h2 class="m-0 text-2xl" data-month={month}>{formatMonth(month)}</h2>
-      <button class="btn" type="button" onclick={() => shiftMonth(1)}>Next month</button>
-    </div>
+    <h2 class="m-0 text-2xl" data-span={spanStart}>{formatChipDate(spanStart)} – {formatChipDate(spanFinish)}</h2>
     <div class="grid grid-cols-7 gap-1 text-center text-sm">
-      {#each Array.from({ length: daysInMonth(month) }, (_, day) => day + 1) as day (day)}
-        {@const date = `${month}-${String(day).padStart(2, '0')}`}
+      {#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as name (name)}
+        <p class="kicker m-0">{name}</p>
+      {/each}
+      {#each days as date, cell (date ?? `pad-${cell}`)}
+        {#if date}
         {@const fill = dayFill(date)}
         {@const painted = fill.arrive !== null || fill.depart !== null}
         <button
@@ -560,7 +538,10 @@
             const trip = stayOn(date);
             if (trip) choose(trip.id);
           }}
-        >{day}</button>
+        >{Number(date.slice(8))}</button>
+        {:else}
+          <span></span>
+        {/if}
       {/each}
     </div>
     {#each monthStays as trip (trip.id)}
@@ -606,4 +587,5 @@
       </div>
     {/each}
   </section>
+  {/if}
 </section>

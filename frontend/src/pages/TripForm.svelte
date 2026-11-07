@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
   import Globe from '../components/Globe.svelte';
@@ -33,6 +34,7 @@
   let region = $state<string | null>(null);
   let address = $state<string | null>(null);
   let located = $state(false);
+  let recordReady = $state(false);
   let accountId = $state('');
   let total = $state('');
   let amountDue = $state('');
@@ -67,6 +69,10 @@
       city = trip.city;
       region = trip.region;
       address = trip.address;
+      accountId = trip.accountId === null ? '' : String(trip.accountId);
+      total = minorToInput(trip.totalMinor, trip.exponent);
+      amountDue = minorToInput(trip.amountDueMinor, trip.exponent);
+      recordReady = true;
       if (!trip.address) {
         const locatedTrip = await api<{ trip: Trip }>(`/api/trips/${id}/locate`, {
           method: 'POST',
@@ -76,13 +82,11 @@
         region = locatedTrip.trip.region;
         address = locatedTrip.trip.address;
       }
-      accountId = trip.accountId === null ? '' : String(trip.accountId);
-      total = minorToInput(trip.totalMinor, trip.exponent);
-      amountDue = minorToInput(trip.amountDueMinor, trip.exponent);
     } catch (err) {
       message = explain(err).message;
     } finally {
       located = true;
+      recordReady = true;
     }
   });
 
@@ -215,6 +219,7 @@
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="m-0 text-4xl">{id ? 'Edit stay' : 'New stay'}</h1>
   <Note bind:message />
+  <div class="form-body grid gap-4" aria-busy={id != null && !recordReady} inert={id != null && !recordReady}>
   <label class="field">
     <span>Place</span>
     <input name="placeName" bind:value={placeName} />
@@ -322,5 +327,11 @@
     <button class="btn primary" type="submit" disabled={saving}>Save stay</button>
     <a class="btn" href="/trips" onclick={(event) => { event.preventDefault(); go('/trips'); }}>Cancel</a>
     {#if id}<button class="btn danger" type="button" onclick={remove}>Delete</button>{/if}
+  </div>
+  {#if id && !recordReady}
+    <div class="form-cover" aria-busy="true">
+      <Spinner />
+    </div>
+  {/if}
   </div>
 </form>

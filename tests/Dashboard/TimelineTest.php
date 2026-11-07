@@ -69,9 +69,9 @@ final class TimelineTest extends TestCase
     {
         $sheet = $this->dashboard->show('2026-11-03');
 
-        self::assertSame(60, $sheet['horizonDays']);
-        self::assertSame('2026-11-03', $sheet['windowStart']);
-        self::assertSame('2027-01-01', $sheet['windowEnd']);
+        self::assertArrayNotHasKey('horizonDays', $sheet);
+        self::assertSame('2026-11-01', $sheet['windowStart']);
+        self::assertSame('2026-11-30', $sheet['windowEnd']);
         self::assertSame(624200, $sheet['incomeMinor']);
         self::assertArrayNotHasKey('billsDue', $sheet);
 
@@ -93,11 +93,11 @@ final class TimelineTest extends TestCase
             self::assertNotSame('average', $row['kind']);
         }
         self::assertSame(19200, $byDay['2026-11-08']['paycheckMinor']);
-        self::assertArrayNotHasKey('2026-11-01', $byDay);
+        self::assertSame(19200, $byDay['2026-11-01']['paycheckMinor']);
 
         self::assertNotContains('2026-10-15', $this->dates($sheet['timeline'], 'bill'));
         self::assertContains('2026-11-10', $this->dates($sheet['timeline'], 'bill', 'Site week'));
-        self::assertContains('2026-12-05', $this->dates($sheet['timeline'], 'bill', 'Park pass'));
+        self::assertNotContains('2026-12-05', $this->dates($sheet['timeline'], 'bill', 'Park pass'));
         self::assertGreaterThan(1, count($this->dates($sheet['timeline'], 'bill', 'Camp store')));
 
         $trips = new TripService($this->pdo, new Actor($this->pdo), new CurrencyCatalog(), new Drive(false));
@@ -122,13 +122,12 @@ final class TimelineTest extends TestCase
         self::assertNotNull($stays['Usery Mountain']['fuel']['miles']);
         self::assertContains('2026-11-22', $this->dates($sheet['timeline'], 'balanceDue', 'Lost Dutchman'));
 
-        $this->auth->updateSettings(['horizonDays' => 30]);
+        $this->auth->updateSettings(['spanLength' => '2 weeks']);
         $shorter = $this->dashboard->show('2026-11-03');
-        self::assertSame(30, $shorter['horizonDays']);
-        self::assertSame('2026-12-02', $shorter['windowEnd']);
+        self::assertSame('2026-11-14', $shorter['windowEnd']);
         self::assertNotContains('2026-12-05', $this->dates($shorter['timeline'], 'bill', 'Park pass'));
         self::assertNotContains('2026-12-15', $this->dates($shorter['timeline'], 'payday', 'Photo gigs'));
-        self::assertContains('2026-12-01', $this->dates($shorter['timeline'], 'payday', 'Remote salary'));
+        self::assertNotContains('2026-12-01', $this->dates($shorter['timeline'], 'payday', 'Remote salary'));
         self::assertSame(624200, $shorter['incomeMinor']);
         $sources = 0;
         foreach ($shorter['envelopes']['sources']['income'] as $row) {
@@ -136,6 +135,9 @@ final class TimelineTest extends TestCase
         }
         foreach ($shorter['envelopes']['sources']['accounts'] as $row) {
             $sources += (int) $row['amountMinor'];
+        }
+        foreach ($shorter['envelopes']['sources']['floats'] ?? [] as $row) {
+            $sources -= (int) $row['uncoveredMinor'];
         }
         self::assertSame($sources, $shorter['envelopes']['poolMinor']);
         self::assertSame($shorter['envelopes']['poolMinor'] - $shorter['envelopes']['assignedMinor'], $shorter['envelopes']['availableMinor']);

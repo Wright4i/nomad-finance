@@ -54,7 +54,7 @@ final class BillService
      * @param array<string, mixed> $filter
      * @return array{bills:list<array<string, mixed>>,hasMore:bool}
      */
-    public function section(string $section, int $chunks, array $filter = []): array
+    public function section(string $section, int $chunks, array $filter = [], ?string $start = null, ?string $end = null, ?string $today = null): array
     {
         if (!in_array($section, ['active', 'paused', 'paid', 'archived'], true)) {
             throw new ApiException(422, 'Choose a bill section.');
@@ -76,16 +76,57 @@ final class BillService
                 'bill' => $bill,
             ];
         }
+        if ($this->isDay($start) && $this->isDay($end)) {
+            $rows = $this->rowsInSpan($rows, (string) $start, (string) $end, $section, $this->isDay($today) ? (string) $today : null);
+
+            return ['bills' => $this->billsFrom($rows), 'hasMore' => false];
+        }
         $minimum = $section === 'active' ? BillWindow::ACTIVE_MINIMUM : 2;
         $window = BillWindow::window($rows, $chunks, $section === 'paid', $minimum);
+        return ['bills' => $this->billsFrom($window['rows']), 'hasMore' => $window['hasMore']];
+    }
+
+    /**
+     * @param list<array{id:int,name:string,shownOn:string,amountMinor:int,bill:array<string,mixed>}> $rows
+     * @return list<array{id:int,name:string,shownOn:string,amountMinor:int,bill:array<string,mixed>}>
+     */
+    private function rowsInSpan(array $rows, string $start, string $end, string $section, ?string $today): array
+    {
+        $overdue = $section === 'active' && $today !== null && $start <= $today && $today <= $end;
+        $kept = [];
+        foreach ($rows as $row) {
+            $on = $row['shownOn'];
+            if ($on >= $start && $on <= $end) {
+                $kept[] = $row;
+                continue;
+            }
+            if ($overdue && $on < $today) {
+                $kept[] = $row;
+            }
+        }
+
+        return BillWindow::order($kept);
+    }
+
+    /**
+     * @param list<array{bill?:mixed}> $rows
+     * @return list<array<string, mixed>>
+     */
+    private function billsFrom(array $rows): array
+    {
         $bills = [];
-        foreach ($window['rows'] as $row) {
-            if (is_array($row['bill'])) {
+        foreach ($rows as $row) {
+            if (is_array($row['bill'] ?? null)) {
                 $bills[] = $row['bill'];
             }
         }
 
-        return ['bills' => $bills, 'hasMore' => $window['hasMore']];
+        return $bills;
+    }
+
+    private function isDay(?string $value): bool
+    {
+        return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1;
     }
 
     /** @return array<string, mixed> */
@@ -401,6 +442,34 @@ final class BillService
         }
         $marks = [];
         foreach (Occurrences::inMonth($visible, $month) as $mark) {
+            if ($mark['status'] === 'hidden' && !$mark['paid']) {
+                continue;
+            }
+            if ($mark['amountMinor'] < 1 && !$mark['paid']) {
+                continue;
+            }
+            $mark['baseAmountMinor'] = (int) $mark['amountMinor'];
+            $marks[] = $mark;
+        }
+
+        return $marks;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function calendarBetween(string $start, string $end): array
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) !== 1 || preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) !== 1 || $end < $start) {
+            throw new ApiException(422, 'Use a start and end date.');
+        }
+        $visible = [];
+        foreach ($this->listed(true) as $bill) {
+            if ($bill['status'] === 'paused' || $bill['status'] === 'archived') {
+                continue;
+            }
+            $visible[] = $bill;
+        }
+        $marks = [];
+        foreach (Occurrences::between($visible, $start, $end) as $mark) {
             if ($mark['status'] === 'hidden' && !$mark['paid']) {
                 continue;
             }

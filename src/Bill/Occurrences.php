@@ -37,6 +37,26 @@ final class Occurrences
     }
 
     /**
+     * @param list<array<string, mixed>> $bills
+     * @return list<array{id:int,name:string,type:string,on:string,amountMinor:int,currency:string,exponent:int,paid:bool,status:string}>
+     */
+    public static function between(array $bills, string $start, string $end): array
+    {
+        $marks = [];
+        foreach ($bills as $bill) {
+            foreach (self::marks($bill, $start, $end) as $mark) {
+                $marks[] = $mark;
+            }
+        }
+        usort($marks, static function (array $left, array $right): int {
+            return [$left['on'], $left['name'], $left['paid'] ? 1 : 0]
+                <=> [$right['on'], $right['name'], $right['paid'] ? 1 : 0];
+        });
+
+        return $marks;
+    }
+
+    /**
      * @param array<string, mixed> $bill
      * @return list<array{id:int,name:string,type:string,on:string,amountMinor:int,currency:string,exponent:int,paid:bool,status:string}>
      */

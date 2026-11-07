@@ -1,5 +1,6 @@
 <script lang="ts">
   import Note from '../components/Note.svelte';
+  import Spinner from '../components/Spinner.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { onMount } from 'svelte';
   import { api, explain } from '../lib/api';
@@ -9,6 +10,7 @@
 
   let vehicles = $state<Vehicle[]>([]);
   let message = $state('');
+  let ready = $state(false);
   let hasStar = $derived(vehicles.some((vehicle) => vehicle.starred));
 
   onMount(() => {
@@ -16,6 +18,8 @@
       vehicles = data.vehicles;
     }).catch((err: unknown) => {
       message = explain(err).message;
+    }).finally(() => {
+      ready = true;
     });
   });
 
@@ -56,10 +60,11 @@
     <a class="btn primary" href="/vehicles/new" onclick={(event) => follow(event, '/vehicles/new')}>New vehicle</a>
   </div>
   <Note bind:message />
-  {#if vehicles.length === 0}
+  {#if !ready}
+    <Spinner />
+  {:else if vehicles.length === 0}
     <p class="muted m-0">No vehicles yet.</p>
-  {/if}
-  {#if vehicles.length > 0}
+  {:else}
     <div class="vehicle-columns">
       {#each vehicles as vehicle (vehicle.id)}
         <article class="card stripe grid gap-3" style={`--tone: var(--tone-${vehicleTone(vehicle.kind)})`}>

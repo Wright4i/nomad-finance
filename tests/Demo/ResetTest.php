@@ -385,9 +385,10 @@ final class ResetTest extends TestCase
         self::assertTrue($byName['Client average']['averageOn']);
         self::assertSame(95000, $byName['Client average']['paycheckMinor']);
         self::assertSame('2026-12-15', $byName['Photo gigs']['nextPayday']);
-        $user = $this->pdo->query("SELECT horizon_days FROM user WHERE role = 'demo'")->fetch();
+        $user = $this->pdo->query("SELECT span_start, span_length FROM user WHERE role = 'demo'")->fetch();
         self::assertIsArray($user);
-        self::assertSame(60, (int) $user['horizon_days']);
+        self::assertSame('1 month', $user['span_length']);
+        self::assertSame(gmdate('Y-m-01'), $user['span_start']);
         self::assertSame(400, (int) $this->pdo->query(
             "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.name = 'Bunkhouse'"
         )->fetchColumn());

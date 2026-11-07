@@ -55,6 +55,7 @@ export type View =
   | { name: 'trip-form'; id: string | null }
   | { name: 'log' }
   | { name: 'calendar' }
+  | { name: 'transfers' }
   | { name: 'vehicles' }
   | { name: 'vehicle-form'; id: string | null };
 
@@ -83,6 +84,7 @@ export function match(path: string): View {
   if (trip) return { name: 'trip-form', id: trip[1] };
   if (path === '/log') return { name: 'log' };
   if (path === '/calendar') return { name: 'calendar' };
+  if (path === '/transfers') return { name: 'transfers' };
   if (path === '/vehicles' || path === '/settings/vehicles') return { name: 'vehicles' };
   if (path === '/vehicles/new' || path === '/settings/vehicles/new') return { name: 'vehicle-form', id: null };
   const vehicle = path.match(/^\/(?:settings\/)?vehicles\/(\d+)$/);

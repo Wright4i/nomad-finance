@@ -8,7 +8,7 @@ Available to assign is income still coming in this month, plus every asset marke
 
 An assignment is zero or more. See [rollover](07-rollover.md).
 
-You assign in the current month, and you can plan the next one. Current Month and Next Month move the assignment window. Previous month opens a closed month. Amounts you type for the next month are in place when it opens. Until then, available-to-assign still follows the current month. A month you have not planned opens empty, except the bills due that month. Each month keeps the amount assigned to each bucket after it closes. A closed month can be read and cannot be edited. A correction belongs in the current month.
+You assign to the span. The span that contains today is editable, and available-to-assign follows it. A span that ends before today is closed and read-only. A span that starts after today can be planned, and available does not follow it. Bills due in the span are auto-assigned. Fuel still includes trip fuel for stays in the span. Uncovered float on a paid-in-full credit or fuel card is subtracted from available, and the available list shows that card's balance, covered, and uncovered.
 
 Each group heading names Needs, Wants, or Savings and, beside that name, Auto-assigned, Envelope, and Target for the month on screen, then that group's goal in parentheses. Auto-assigned is the sum of the auto-assigned amounts. Envelope is the sum of the envelopes. Target is the sum of the targets. The parenthetical is Needs 50%, Wants 30%, or Savings 20% of income still coming in plus the assets marked Include in Budget, half up to the cent, written as (50% goal - $1,234.56). That parenthetical turns red when the group's target is over the goal. The planner gauges keep their share of goal assignments.
 
