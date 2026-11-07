@@ -361,11 +361,12 @@ final class TransferService
         ];
     }
 
-    /** @return list<array{id:int,name:string,categoryId:int,categoryName:string,amountMinor:int,dueOn:string}> */
+    /** @return list<array{id:int,name:string,categoryId:int,categoryName:string,group:string,amountMinor:int,dueOn:string}> */
     private function charges(int $cardId, string $today): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT b.id, b.name, b.amount_minor, b.next_due_date, b.category_id, c.name AS category_name
+            'SELECT b.id, b.name, b.amount_minor, b.next_due_date, b.category_id,
+                    c.name AS category_name, c.category_group
              FROM bills b
              LEFT JOIN categories c ON c.id = b.category_id
              WHERE b.account_id = ? AND b.status = \'active\' AND b.next_due_date < ?
@@ -383,6 +384,7 @@ final class TransferService
                 'name' => (string) $row['name'],
                 'categoryId' => (int) $row['category_id'],
                 'categoryName' => $row['category_name'] === null ? '' : (string) $row['category_name'],
+                'group' => $row['category_group'] === null ? '' : (string) $row['category_group'],
                 'amountMinor' => (int) $row['amount_minor'],
                 'dueOn' => (string) $row['next_due_date'],
             ];

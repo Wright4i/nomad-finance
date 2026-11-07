@@ -4164,21 +4164,270 @@ a.planner-stay {
   white-space: nowrap;
 }
 
-.transfer-move {
+.pay-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 1.05fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.transfer-move,
+.transfer-scene {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 1rem;
   align-items: center;
 }
 
+.transfer-scene {
+  grid-template-columns: minmax(0, 1fr) 6.75rem minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.transfer-pole,
+.transfer-stream {
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(8.5rem, 1fr) auto;
+  align-content: stretch;
+  gap: 0.45rem;
+}
+
 .transfer-end {
+  position: relative;
   display: grid;
   justify-items: center;
+  align-content: center;
   gap: 0.35rem;
+  height: 100%;
+  min-width: 0;
+  min-height: 8.5rem;
   padding: 1rem;
   border-radius: 1rem;
   background: color-mix(in oklab, var(--tone, var(--teal)) 22%, transparent);
   color: var(--tone, var(--text));
+  overflow: hidden;
+}
+
+.transfer-end:not(.with-water) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.transfer-end:not(.with-water) strong {
+  display: grid;
+  align-content: center;
+  min-height: 2.5rem;
+  text-align: center;
+}
+
+.transfer-end .account-institution {
+  display: block;
+  width: 100%;
+  min-height: 1.15rem;
+  text-align: center;
+}
+
+.transfer-end.with-water {
+  min-height: 12rem;
+  align-content: end;
+  justify-items: stretch;
+}
+
+.transfer-end.with-water > :not(.bucket-water) {
+  position: relative;
+  z-index: 1;
+}
+
+.transfer-stream {
+  justify-items: center;
+}
+
+.transfer-stream-body {
+  align-self: center;
+  display: grid;
+  grid-row: 1;
+  justify-items: center;
+  align-content: center;
+  gap: 0.28rem;
+  width: 100%;
+}
+
+.transfer-arrow-slot {
+  display: block;
+  width: 100%;
+}
+
+.transfer-arrow {
+  display: block;
+  width: 100%;
+  height: 2.85rem;
+  overflow: visible;
+}
+
+.transfer-after {
+  display: grid;
+  align-content: center;
+  min-height: 2.5rem;
+  margin: 0;
+  font-weight: 650;
+  text-align: center;
+}
+
+.transfer-stream .transfer-amount {
+  margin: 0;
+  min-height: 0;
+  white-space: nowrap;
+}
+
+.card-tank {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: 0.35rem;
+  min-height: 16rem;
+  overflow: hidden;
+  padding: 0.9rem;
+  border: 3px solid color-mix(in oklab, var(--coral) 70%, var(--line));
+  border-radius: 1.35rem 1.35rem 1rem 1rem;
+  background: var(--bg-raise);
+}
+
+.card-tank[data-fill='full'] {
+  border-color: #3cbf6e;
+}
+
+.card-tank .bucket-water,
+.transfer-end[data-fill='short'] .bucket-water,
+.transfer-end[data-fill='empty'] .bucket-water {
+  --tone: #e23b4a;
+}
+
+.card-tank[data-fill='full'] .bucket-water,
+.transfer-end[data-fill='full'] .bucket-water {
+  --tone: #3cbf6e;
+}
+
+.card-tank > :not(.bucket-water),
+.card-tank .tank-copy,
+.card-tank .money,
+.transfer-end.with-water .tank-copy,
+.transfer-end.with-water .money,
+button.pull-bucket .tank-copy,
+button.pull-bucket strong {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+  -webkit-text-stroke: 1px #000;
+  paint-order: stroke fill;
+}
+
+:root.light .card-tank > :not(.bucket-water),
+:root.light .card-tank .tank-copy,
+:root.light .card-tank .money,
+:root.light .transfer-end.with-water .tank-copy,
+:root.light .transfer-end.with-water .money,
+:root.light button.pull-bucket .tank-copy,
+:root.light button.pull-bucket strong {
+  color: #14211c;
+  -webkit-text-stroke: 1px #fff;
+}
+
+.tank-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.tank-figures {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.tank-figures .money {
+  font-size: 1.7rem;
+}
+
+.pull-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.25rem, 1fr));
+  gap: 0.75rem;
+}
+
+button.pull-bucket {
+  position: relative;
+  display: grid;
+  align-content: end;
+  gap: 0.12rem;
+  min-height: 8.75rem;
+  overflow: hidden;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--bg-raise);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), border-color 160ms ease;
+}
+
+button.pull-bucket[aria-pressed='true'] {
+  border-color: var(--tone, var(--teal));
+  box-shadow: inset 0 0 0 2px var(--tone, var(--teal));
+}
+
+button.pull-bucket:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--tone, var(--teal)) 55%, var(--line));
+}
+
+button.pull-bucket:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button.pull-bucket:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.pull-bucket > :not(.bucket-water) {
+  position: relative;
+  z-index: 1;
+}
+
+.accept-buckets {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (max-width: 720px) {
+  .pay-stage,
+  .transfer-scene {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-arrow-slot {
+    position: relative;
+    width: 2.75rem;
+    height: 6.4rem;
+  }
+
+  .transfer-arrow {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 6.4rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%) rotate(90deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.pull-bucket:active:not(:disabled) { transform: none; }
 }
 
 .transfer-end[data-type] {
@@ -4190,6 +4439,7 @@ a.planner-stay {
 .transfer-end[data-type='credit'] { --tone: var(--tone-credit); }
 .transfer-end[data-type='fuel'] { --tone: var(--tone-fuel); }
 .transfer-end[data-type='loan'] { --tone: var(--tone-loan); }
+.transfer-end[data-type='other'] { --tone: var(--tone-other); }
 
 .transfer-amount {
   font-family: var(--font-display);
