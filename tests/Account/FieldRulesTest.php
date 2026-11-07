@@ -75,6 +75,108 @@ final class FieldRulesTest extends TestCase
         self::assertSame(200000, $account['creditLimitMinor']);
     }
 
+    public function testStarringOneAccountClearsTheOther(): void
+    {
+        $first = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 100,
+            'starred' => true,
+        ]);
+        $second = $this->accounts->create([
+            'name' => 'Wallet',
+            'type' => 'cash',
+            'currency' => 'USD',
+            'balanceMinor' => 50,
+            'starred' => true,
+        ]);
+
+        self::assertTrue($second['starred']);
+        self::assertFalse($this->accounts->get($first['id'])['starred']);
+        self::assertSame($second['id'], $this->accounts->list(false)[0]['id']);
+    }
+
+    public function testTheListPutsTheStarFirstThenTypeThenName(): void
+    {
+        $this->accounts->create([
+            'name' => 'Wallet',
+            'type' => 'cash',
+            'currency' => 'USD',
+            'balanceMinor' => 50,
+        ]);
+        $this->accounts->create([
+            'name' => 'Camp jar',
+            'type' => 'cash',
+            'currency' => 'USD',
+            'balanceMinor' => 20,
+        ]);
+        $this->accounts->create([
+            'name' => 'Travel card',
+            'type' => 'credit',
+            'currency' => 'USD',
+            'balanceMinor' => 4000,
+        ]);
+        $everyday = $this->accounts->create([
+            'name' => 'Everyday',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 100,
+            'starred' => true,
+        ]);
+        $this->accounts->create([
+            'name' => 'Emergency',
+            'type' => 'savings',
+            'currency' => 'USD',
+            'balanceMinor' => 80,
+        ]);
+
+        self::assertSame(
+            ['Everyday', 'Camp jar', 'Wallet', 'Travel card', 'Emergency'],
+            array_column($this->accounts->list(false), 'name'),
+        );
+
+        $this->accounts->update($everyday['id'], [
+            'name' => 'Everyday',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 100,
+            'starred' => false,
+        ]);
+
+        self::assertSame(
+            ['Camp jar', 'Wallet', 'Everyday', 'Travel card', 'Emergency'],
+            array_column($this->accounts->list(false), 'name'),
+        );
+    }
+
+    public function testAnArchivedAccountCannotBeStarred(): void
+    {
+        $account = $this->accounts->create([
+            'name' => 'Old checking',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 100,
+            'starred' => true,
+        ]);
+        $archived = $this->accounts->archive($account['id']);
+        self::assertFalse($archived['starred']);
+
+        try {
+            $this->accounts->update($account['id'], [
+                'name' => 'Old checking',
+                'type' => 'checking',
+                'currency' => 'USD',
+                'balanceMinor' => 100,
+                'starred' => true,
+            ]);
+            self::fail('An archived account was starred.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertArrayHasKey('starred', $e->fields);
+        }
+    }
+
     public function testOtherRequiresASide(): void
     {
         try {

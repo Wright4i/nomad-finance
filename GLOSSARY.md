@@ -12,6 +12,10 @@ _Avoid_: Wallet, ledger account
 One of checking, savings, cash, credit, loan, fuel, or other. A fuel account is a liability, like a credit card.
 _Avoid_: Bucket, bill type
 
+**Starred account**:
+The one open account a new bill and a locked bill draw from. At most one account is starred. The other stars stay hidden until that one is cleared.
+_Avoid_: Favorite, default account
+
 **Tracking account**:
 An account counted in net worth and left out of envelope assignment. Its value is a number you type.
 _Avoid_: Off-budget, investment account
@@ -58,7 +62,11 @@ The price of a trip, in cents. Saving it does not change an account balance.
 _Avoid_: Bill
 
 **Amount due**:
-The part of the lodging still to pay, usually on arrival. It does not change an account balance. Greater than zero, with a balance-due date, it is one lodging bill on that date.
+The part of the lodging still to pay, usually on arrival. It does not change an account balance. Greater than zero, with a balance-due date, it is one lodging bill on that date. Changing the lodging total copies that total into the amount due.
+
+**Travel**:
+How you reach a stay: drive or fly. Fly is a dashed line and does not ask for a road route. Drive asks for the road route and stays a dashed line with no airplane when that route is missing.
+_Avoid_: transportation mode
 _Avoid_: Balance, total
 
 **Balance-due date**:
@@ -125,7 +133,7 @@ Retired. A posting is not split across buckets.
 _Avoid_: Line item
 
 **Logged fuel**:
-An unpaid one-time fuel bill named Fuel, filed on the locked Fuel bucket. It can record a vehicle, an odometer, and a price per gallon. It does not change an account balance.
+An unpaid one-time fuel bill named Fuel, filed on the locked Fuel bucket. It can record a vehicle, an odometer, and a price per gallon. It does not change an account balance or a bucket.
 _Avoid_: Fuel label, posting
 
 **Want log**:
@@ -141,7 +149,7 @@ An unpaid one-time savings bill, filed on that savings type's locked bucket. It 
 _Avoid_: Want log, posting
 
 **Vehicle**:
-A named odometer: a kind, a current odometer, and a minimum and maximum miles per gallon. At most one vehicle is starred. The fuel label uses that one.
+A named odometer: a kind, a current odometer, and a minimum and maximum miles per gallon. At most one vehicle is starred. The other stars stay hidden until that one is cleared. The fuel label uses that one.
 _Avoid_: Account, trip
 
 **Current odometer**:
@@ -168,7 +176,7 @@ _Avoid_: Stretch, fuel label
 One fill-up: its miles and its gallons.
 
 **Fuel label**:
-A cost on a stay from the driving miles since the previous stay, the starred vehicle's pooled in-range miles per gallon (or the midpoint of its range), and that vehicle's newest priced fill-up or its fallback fuel price. It assigns nothing and does not change a balance. The first stay has no cost. No starred vehicle means miles and no cost.
+A cost on a stay from the driving miles since the previous stay, the starred vehicle's pooled in-range miles per gallon (or the midpoint of its range), and that vehicle's newest priced fill-up or its fallback fuel price. The Fuel bucket for the arrival month counts that cost while the stay has not ended. It does not change a balance. The first stay has no cost. No starred vehicle means miles and no cost. A flight adds nothing.
 _Avoid_: Stretch, bill
 
 **Planned payment**:
@@ -200,11 +208,11 @@ Retired from the books.
 _Avoid_: Paycheck
 
 **Minimum due**:
-An optional amount on a credit, loan, or fuel account. Choosing minimum on that account keeps one monthly bill for this amount.
+An optional amount on a credit, loan, or fuel account. When bank autopay is on and the bill amount is the minimum, the account keeps one bill for this amount.
 _Avoid_: Planned payment, balance
 
 **Due day**:
-A day of the month, from 1 to 31, on a credit, loan, or fuel account. Required when that account keeps a bill for minimum or current balance.
+A day of the month, from 1 to 31, on a credit, loan, or fuel account. Required when bank autopay is on and the bill repeats monthly or yearly.
 _Avoid_: Next due date, balance-due date
 
 **Credit limit**:
@@ -212,7 +220,7 @@ An optional limit on a credit or fuel account.
 _Avoid_: Percent cap
 
 **Liability bill**:
-The one monthly bill a credit, loan, or fuel account keeps when autopay is minimum or the current balance. A card or loan bill is type debt on the locked Debt bucket. A fuel-account bill is type fuel on the locked Fuel bucket. None, a zero minimum, or a zero balance hides it. Mark paid does not change the account balance or the next amount.
+The one bill a credit, loan, or fuel account keeps when autopay is on at the bank. It repeats daily, monthly, or yearly, every 1 to 11 of that unit. The amount is the minimum due or the current balance. A card or loan bill is type debt on the locked Debt bucket. A fuel-account bill is type fuel on the locked Fuel bucket. Autopay off, a zero minimum, or a zero balance hides it, including from the calendar. Saving a balance or minimum due above zero shows it again. Mark paid does not change the account balance or the next amount.
 _Avoid_: Logged fuel, autopay
 
 **Utilization**:
@@ -291,13 +299,17 @@ The account a bill is paid from. Required.
 Optional record of what the biller charged, in the biller's currency. It is reference only.
 
 **Recurrence**:
-How a bill repeats: once, weekly, monthly, or yearly.
+How a bill repeats: once, daily, weekly, monthly, or yearly.
+
+**Every**:
+How many days, weeks, months, or years pass between due dates of a repeating bill. Once is always one. A bi-yearly bill is yearly, every two.
+_Avoid_: interval, frequency
 
 **Anchor date**:
 The due date used to keep a monthly or yearly day-of-month. Short months clamp, then the original day returns.
 
 **Next due date**:
-The upcoming calendar date for a bill. Marking paid moves it forward one interval.
+The upcoming calendar date for a bill. Marking paid moves it forward by its every.
 
 **Autopay**:
 A flag that a bill is paid automatically by the bank. The app does not mark it paid by itself.
@@ -306,7 +318,7 @@ A flag that a bill is paid automatically by the bank. The app does not mark it p
 Hiding an account, a goal bucket, or a paused bill without deleting it. Unarchive puts it back: a bill returns to paused. A locked bucket cannot be archived. A liability bill cannot be archived. An archived bill does not fill a bucket and does not block account archive. Archiving an account is refused while an active or paused bill draws from it. Archiving a goal bucket sends its bills back to the locked bucket for each bill's type.
 
 **Mark paid**:
-Recording a bill's occurrence on the due date it had. A repeating bill then rolls its next due date forward. That paid occurrence stays on the original due date and counts in the paid total. The next occurrence is unpaid. The account balance stays as you last typed it. A one-off bill becomes paid and leaves the due list. Unpay removes that latest paid occurrence. A repeating bill moves back one interval and stays on the books. A one-off returns to the due list. An occurrence offers Mark paid or Unpay, not both.
+Recording a bill's occurrence on the due date it had. A repeating bill then rolls its next due date forward by its every. That paid occurrence stays on the original due date and counts in the paid total. The next occurrence is unpaid. The account balance stays as you last typed it. A one-off bill becomes paid and leaves the due list. Unpay removes that latest paid occurrence. A repeating bill moves back by its every and stays on the books. A one-off returns to the due list. An occurrence offers Mark paid or Unpay, not both.
 
 **Setup**:
 The first-run screen that creates the owner: name, password, a starred vehicle, and that vehicle's fallback fuel price. An empty fuel price means miles only.

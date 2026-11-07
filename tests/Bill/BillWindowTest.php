@@ -60,6 +60,42 @@ final class BillWindowTest extends TestCase
         self::assertFalse($rest['hasMore']);
     }
 
+    public function testActiveKeepsLoadingUntilTenBillsOrTheWeekIsFull(): void
+    {
+        $rows = [];
+        foreach ([1 => '2026-10-01', 2 => '2026-10-02', 3 => '2026-10-03'] as $id => $date) {
+            $rows[] = ['id' => $id, 'name' => 'Week ' . $id, 'shownOn' => $date, 'amountMinor' => 100];
+        }
+        for ($id = 4; $id <= 12; $id++) {
+            $rows[] = [
+                'id' => $id,
+                'name' => 'Later ' . $id,
+                'shownOn' => sprintf('2026-10-%02d', $id + 5),
+                'amountMinor' => 100,
+            ];
+        }
+
+        $first = BillWindow::window($rows, 1, false, BillWindow::ACTIVE_MINIMUM);
+        self::assertCount(10, $first['rows']);
+        self::assertSame('2026-10-01', $first['rows'][0]['shownOn']);
+        self::assertSame('2026-10-15', $first['rows'][9]['shownOn']);
+        self::assertTrue($first['hasMore']);
+
+        $next = BillWindow::window($rows, 2, false, BillWindow::ACTIVE_MINIMUM);
+        self::assertCount(12, $next['rows']);
+        self::assertFalse($next['hasMore']);
+
+        $packed = [];
+        for ($id = 1; $id <= 12; $id++) {
+            $packed[] = ['id' => $id, 'name' => 'Same day ' . $id, 'shownOn' => '2026-10-01', 'amountMinor' => 100];
+        }
+        $packed[] = ['id' => 13, 'name' => 'Outside the week', 'shownOn' => '2026-10-20', 'amountMinor' => 100];
+        $week = BillWindow::window($packed, 1, false, BillWindow::ACTIVE_MINIMUM);
+        self::assertCount(12, $week['rows']);
+        self::assertNotContains('Outside the week', array_column($week['rows'], 'name'));
+        self::assertTrue($week['hasMore']);
+    }
+
     public function testALoneOpeningDateStillShowsTheNextBill(): void
     {
         $rows = [

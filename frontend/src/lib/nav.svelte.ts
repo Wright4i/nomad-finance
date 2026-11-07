@@ -1,17 +1,36 @@
-export const route = $state({ path: '/' });
+export const route = $state({ path: '/', search: '' });
+
+function readLocation(): void {
+  route.path = window.location.pathname;
+  route.search = window.location.search;
+}
 
 export function startRouter(): void {
-  route.path = window.location.pathname;
-  window.addEventListener('popstate', () => {
-    route.path = window.location.pathname;
-  });
+  readLocation();
+  window.addEventListener('popstate', readLocation);
 }
 
 export function go(to: string): void {
-  if (route.path !== to) {
-    history.pushState({}, '', to);
+  const url = new URL(to, window.location.origin);
+  const path = url.pathname;
+  const search = url.search;
+  if (route.path !== path || route.search !== search) {
+    history.pushState({}, '', `${path}${search}${url.hash}`);
   }
-  route.path = to;
+  route.path = path;
+  route.search = search;
+}
+
+/** Leave a bill form for the list. Back keeps the filter that was on the list. */
+export function returnToBills(): void {
+  const before = window.location.pathname + window.location.search;
+  const stop = (): void => window.clearTimeout(timer);
+  window.addEventListener('popstate', stop, { once: true });
+  const timer = window.setTimeout(() => {
+    window.removeEventListener('popstate', stop);
+    if (window.location.pathname + window.location.search === before) go('/bills');
+  }, 300);
+  history.back();
 }
 
 export function follow(event: MouseEvent, href: string): void {

@@ -9,6 +9,7 @@ use Facebook\WebDriver\Chrome\ChromeDriverService;
 use Facebook\WebDriver\Chrome\ChromeOptions;
 use Facebook\WebDriver\Remote\DesiredCapabilities;
 use Facebook\WebDriver\WebDriverBy;
+use Facebook\WebDriver\WebDriverKeys;
 use Facebook\WebDriver\WebDriverSelect;
 use Facebook\WebDriver\WebDriverDimension;
 use Facebook\WebDriver\WebDriverExpectedCondition;
@@ -430,12 +431,7 @@ final class EnvelopesTest extends TestCase
             return $value === '0.00';
         });
         self::waitForText('when this month opens');
-        self::driver()->executeScript(<<<'JS'
-            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
-            const input = tile.querySelector('input');
-            input.value = '700.00';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        JS);
+        self::typeAssigned('Road cushion', '700.00');
         $started = microtime(true);
         self::wait()->until(function () use ($started): bool {
             if (microtime(true) - $started < 1.3) {
@@ -488,12 +484,8 @@ final class EnvelopesTest extends TestCase
 
             return $value === '500.00';
         });
-        self::driver()->executeScript(<<<'JS'
-            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
-            const input = tile.querySelector('input');
-            input.value = '600.00';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        JS);
+        $assignedBefore = self::assignedCents();
+        self::typeAssigned('Road cushion', '600.00');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -503,12 +495,13 @@ final class EnvelopesTest extends TestCase
 
             return $value === '600.00';
         });
-        self::waitForText('$6,313.19');
+        $raised = self::money($assignedBefore + 10000);
+        self::waitForText($raised);
         $left = self::money(self::cents($availableText) - 10000);
         self::waitForText($left);
         self::clickLink('Planner');
         self::waitForText($left);
-        self::waitForText('$6,313.19 assigned of');
+        self::waitForText($raised . ' assigned of');
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Site week', 'active');
         self::clickLinkContaining('Site week');
@@ -518,6 +511,56 @@ final class EnvelopesTest extends TestCase
                 const select = document.querySelector('select[name="categoryId"]');
                 const label = select && select.selectedOptions[0] ? select.selectedOptions[0].textContent.trim() : '';
                 return name && name.value === 'Site week' && label === 'Road cushion';
+            JS);
+
+            return $ready === true;
+        });
+        self::clickLink('Budget');
+        self::waitForText('Recalculate');
+        self::click('Recalculate');
+        self::waitForText('Recalculate this month?');
+        self::waitForText('Amounts you typed are replaced.');
+        self::click('Cancel');
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                const dialog = document.getElementById('recalculate-title');
+                return input && input.value === '600.00' && dialog instanceof HTMLElement && !dialog.closest('dialog')?.open
+                    ? input.value
+                    : '';
+            JS);
+
+            return $value === '600.00';
+        });
+        self::click('Recalculate');
+        self::click('Recalculate this month');
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                return input ? input.value : '';
+            JS);
+
+            return $value === '385.00';
+        });
+        self::click('Previous month');
+        self::wait()->until(function (): bool {
+            $disabled = self::driver()->executeScript(
+                'const button = document.querySelector(\'[data-action="recalculate"]\'); return button instanceof HTMLButtonElement && button.disabled;',
+            );
+
+            return $disabled === true;
+        });
+        self::click('Next month');
+        self::clickLink('Lodging');
+        self::wait()->until(function (): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const type = document.querySelector('select[name="billType"]');
+                return location.pathname === '/bills'
+                    && new URLSearchParams(location.search).get('type') === 'lodging'
+                    && type instanceof HTMLSelectElement
+                    && type.value === 'lodging';
             JS);
 
             return $ready === true;
@@ -831,6 +874,28 @@ final class EnvelopesTest extends TestCase
         });
         $element = self::driver()->findElement(WebDriverBy::name($name));
         (new WebDriverSelect($element))->selectByVisibleText($label);
+    }
+
+    private static function assignedCents(): int
+    {
+        $line = self::driver()->executeScript(<<<'JS'
+            const line = document.querySelector('[data-action="available"]')?.parentElement?.innerText || '';
+            const match = line.match(/(\$[\d,]+\.\d{2})\s+assigned of/);
+            return match ? match[1] : '';
+        JS);
+        self::assertIsString($line);
+        self::assertNotSame('', $line);
+
+        return self::cents($line);
+    }
+
+    private static function typeAssigned(string $name, string $value): void
+    {
+        $by = WebDriverBy::cssSelector('input[aria-label="Assigned ' . $name . '"]');
+        $input = self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by));
+        self::driver()->executeScript('arguments[0].focus(); arguments[0].select();', [$input]);
+        $input->sendKeys($value);
+        $input->sendKeys(WebDriverKeys::ENTER);
     }
 
     private static function click(string $label): void

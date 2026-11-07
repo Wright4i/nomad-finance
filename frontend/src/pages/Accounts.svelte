@@ -11,6 +11,7 @@
   let includeArchived = $state(false);
   let message = $state('');
   let ready = $state(false);
+  let hasStar = $derived(accounts.some((account) => account.starred));
 
   async function load(): Promise<void> {
     const data = await api<{ accounts: Account[] }>(`/api/accounts?includeArchived=${includeArchived ? '1' : '0'}`);
@@ -28,6 +29,35 @@
     includeArchived = !includeArchived;
     void load();
   }
+
+  async function star(account: Account): Promise<void> {
+    message = '';
+    try {
+      await api(`/api/accounts/${account.id}`, {
+        method: 'PATCH',
+        body: {
+          name: account.name,
+          type: account.type,
+          side: account.side,
+          balanceMinor: account.balanceMinor,
+          interestBps: account.interestBps,
+          minimumDueMinor: account.minimumDueMinor,
+          dueDay: account.dueDay,
+          creditLimitMinor: account.creditLimitMinor,
+          autopayChoice: account.autopayChoice,
+          bankAutopay: account.bankAutopay,
+          billRecurrence: account.billRecurrence,
+          billEvery: account.billEvery,
+          institution: account.institution,
+          notes: account.notes,
+          starred: !account.starred,
+        },
+      });
+      await load();
+    } catch (err) {
+      message = err instanceof Error ? err.message : 'Could not star that account.';
+    }
+  }
 </script>
 
 <div class="grid gap-4">
@@ -43,23 +73,30 @@
   {#if accounts.length > 0}
   <div class="bucket-board">
     {#each accounts as account, index (account.id)}
-      <a
-        class="bucket-tile"
-        style={`--tone: var(--tone-${account.type}); --stagger: ${index}`}
-        href={`/accounts/${account.id}`}
-        onclick={(event) => { event.preventDefault(); go(`/accounts/${account.id}`); }}
-      >
-        <span class="flex items-center gap-1">
-          <Glyph name={account.type} mini />
-          <strong>{account.name}</strong>
-        </span>
-        <span class="muted text-sm">
-          <span class="type-label">{account.type}</span>
-          {#if account.interestBps !== null} · {formatBps(account.interestBps)}%{/if}
-          {#if account.archivedAt} · archived{/if}
-        </span>
-        <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
-      </a>
+      <div class="account-tile" style={`--stagger: ${index}`}>
+        <a
+          class="bucket-tile"
+          style={`--tone: var(--tone-${account.type})`}
+          href={`/accounts/${account.id}`}
+          onclick={(event) => { event.preventDefault(); go(`/accounts/${account.id}`); }}
+        >
+          <span class="flex items-center gap-1">
+            <Glyph name={account.type} mini />
+            <strong>{account.name}</strong>
+          </span>
+          <span class="muted text-sm">
+            <span class="type-label">{account.type}</span>
+            {#if account.interestBps !== null} · {formatBps(account.interestBps)}%{/if}
+            {#if account.archivedAt} · archived{/if}
+          </span>
+          <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
+        </a>
+        {#if !account.archivedAt && (account.starred || !hasStar)}
+          <button class="btn account-star" type="button" aria-pressed={account.starred} aria-label={account.starred ? `${account.name} is the default` : `Star ${account.name}`} onclick={() => star(account)}>
+            {account.starred ? '★' : '☆'}
+          </button>
+        {/if}
+      </div>
     {/each}
   </div>
   {/if}

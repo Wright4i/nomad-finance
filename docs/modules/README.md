@@ -8,7 +8,7 @@ Build the module marked `next`. Leave `later` and `blocked` modules unbuilt unti
 | now | [Accounts](01-accounts.md) | Typed balances |
 | now | [Bills](02-bills.md) | Reminders that do not change a balance |
 | dropped | [Exchange rates](03-rates.md) | Dropped; books are dollars |
-| now | [Buckets](04-categories.md) | Buckets grouped as Needs, Wants, or Savings |
+| now | [Buckets](04-buckets.md) | Buckets grouped as Needs, Wants, or Savings |
 | now | [Pay cycles](05-pay-cycles.md) | One pay cycle per payor |
 | now | [Budget](06-envelopes.md) | Assign cash in the current month |
 | now | [Rollover](07-rollover.md) | Unspent stays; an assignment is zero or more |

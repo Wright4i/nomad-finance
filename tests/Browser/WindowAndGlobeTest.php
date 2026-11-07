@@ -237,7 +237,7 @@ final class WindowAndGlobeTest extends TestCase
         });
 
         self::addStay('Open sea', '0', '-160', '02 / 01 / 2027', '02 / 02 / 2027');
-        self::addStay('Far sea', '0', '-140', '02 / 02 / 2027', '02 / 03 / 2027');
+        self::addStay('Far sea', '0', '-140', '02 / 02 / 2027', '02 / 03 / 2027', 'fly');
         $flight = self::wait(40)->until(function (): array|false {
             $value = self::driver()->executeScript(<<<'JS'
                 const globe = document.querySelector('.globe');
@@ -313,6 +313,15 @@ final class WindowAndGlobeTest extends TestCase
         });
         self::driver()->findElement(WebDriverBy::cssSelector('.stay-card button[aria-label="Edit stay"]'))->click();
         self::waitForText('Save stay');
+        self::wait(40)->until(function (): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const place = document.querySelector('input[name="placeName"]');
+                const due = document.querySelector('input[name="amountDue"]');
+                return Boolean(place && place.value === 'Due camp' && due && due.value !== '');
+            JS);
+
+            return $ready === true;
+        });
         self::type('amountDue', '25');
         self::replace('balanceDueOn', '10 / 18 / 2026');
         self::click('Save stay');
@@ -440,7 +449,7 @@ final class WindowAndGlobeTest extends TestCase
         });
     }
 
-    private static function addStay(string $place, string $latitude, string $longitude, string $arrive, string $depart): void
+    private static function addStay(string $place, string $latitude, string $longitude, string $arrive, string $depart, string $travel = 'drive'): void
     {
         self::clickLink('Add a stay');
         self::waitForText('Save stay');
@@ -449,6 +458,9 @@ final class WindowAndGlobeTest extends TestCase
         self::type('longitude', $longitude);
         self::replace('arriveOn', $arrive);
         self::replace('departOn', $depart);
+        if ($travel === 'fly') {
+            self::driver()->findElement(WebDriverBy::xpath('//button[normalize-space()="fly"]'))->click();
+        }
         self::replace('balanceDueOn', $arrive);
         self::click('Save stay');
         self::wait()->until(function () use ($place): bool {

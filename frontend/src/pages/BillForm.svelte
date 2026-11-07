@@ -6,7 +6,7 @@
   import { api, explain } from '../lib/api';
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
   import { minorToInput, parseMajor, todayISO } from '../lib/money';
-  import { go } from '../lib/nav.svelte.ts';
+  import { go, returnToBills } from '../lib/nav.svelte.ts';
   import type { Account, Bill, Category } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
@@ -30,6 +30,11 @@
     return Object.keys(groups).filter((key) => groups[key] === group);
   }
   const recurrences = ['once', 'weekly', 'monthly', 'yearly'];
+  const everyWord: Record<string, [string, string]> = {
+    weekly: ['week', 'weeks'],
+    monthly: ['month', 'months'],
+    yearly: ['year', 'years'],
+  };
 
   let accounts = $state<Account[]>([]);
   let categories = $state<Category[]>([]);
@@ -40,8 +45,9 @@
   let accountId = $state('');
   let amount = $state('');
   let recurrence = $state('monthly');
+  let every = $state(1);
   let nextDueDate = $state(todayISO());
-  let autopay = $state(false);
+  let autopay = $state(id == null);
   let notes = $state('');
   let status = $state<Bill['status']>('active');
   let locked = $state(false);
@@ -61,6 +67,11 @@
     });
   });
   let named = $derived(type === 'other' || type === 'misc');
+  let everyLabel = $derived.by(() => {
+    const pair = everyWord[recurrence] ?? ['time', 'times'];
+    const word = every === 1 ? pair[0] : pair[1];
+    return `Every ${every} ${word}`;
+  });
 
   $effect(() => {
     if (!ready || locked) return;
@@ -79,7 +90,8 @@
       categories = categoryData.categories;
       accounts = data.accounts.filter((item) => item.archivedAt === null || (id && String(item.id) === accountId));
       if (!id && accounts.length > 0) {
-        const open = data.accounts.find((item) => item.archivedAt === null);
+        const starred = accounts.find((item) => item.starred);
+        const open = starred ?? accounts[0];
         if (open) accountId = String(open.id);
       }
       if (!id) return;
@@ -91,6 +103,7 @@
       accountId = String(bill.accountId);
       amount = minorToInput(bill.amountMinor, 2);
       recurrence = bill.recurrence;
+      every = bill.every >= 1 && bill.every <= 11 ? bill.every : 1;
       nextDueDate = bill.nextDueDate;
       autopay = bill.autopay;
       categoryId = bill.categoryId === null ? '' : String(bill.categoryId);
@@ -111,8 +124,12 @@
           dueDay: null,
           creditLimitMinor: null,
           autopayChoice: 'none',
+          bankAutopay: false,
+          billRecurrence: 'monthly',
+          billEvery: 1,
           institution: null,
           notes: null,
+          starred: false,
           archivedAt: 'archived',
         }];
       }
@@ -147,6 +164,7 @@
         accountId: Number(accountId),
         amountMinor,
         recurrence,
+        every: recurrence === 'once' ? 1 : every,
         nextDueDate,
         autopay,
         notes,
@@ -154,7 +172,7 @@
       };
       const path = id ? `/api/bills/${id}` : '/api/bills';
       await api(path, { method: id ? 'PATCH' : 'POST', body });
-      go('/bills');
+      returnToBills();
     } catch (err) {
       const problem = explain(err);
       message = problem.message;
@@ -170,7 +188,7 @@
     message = '';
     try {
       await api(`/api/bills/${id}/${action}`, { method: 'POST', body });
-      go('/bills');
+      returnToBills();
     } catch (err) {
       message = explain(err).message;
       saving = false;
@@ -257,13 +275,44 @@
       {#each recurrences as option}<option value={option}>{option}</option>{/each}
     </select>
   </label>
+  {#if recurrence !== 'once'}
+    <label class="span-slider" style={`--span: ${every}; --span-steps: 10`}>
+      <span class="span-slider-readout">
+        <strong>{every}</strong>
+        <span>{everyLabel}</span>
+      </span>
+      <input
+        type="range"
+        name="every"
+        min="1"
+        max="11"
+        step="1"
+        value={every}
+        aria-label={everyLabel}
+        aria-valuemin={1}
+        aria-valuemax={11}
+        aria-valuenow={every}
+        aria-valuetext={everyLabel}
+        oninput={(event) => {
+          const raw = Number(event.currentTarget.value);
+          if (raw >= 1 && raw <= 11) every = raw;
+        }}
+      />
+      <span class="span-slider-ticks" aria-hidden="true">
+        {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as stop (stop)}
+          <span class:on={every === stop}>{stop}</span>
+        {/each}
+      </span>
+    </label>
+    {#if fields.every}<em>{fields.every}</em>{/if}
+  {/if}
   <label class="field">
     <span>Next due date</span>
     <DateField name="nextDueDate" bind:value={nextDueDate} />
     {#if fields.nextDueDate}<em>{fields.nextDueDate}</em>{/if}
   </label>
   <label class="flex items-center gap-2">
-    <input class="w-auto" type="checkbox" bind:checked={autopay} />
+    <input class="w-auto" type="checkbox" name="autopay" bind:checked={autopay} />
     <span>Autopay is on at the bank</span>
   </label>
   <label class="field">
@@ -275,7 +324,7 @@
     {#if !locked && (status === 'active' || status === 'paused' || status === 'paid' || !id)}
       <button class="btn primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save bill'}</button>
     {/if}
-    <a class="btn" href="/bills" onclick={(event) => { event.preventDefault(); go('/bills'); }}>Back</a>
+    <a class="btn" href="/bills" onclick={(event) => { event.preventDefault(); returnToBills(); }}>Back</a>
     {#if id && status === 'active'}
       <button class="btn" type="button" disabled={saving} onclick={() => act('paid', { paidOn: todayISO() })}>Mark paid</button>
       {#if !locked}

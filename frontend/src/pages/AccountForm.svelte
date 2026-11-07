@@ -22,6 +22,11 @@
   let institution = $state('');
   let notes = $state('');
   let autopayChoice = $state<'none' | 'minimum' | 'balance'>('none');
+  let bankAutopay = $state(false);
+  let billRecurrence = $state<'daily' | 'monthly' | 'yearly'>('monthly');
+  let billEvery = $state(1);
+  let starred = $state(false);
+  let othersStarred = $state(false);
   let archivedAt = $state<string | null>(null);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
@@ -30,11 +35,24 @@
   let showLiability = $derived(type === 'credit' || type === 'loan' || type === 'fuel');
   let showLimit = $derived(type === 'credit' || type === 'fuel');
   let showSide = $derived(type === 'other');
+  let showStar = $derived(starred || !othersStarred);
+  const everyWord: Record<string, [string, string]> = {
+    daily: ['day', 'days'],
+    monthly: ['month', 'months'],
+    yearly: ['year', 'years'],
+  };
+  let everyLabel = $derived.by(() => {
+    const pair = everyWord[billRecurrence] ?? ['time', 'times'];
+    const word = billEvery === 1 ? pair[0] : pair[1];
+    return `Every ${billEvery} ${word}`;
+  });
   const exponent = 2;
 
   onMount(async () => {
-    if (!id) return;
     try {
+      const listed = await api<{ accounts: Account[] }>('/api/accounts');
+      othersStarred = listed.accounts.some((account) => account.starred && String(account.id) !== (id ?? ''));
+      if (!id) return;
       const data = await api<{ account: Account }>(`/api/accounts/${id}`);
       const account = data.account;
       name = account.name;
@@ -49,6 +67,10 @@
       notes = account.notes ?? '';
       archivedAt = account.archivedAt;
       autopayChoice = account.autopayChoice ?? 'none';
+      bankAutopay = account.bankAutopay;
+      billRecurrence = account.billRecurrence === 'daily' || account.billRecurrence === 'yearly' ? account.billRecurrence : 'monthly';
+      billEvery = account.billEvery >= 1 && account.billEvery <= 11 ? account.billEvery : 1;
+      starred = account.starred;
     } catch (err) {
       message = explain(err).message;
     }
@@ -88,11 +110,15 @@
       balanceMinor,
       interestBps,
       minimumDueMinor,
-      dueDay: showLiability && dueDay !== '' ? Number(dueDay) : null,
+      dueDay: showLiability && bankAutopay && billRecurrence !== 'daily' && dueDay !== '' ? Number(dueDay) : null,
       creditLimitMinor,
-      autopayChoice: showLiability ? autopayChoice : 'none',
+      autopayChoice: showLiability ? (bankAutopay && autopayChoice === 'none' ? 'balance' : autopayChoice) : 'none',
+      bankAutopay: showLiability && bankAutopay,
+      billRecurrence: showLiability ? billRecurrence : 'monthly',
+      billEvery: showLiability ? billEvery : 1,
       institution,
       notes,
+      starred,
     };
     saving = true;
     try {
@@ -141,6 +167,9 @@
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit account' : 'New account'}</h1>
   <p class="muted m-0">The balance is the amount on deposit, or the amount owed on a card or loan. It stays until you type a new one.</p>
+  {#if showStar}
+    <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} disabled={archivedAt !== null} onclick={() => (starred = !starred)}>{starred ? '★ Default account' : '☆ Make this the default'}</button>
+  {/if}
   <Note bind:message />
   <label class="field">
     <span>Name</span>
@@ -183,6 +212,53 @@
     {#if fields.interestBps}<em>{fields.interestBps}</em>{/if}
   </label>
   {#if showLiability}
+    <label class="flex items-center gap-2">
+      <input class="w-auto" type="checkbox" name="bankAutopay" bind:checked={bankAutopay} onchange={(event) => { if (event.currentTarget.checked && autopayChoice === 'none') autopayChoice = 'minimum'; }} />
+      <span>Autopay is on at the bank</span>
+    </label>
+    {#if bankAutopay}
+      <label class="field">
+        <span>Recurrence</span>
+        <select name="billRecurrence" bind:value={billRecurrence}>
+          <option value="daily">daily</option>
+          <option value="monthly">monthly</option>
+          <option value="yearly">yearly</option>
+        </select>
+      </label>
+      <label class="span-slider" style={`--span: ${billEvery}; --span-steps: 10`}>
+        <span class="span-slider-readout">
+          <strong>{billEvery}</strong>
+          <span>{everyLabel}</span>
+        </span>
+        <input
+          type="range"
+          name="billEvery"
+          min="1"
+          max="11"
+          step="1"
+          value={billEvery}
+          aria-label={everyLabel}
+          oninput={(event) => {
+            const raw = Number(event.currentTarget.value);
+            if (raw >= 1 && raw <= 11) billEvery = raw;
+          }}
+        />
+        <span class="span-slider-ticks" aria-hidden="true">
+          {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as stop (stop)}
+            <span class:on={billEvery === stop}>{stop}</span>
+          {/each}
+        </span>
+      </label>
+      {#if fields.billEvery}<em>{fields.billEvery}</em>{/if}
+      <label class="field">
+        <span>Bill amount</span>
+        <select name="autopayChoice" bind:value={autopayChoice}>
+          <option value="minimum">Minimum</option>
+          <option value="balance">Current balance</option>
+        </select>
+        {#if fields.autopayChoice}<em>{fields.autopayChoice}</em>{/if}
+      </label>
+    {/if}
     <label class="field">
       <span>Minimum due</span>
       <span class="money-input">
@@ -191,22 +267,13 @@
       </span>
       {#if fields.minimumDueMinor}<em>{fields.minimumDueMinor}</em>{/if}
     </label>
-    <label class="field">
-      <span>Due day</span>
-      <input name="dueDay" inputmode="numeric" placeholder="1–31" bind:value={dueDay} />
-      {#if fields.dueDay}<em>{fields.dueDay}</em>{/if}
-    </label>
-  {/if}
-  {#if showLiability}
-    <label class="field">
-      <span>Autopay</span>
-      <select name="autopayChoice" bind:value={autopayChoice}>
-        <option value="none">None</option>
-        <option value="minimum">Minimum</option>
-        <option value="balance">Current balance</option>
-      </select>
-      {#if fields.autopayChoice}<em>{fields.autopayChoice}</em>{/if}
-    </label>
+    {#if bankAutopay && billRecurrence !== 'daily'}
+      <label class="field">
+        <span>Due day</span>
+        <input name="dueDay" inputmode="numeric" placeholder="1–31" bind:value={dueDay} />
+        {#if fields.dueDay}<em>{fields.dueDay}</em>{/if}
+      </label>
+    {/if}
   {/if}
   {#if showLimit}
     <label class="field">

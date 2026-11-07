@@ -67,9 +67,9 @@ final class Drive
     }
 
     /**
-     * @param list<array{id:int,latitude:string,longitude:string}> $stops
-     *     Arrival order.
-     * @return list<array{fromId:int,toId:int,miles:int,driving:bool,coordinates:list<array{0:float,1:float}>}>
+     * @param list<array{id:int,latitude:string,longitude:string,travel?:string}> $stops
+     *     Arrival order. The destination's travel chooses the leg.
+     * @return list<array{fromId:int,toId:int,miles:int,driving:bool,travel:string,coordinates:list<array{0:float,1:float}>}>
      */
     public function legs(array $stops): array
     {
@@ -77,6 +77,18 @@ final class Drive
         for ($i = 1, $count = count($stops); $i < $count; $i++) {
             $from = $stops[$i - 1];
             $to = $stops[$i];
+            $travel = ($to['travel'] ?? 'drive') === 'fly' ? 'fly' : 'drive';
+            if ($travel === 'fly') {
+                $legs[] = [
+                    'fromId' => $from['id'],
+                    'toId' => $to['id'],
+                    'miles' => 0,
+                    'driving' => false,
+                    'travel' => 'fly',
+                    'coordinates' => [],
+                ];
+                continue;
+            }
             $driven = $this->road($from, $to);
             if ($driven !== null) {
                 $legs[] = [
@@ -84,6 +96,7 @@ final class Drive
                     'toId' => $to['id'],
                     'miles' => self::miles((int) round($driven['meters'])),
                     'driving' => true,
+                    'travel' => 'drive',
                     'coordinates' => $driven['coordinates'],
                 ];
                 continue;
@@ -94,6 +107,7 @@ final class Drive
                     'toId' => $to['id'],
                     'miles' => 0,
                     'driving' => false,
+                    'travel' => 'drive',
                     'coordinates' => [],
                 ];
                 continue;
@@ -109,6 +123,7 @@ final class Drive
                 'toId' => $to['id'],
                 'miles' => self::miles($meters),
                 'driving' => false,
+                'travel' => 'drive',
                 'coordinates' => [],
             ];
         }

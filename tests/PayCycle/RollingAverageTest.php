@@ -14,6 +14,7 @@ use App\Money\CurrencyCatalog;
 use App\PayCycle\PayCycleService;
 use App\PayCycle\RollingAverage;
 use App\Target\TargetService;
+use App\Trip\Drive;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -54,6 +55,7 @@ final class RollingAverageTest extends TestCase
             $catalog,
             new TargetService($this->pdo, $actor),
             $this->cycles,
+            new Drive(false),
         );
     }
 

@@ -14,7 +14,7 @@ use PDO;
 
 final class BillService
 {
-    private const RECURRENCE = ['once', 'weekly', 'monthly', 'yearly'];
+    private const RECURRENCE = ['once', 'daily', 'weekly', 'monthly', 'yearly'];
 
     private BillFill $fill;
 
@@ -47,18 +47,23 @@ final class BillService
 
     /**
      * One status section, oldest dates first, a few days at a time.
+     * Active shows at least ten bills when they exist, and never less than seven days.
      * Paid opens on the recent dates and older chunks follow. Other sections open early and later chunks follow.
      * The full list stays on list().
      *
+     * @param array<string, mixed> $filter
      * @return array{bills:list<array<string, mixed>>,hasMore:bool}
      */
-    public function section(string $section, int $chunks): array
+    public function section(string $section, int $chunks, array $filter = []): array
     {
         if (!in_array($section, ['active', 'paused', 'paid', 'archived'], true)) {
             throw new ApiException(422, 'Choose a bill section.');
         }
         $rows = [];
         foreach ($this->list() as $bill) {
+            if (!BillListFilter::matches($bill, $filter)) {
+                continue;
+            }
             $shown = BillWindow::shownOn($bill, $section);
             if ($shown === null) {
                 continue;
@@ -71,7 +76,8 @@ final class BillService
                 'bill' => $bill,
             ];
         }
-        $window = BillWindow::window($rows, $chunks, $section === 'paid');
+        $minimum = $section === 'active' ? BillWindow::ACTIVE_MINIMUM : 2;
+        $window = BillWindow::window($rows, $chunks, $section === 'paid', $minimum);
         $bills = [];
         foreach ($window['rows'] as $row) {
             if (is_array($row['bill'])) {
@@ -109,18 +115,19 @@ final class BillService
         $this->pdo->prepare(
             'INSERT INTO bills (
                 name, type, other_label, account_id, category_id, amount_minor, currency,
-                recurrence, anchor_date, next_due_date, autopay, notes, status, created_at, updated_at,
+                recurrence, every_count, anchor_date, next_due_date, autopay, notes, status, created_at, updated_at,
                 vehicle_id, odometer_miles, price_per_gallon_minor
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?, ?, ?, ?, ?)'
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?, ?, ?, ?, ?)'
         )->execute([
             $data['name'], $data['type'], $data['otherLabel'], $data['accountId'], $data['categoryId'], $data['amountMinor'],
-            $data['currency'], $data['recurrence'],
+            $data['currency'], $data['recurrence'], $data['every'],
             $data['nextDueDate'], $data['nextDueDate'], $data['autopay'], $data['notes'], $now, $now,
             $data['vehicleId'], $data['odometerMiles'], $data['pricePerGallonMinor'],
         ]);
+        $id = (int) $this->pdo->lastInsertId();
         $this->fill->apply($this->today($input));
 
-        return $this->get((int) $this->pdo->lastInsertId());
+        return $this->get($id);
     }
 
     /** @param array<string, mixed> $input */
@@ -154,6 +161,7 @@ final class BillService
             || $data['categoryId'] !== (int) $existing['category_id']
             || $data['amountMinor'] !== (int) $existing['amount_minor']
             || $data['recurrence'] !== (string) $existing['recurrence']
+            || $data['every'] !== (int) ($existing['every_count'] ?? 1)
             || $data['nextDueDate'] !== (string) $existing['next_due_date']
             || $anchor !== (string) $existing['anchor_date'];
         $now = gmdate('c');
@@ -161,13 +169,13 @@ final class BillService
         $this->pdo->prepare(
             'UPDATE bills SET
                 name = ?, type = ?, other_label = ?, account_id = ?, category_id = ?, amount_minor = ?, currency = ?,
-                recurrence = ?, anchor_date = ?, next_due_date = ?, last_paid_on = ?,
+                recurrence = ?, every_count = ?, anchor_date = ?, next_due_date = ?, last_paid_on = ?,
                 autopay = ?, notes = ?, updated_at = ?,
                 vehicle_id = ?, odometer_miles = ?, price_per_gallon_minor = ?
              WHERE id = ?'
         )->execute([
             $data['name'], $data['type'], $data['otherLabel'], $data['accountId'], $data['categoryId'], $data['amountMinor'],
-            $data['currency'], $data['recurrence'],
+            $data['currency'], $data['recurrence'], $data['every'],
             $anchor, $data['nextDueDate'], $paidOn, $data['autopay'], $data['notes'], $now,
             $data['vehicleId'], $data['odometerMiles'], $data['pricePerGallonMinor'], $id,
         ]);
@@ -313,6 +321,7 @@ final class BillService
                 (string) $existing['recurrence'],
                 (string) $existing['anchor_date'],
                 $due,
+                max(1, (int) ($existing['every_count'] ?? 1)),
             );
             $this->pdo->prepare(
                 'UPDATE bills SET last_paid_on = ?, next_due_date = ?, updated_at = ? WHERE id = ?'
@@ -340,6 +349,7 @@ final class BillService
                 (string) $existing['recurrence'],
                 (string) $existing['anchor_date'],
                 (string) $existing['next_due_date'],
+                max(1, (int) ($existing['every_count'] ?? 1)),
             );
             $this->pdo->prepare(
                 'UPDATE bills SET last_paid_on = NULL, next_due_date = ?, updated_at = ? WHERE id = ?'
@@ -394,6 +404,9 @@ final class BillService
             if ($mark['status'] === 'hidden' && !$mark['paid']) {
                 continue;
             }
+            if ($mark['amountMinor'] < 1 && !$mark['paid']) {
+                continue;
+            }
             $mark['baseAmountMinor'] = (int) $mark['amountMinor'];
             $marks[] = $mark;
         }
@@ -439,7 +452,7 @@ final class BillService
      * @param ?array<string, mixed> $existing
      * @return array{
      *   name:string,type:string,otherLabel:?string,accountId:int,categoryId:int,amountMinor:int,
-     *   currency:string,recurrence:string,nextDueDate:string,autopay:int,notes:?string,
+     *   currency:string,recurrence:string,every:int,nextDueDate:string,autopay:int,notes:?string,
      *   vehicleId:?int,odometerMiles:?int,pricePerGallonMinor:?int
      * }
      */
@@ -493,6 +506,15 @@ final class BillService
         if (!in_array($recurrence, self::RECURRENCE, true)) {
             $errors['recurrence'] = 'Choose how often it is due.';
         }
+        $every = 1;
+        if ($recurrence !== 'once') {
+            $parsed = $this->asInt($input['every'] ?? 1);
+            if ($parsed === null || $parsed < 1 || $parsed > 11) {
+                $errors['every'] = 'Choose from 1 to 11.';
+            } else {
+                $every = $parsed;
+            }
+        }
 
         $nextDue = is_string($input['nextDueDate'] ?? null) ? $input['nextDueDate'] : '';
         try {
@@ -528,6 +550,7 @@ final class BillService
             'amountMinor' => (int) $amount,
             'currency' => 'USD',
             'recurrence' => $recurrence,
+            'every' => $every,
             'nextDueDate' => $nextDue,
             'autopay' => !empty($input['autopay']) ? 1 : 0,
             'notes' => $noteText,
@@ -713,6 +736,7 @@ final class BillService
             'odometerMiles' => ($row['odometer_miles'] ?? null) === null ? null : (int) $row['odometer_miles'],
             'pricePerGallonMinor' => ($row['price_per_gallon_minor'] ?? null) === null ? null : (int) $row['price_per_gallon_minor'],
             'recurrence' => $row['recurrence'],
+            'every' => max(1, (int) ($row['every_count'] ?? 1)),
             'anchorDate' => $row['anchor_date'],
             'nextDueDate' => $row['next_due_date'],
             'lastPaidOn' => $row['last_paid_on'],
@@ -745,9 +769,9 @@ final class BillService
     }
 
     /**
-     * A fuel, need, want, or saving log is an unpaid one-time bill. It does not move a balance.
-     * Mark paid comes later. An unpaid fuel log still advances the odometer.
-     * A need log does not accept Fuel.
+     * A fuel, need, want, or saving log is an unpaid one-time bill. It does not move a balance
+     * and it does not write a bucket. Recalculate counts the bill. An unpaid fuel log still
+     * advances the odometer. A need log does not accept Fuel.
      *
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -900,7 +924,6 @@ final class BillService
             }
             throw $e;
         }
-        $this->fill->apply($today);
 
         return $this->get($id);
     }
@@ -953,10 +976,8 @@ final class BillService
         )->execute([
             $name, $type, $other, $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
         ]);
-        $id = (int) $this->pdo->lastInsertId();
-        $this->fill->apply($today);
 
-        return $this->get($id);
+        return $this->get((int) $this->pdo->lastInsertId());
     }
 
     /** @param array<string, string> $errors */

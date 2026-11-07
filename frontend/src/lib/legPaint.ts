@@ -12,15 +12,17 @@ export type LegPaint = {
 };
 
 /**
- * A road leg stays a solid line labeled in miles.
- * A leg with no road route is a dashed arc, with no miles and an airplane at the middle.
+ * A drive with a road route stays a solid line labeled in miles.
+ * A drive with no road route is a dashed arc, with no miles and no airplane.
+ * A flight is that same dashed arc, with an airplane at the middle, and no miles.
  */
 export function paintLeg(
-  leg: { driving: boolean; miles: number; coordinates: LngLat[] },
+  leg: { driving: boolean; miles: number; coordinates: LngLat[]; travel?: string },
   from: LngLat | null,
   to: LngLat | null,
 ): LegPaint {
-  if (leg.driving && leg.coordinates.length >= 2) {
+  const flight = leg.travel === 'fly';
+  if (!flight && leg.driving && leg.coordinates.length >= 2) {
     return { dashed: false, miles: leg.miles, airplane: false, coordinates: leg.coordinates, segments: [] };
   }
   const start = from ?? leg.coordinates[0] ?? null;
@@ -29,5 +31,5 @@ export function paintLeg(
     return { dashed: true, miles: null, airplane: false, coordinates: [], segments: [] };
   }
   const coordinates = arc([start, end]);
-  return { dashed: true, miles: null, airplane: true, coordinates, segments: splitDateLine(coordinates) };
+  return { dashed: true, miles: null, airplane: flight, coordinates, segments: splitDateLine(coordinates) };
 }

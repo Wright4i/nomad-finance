@@ -5,23 +5,84 @@
   import { api, explain } from '../lib/api';
   import { billDays } from '../lib/billDays';
   import { formatDate, formatMinor, todayISO } from '../lib/money';
-  import { go } from '../lib/nav.svelte.ts';
-  import type { Bill } from '../lib/types';
+  import { go, route } from '../lib/nav.svelte.ts';
+  import type { Account, Bill } from '../lib/types';
 
   type SectionKey = 'active' | 'paused' | 'paid' | 'archived';
   const sectionOrder: SectionKey[] = ['active', 'paused', 'paid', 'archived'];
+  const tabs: { key: SectionKey; title: string; tone: string; unpay: boolean }[] = [
+    { key: 'active', title: 'Active', tone: 'active', unpay: false },
+    { key: 'paused', title: 'Paused', tone: 'paused', unpay: false },
+    { key: 'paid', title: 'Paid', tone: 'paid', unpay: true },
+    { key: 'archived', title: 'Archived', tone: 'archived', unpay: false },
+  ];
+  const billTypes = [
+    'lodging', 'rent', 'electricity', 'water', 'fuel', 'propane', 'groceries', 'internet', 'cellular',
+    'vehicle', 'maintenance', 'insurance', 'roadside', 'healthcare', 'mailbox', 'laundry', 'mortgage',
+    'storage', 'other', 'restaurants', 'entertainment', 'subscriptions', 'shopping', 'travel',
+    'memberships', 'software', 'pets', 'misc', 'debt', 'emergency', 'repairs', 'investments', 'liquidities',
+  ];
 
+  let shown = $state<SectionKey>(readFilters(route.path === '/bills' ? route.search : '').section);
   let loaded = $state<Record<SectionKey, Bill[]>>({ active: [], paused: [], paid: [], archived: [] });
   let hasMore = $state<Record<SectionKey, boolean>>({ active: false, paused: false, paid: false, archived: false });
   let chunks = $state<Record<SectionKey, number>>({ active: 1, paused: 1, paid: 1, archived: 1 });
   let message = $state('');
+  let accounts = $state<Account[]>([]);
+  let open = $state<Record<number, boolean>>({});
+  const opened = readFilters(route.path === '/bills' ? route.search : '');
+  let filterName = $state(opened.name);
+  let filterAccount = $state(opened.account);
+  let filterType = $state(opened.type);
+  let filterAmount = $state(opened.amount);
+  let appliedSearch = '\u0000';
+
+  function readFilters(search: string): { name: string; account: string; type: string; amount: string; section: SectionKey } {
+    const params = new URLSearchParams(search);
+    const type = params.get('type') ?? '';
+    const tab = params.get('tab');
+    const section: SectionKey = tab === 'paused' || tab === 'paid' || tab === 'archived' ? tab : 'active';
+    return {
+      name: params.get('name') ?? '',
+      account: params.get('account') ?? '',
+      type: billTypes.includes(type) ? type : '',
+      amount: params.get('amount') ?? '',
+      section,
+    };
+  }
+
+  function rememberFilters(): void {
+    const params = new URLSearchParams();
+    if (filterName !== '') params.set('name', filterName);
+    if (filterAccount !== '') params.set('account', filterAccount);
+    if (filterType !== '') params.set('type', filterType);
+    if (filterAmount !== '') params.set('amount', filterAmount);
+    if (shown !== 'active') params.set('tab', shown);
+    const next = params.size > 0 ? `?${params.toString()}` : '';
+    if (route.path === '/bills' && route.search === next) return;
+    history.replaceState({}, '', `/bills${next}`);
+    route.path = '/bills';
+    route.search = next;
+  }
   const growing: Record<SectionKey, boolean> = { active: false, paused: false, paid: false, archived: false };
   const requested: Record<SectionKey, number> = { active: 1, paused: 1, paid: 1, archived: 1 };
+  let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  let epoch = 0;
+
+  function query(section: SectionKey, count: number): string {
+    const params = new URLSearchParams({ section, chunks: String(count) });
+    if (filterName.trim() !== '') params.set('name', filterName.trim());
+    if (filterAccount !== '') params.set('accountId', filterAccount);
+    if (filterType !== '') params.set('type', filterType);
+    if (filterAmount.trim() !== '') params.set('amount', filterAmount.trim());
+    return `/api/bills?${params.toString()}`;
+  }
 
   async function loadSection(section: SectionKey, count: number): Promise<void> {
+    const generation = epoch;
     requested[section] = Math.max(requested[section], count);
-    const data = await api<{ bills: Bill[]; hasMore: boolean }>(`/api/bills?section=${section}&chunks=${count}`);
-    if (count < requested[section]) return;
+    const data = await api<{ bills: Bill[]; hasMore: boolean }>(query(section, count));
+    if (generation !== epoch || count < requested[section]) return;
     loaded = { ...loaded, [section]: data.bills };
     hasMore = { ...hasMore, [section]: data.hasMore };
     chunks = { ...chunks, [section]: count };
@@ -30,6 +91,35 @@
   async function load(): Promise<void> {
     await Promise.all(sectionOrder.map((section) => loadSection(section, chunks[section])));
   }
+
+  function scheduleLoad(): void {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => {
+      epoch += 1;
+      chunks = { active: 1, paused: 1, paid: 1, archived: 1 };
+      requested.active = 1;
+      requested.paused = 1;
+      requested.paid = 1;
+      requested.archived = 1;
+      load().catch((err: unknown) => {
+        message = err instanceof Error ? err.message : 'Could not load bills.';
+      });
+    }, 180);
+  }
+
+  $effect(() => {
+    if (route.path !== '/bills') return;
+    const search = route.search;
+    if (search === appliedSearch) return;
+    appliedSearch = search;
+    const next = readFilters(search);
+    if (filterName !== next.name) filterName = next.name;
+    if (filterAccount !== next.account) filterAccount = next.account;
+    if (filterType !== next.type) filterType = next.type;
+    if (filterAmount !== next.amount) filterAmount = next.amount;
+    if (shown !== next.section) shown = next.section;
+    scheduleLoad();
+  });
 
   /**
    * A short section is already at its end, so a downward wheel loads the next days.
@@ -54,9 +144,13 @@
   }
 
   onMount(() => {
-    load().catch((err: unknown) => {
-      message = err instanceof Error ? err.message : 'Could not load bills.';
-    });
+    api<{ accounts: Account[] }>('/api/accounts?includeArchived=1')
+      .then((data) => {
+        accounts = data.accounts;
+      })
+      .catch(() => {
+        accounts = [];
+      });
   });
 
   async function act(id: number, action: string, body: unknown = {}): Promise<void> {
@@ -67,6 +161,27 @@
     } catch (err) {
       message = explain(err).message;
     }
+  }
+
+  function toggle(id: number): void {
+    open = { ...open, [id]: !open[id] };
+  }
+
+  function kind(bill: Bill): string {
+    if ((bill.type === 'other' || bill.type === 'misc') && bill.otherLabel) return bill.otherLabel;
+    return bill.type;
+  }
+
+  function recurrenceLabel(bill: Bill): string {
+    if (bill.recurrence === 'once' || bill.every <= 1) return bill.recurrence;
+    const unit = bill.recurrence === 'daily'
+      ? 'days'
+      : bill.recurrence === 'weekly'
+        ? 'weeks'
+        : bill.recurrence === 'monthly'
+          ? 'months'
+          : 'years';
+    return `every ${bill.every} ${unit}`;
   }
 
   type Row = Bill & { shownOn: string };
@@ -81,20 +196,60 @@
 
 </script>
 
-<div class="grid gap-5">
+<div class="bills-page">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <h1 class="text-3xl m-0">Bills</h1>
     <a class="btn primary" href="/bills/new" onclick={(event) => { event.preventDefault(); go('/bills/new'); }}>New bill</a>
   </div>
   <p class="muted m-0">A bill is a reminder. Marking it paid rolls the date and leaves the account balance alone.</p>
+  <div class="bill-tabs" role="tablist" aria-label="Bill status">
+    {#each tabs as tab (tab.key)}
+      <button
+        class="bill-tab"
+        type="button"
+        role="tab"
+        data-section={tab.key}
+        aria-selected={shown === tab.key}
+        style={`--tone: var(--tone-${tab.tone})`}
+        onclick={() => {
+          shown = tab.key;
+          rememberFilters();
+        }}
+      >{tab.title}</button>
+    {/each}
+  </div>
+  <form class="bill-filter" role="search" aria-label="Filter bills" onsubmit={(event) => event.preventDefault()}>
+    <label class="field">
+      <span>Name</span>
+      <input name="billName" bind:value={filterName} oninput={rememberFilters} />
+    </label>
+    <label class="field">
+      <span>Draw from</span>
+      <select name="billAccount" bind:value={filterAccount} onchange={rememberFilters}>
+        <option value="">All accounts</option>
+        {#each accounts as account (account.id)}
+          <option value={String(account.id)}>{account.name}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="field">
+      <span>Type</span>
+      <select name="billType" bind:value={filterType} onchange={rememberFilters}>
+        <option value="">All types</option>
+        {#each billTypes as type (type)}
+          <option value={type}>{type}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="field">
+      <span>Amount</span>
+      <input name="billAmount" inputmode="decimal" bind:value={filterAmount} oninput={rememberFilters} />
+    </label>
+  </form>
   <Note bind:message />
 
-  {#snippet group(title: string, key: SectionKey, tone: string, unpay: boolean)}
-    <section class="bill-section grid gap-3" data-section={key}>
-      <h2 class="group-title text-2xl" style={`--tone: var(--tone-${tone})`}>
-        <Glyph name={tone} />
-        {title}
-      </h2>
+  {#snippet group(title: string, key: SectionKey, unpay: boolean)}
+    <section class="bill-section grid gap-3" data-section={key} data-label={title} hidden={shown !== key}>
       <div
         class="bill-scroll"
         onscroll={(event) => {
@@ -111,37 +266,52 @@
           <hr class="bill-date-rule" />
           <div class="bill-columns">
             {#each day.bills as bill (`${bill.id}-${bill.shownOn}`)}
-              <article class="card stripe grid gap-3" style={`--tone: var(--tone-${bill.type})`}>
-                <a class="flex justify-between gap-3 no-underline items-center" href={`/bills/${bill.id}`} onclick={(event) => { event.preventDefault(); go(`/bills/${bill.id}`); }}>
-                  <span class="flex items-center gap-3 min-w-0">
+              <article class="card stripe bill-card grid gap-0" data-open={open[bill.id] ? 'true' : 'false'} style={`--tone: var(--tone-${bill.type})`}>
+                <div class="bill-slim">
+                  <a class="bill-slim-main" href={`/bills/${bill.id}`} onclick={(event) => { event.preventDefault(); go(`/bills/${bill.id}`); }}>
                     <Glyph name={bill.type} />
-                    <span class="min-w-0">
+                    <span class="bill-slim-text">
                       <strong>{bill.name}</strong>
                       {#if bill.locked}<Glyph name="lock" mini />{/if}
-                      <span class="block muted text-sm">
-                        <span class="type-label">{(bill.type === 'other' || bill.type === 'misc') && bill.otherLabel ? bill.otherLabel : bill.type}</span> · {bill.accountName} · {bill.recurrence}{bill.categoryName ? ` · ${bill.categoryName}` : ''}{bill.autopay ? ' · autopay' : ''}
-                      </span>
+                      <span class="type-label">{kind(bill)}</span>
                     </span>
-                  </span>
+                  </a>
                   <strong class="money">{formatMinor(bill.amountMinor, bill.currency, bill.exponent)}</strong>
-                </a>
-                <div class="flex flex-wrap gap-2">
-                  {#if !unpay && bill.status === 'active'}
-                    <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
-                    {#if !bill.locked}
-                      <button class="btn" type="button" onclick={() => act(bill.id, 'pause')}>Pause</button>
+                  <button
+                    class="bill-open"
+                    type="button"
+                    aria-expanded={open[bill.id] ? 'true' : 'false'}
+                    aria-label={open[bill.id] ? `Hide details for ${bill.name}` : `Show details for ${bill.name}`}
+                    onclick={() => toggle(bill.id)}
+                  >
+                    <span class="bill-chevron"></span>
+                  </button>
+                </div>
+                <div class="bill-more" hidden={!open[bill.id]}>
+                  <div class="bill-detail-chips">
+                    <span class="bill-detail-chip" data-chip="account">{bill.accountName}</span>
+                    {#if bill.categoryName}<span class="bill-detail-chip" data-chip="bucket">{bill.categoryName}</span>{/if}
+                    <span class="bill-detail-chip" data-chip="autopay">{bill.autopay ? 'Autopay' : 'Manual'}</span>
+                    <span class="bill-detail-chip" data-chip="recurrence">{recurrenceLabel(bill)}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    {#if !unpay && bill.status === 'active'}
+                      <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
+                      {#if !bill.locked}
+                        <button class="btn" type="button" onclick={() => act(bill.id, 'pause')}>Pause</button>
+                      {/if}
                     {/if}
-                  {/if}
-                  {#if !unpay && bill.status === 'paused' && !bill.locked}
-                    <button class="btn" type="button" onclick={() => act(bill.id, 'resume')}>Resume</button>
-                    <button class="btn" type="button" onclick={() => act(bill.id, 'archive')}>Archive</button>
-                  {/if}
-                  {#if bill.status === 'archived'}
-                    <button class="btn" type="button" onclick={() => act(bill.id, 'unarchive')}>Unarchive</button>
-                  {/if}
-                  {#if unpay}
-                    <button class="btn" type="button" onclick={() => act(bill.id, 'unpay')}>Unpay</button>
-                  {/if}
+                    {#if !unpay && bill.status === 'paused' && !bill.locked}
+                      <button class="btn" type="button" onclick={() => act(bill.id, 'resume')}>Resume</button>
+                      <button class="btn" type="button" onclick={() => act(bill.id, 'archive')}>Archive</button>
+                    {/if}
+                    {#if bill.status === 'archived'}
+                      <button class="btn" type="button" onclick={() => act(bill.id, 'unarchive')}>Unarchive</button>
+                    {/if}
+                    {#if unpay}
+                      <button class="btn" type="button" onclick={() => act(bill.id, 'unpay')}>Unpay</button>
+                    {/if}
+                  </div>
                 </div>
               </article>
             {/each}
@@ -152,8 +322,7 @@
     </section>
   {/snippet}
 
-  {@render group('Active', 'active', 'active', false)}
-  {@render group('Paused', 'paused', 'paused', false)}
-  {@render group('Paid', 'paid', 'paid', true)}
-  {@render group('Archived', 'archived', 'archived', false)}
+  {#each tabs as tab (tab.key)}
+    {@render group(tab.title, tab.key, tab.unpay)}
+  {/each}
 </div>

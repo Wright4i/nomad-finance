@@ -212,7 +212,7 @@ final class DashboardService
         $start = \DateTimeImmutable::createFromFormat('!Y-m-d', $month . '-01');
         $nextMonth = $start instanceof \DateTimeImmutable ? $start->modify('+1 month')->format('Y-m') : $month;
         $stmt = $this->pdo->prepare(
-            'SELECT b.id, b.type, b.name, b.other_label, b.status, b.recurrence,
+            'SELECT b.id, b.type, b.name, b.other_label, b.status, b.recurrence, b.every_count,
                     b.anchor_date AS anchorDate, b.last_paid_on AS lastPaidOn,
                     b.next_due_date AS nextDueDate, b.amount_minor AS amountMinor, b.currency
              FROM bills b
@@ -237,6 +237,7 @@ final class DashboardService
                 'name' => $name,
                 'status' => (string) $row['status'],
                 'recurrence' => (string) $row['recurrence'],
+                'every' => max(1, (int) ($row['every_count'] ?? 1)),
                 'anchorDate' => (string) $row['anchorDate'],
                 'lastPaidOn' => $row['lastPaidOn'],
                 'nextDueDate' => (string) $row['nextDueDate'],
@@ -372,7 +373,7 @@ final class DashboardService
     private function bills(string $today, string $end): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT b.id, b.name, b.amount_minor, b.next_due_date, b.anchor_date, b.autopay, b.recurrence,
+            "SELECT b.id, b.name, b.amount_minor, b.next_due_date, b.anchor_date, b.autopay, b.recurrence, b.every_count,
                     a.name AS account_name, a.currency
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
@@ -385,7 +386,7 @@ final class DashboardService
                 break;
             }
             $currency = (string) $row['currency'];
-            foreach ($this->dueDates((string) $row['recurrence'], (string) $row['anchor_date'], (string) $row['next_due_date'], $today, $end) as $date) {
+            foreach ($this->dueDates((string) $row['recurrence'], (string) $row['anchor_date'], (string) $row['next_due_date'], $today, $end, max(1, (int) ($row['every_count'] ?? 1))) as $date) {
                 $rows[] = [
                     'kind' => 'bill',
                     'on' => $date,
@@ -404,7 +405,7 @@ final class DashboardService
     }
 
     /** @return list<string> */
-    private function dueDates(string $recurrence, string $anchor, string $next, string $today, string $end): array
+    private function dueDates(string $recurrence, string $anchor, string $next, string $today, string $end, int $every = 1): array
     {
         if ($next > $end) {
             return [];
@@ -415,7 +416,7 @@ final class DashboardService
         $cursor = $next;
         for ($i = 0; $i < 400 && $cursor < $today; $i++) {
             try {
-                $advanced = Schedule::advance($recurrence, $anchor, $cursor);
+                $advanced = Schedule::advance($recurrence, $anchor, $cursor, $every);
             } catch (\InvalidArgumentException) {
                 return [];
             }
@@ -430,7 +431,7 @@ final class DashboardService
                 $dates[] = $cursor;
             }
             try {
-                $advanced = Schedule::advance($recurrence, $anchor, $cursor);
+                $advanced = Schedule::advance($recurrence, $anchor, $cursor, $every);
             } catch (\InvalidArgumentException) {
                 break;
             }

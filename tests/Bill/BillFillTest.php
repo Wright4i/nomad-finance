@@ -76,6 +76,33 @@ final class BillFillTest extends TestCase
         self::assertSame('savings', BillTypes::group('liquidities'));
     }
 
+    public function testCreateReturnsTheSavedBillWhenTheFillInsertsAnAssignment(): void
+    {
+        $rent = SystemBuckets::idForType($this->pdo, $this->userId(), 'rent');
+        $categories = $this->pdo->query('SELECT id FROM categories')->fetchAll(PDO::FETCH_COLUMN);
+        $periods = $this->pdo->query('SELECT id FROM pay_periods')->fetchAll(PDO::FETCH_COLUMN);
+        $insert = $this->pdo->prepare(
+            'INSERT INTO assignments (id, pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, 100, 0)'
+        );
+        $assignmentId = 50;
+        foreach ($periods as $periodId) {
+            foreach ($categories as $categoryId) {
+                if ((int) $categoryId === $rent) {
+                    continue;
+                }
+                $insert->execute([$assignmentId, (int) $periodId, (int) $categoryId]);
+                $assignmentId++;
+            }
+        }
+
+        $created = $this->bills->create($this->bill('Camp laundry', 'rent', 1500, '2026-11-12', 'monthly'));
+
+        self::assertSame('Camp laundry', $created['name']);
+        $stored = $this->pdo->prepare('SELECT id FROM bills WHERE name = ?');
+        $stored->execute(['Camp laundry']);
+        self::assertSame((int) $stored->fetchColumn(), $created['id']);
+    }
+
     public function testTwoBillsSumOnTheDefaultAndAWeeklySpanCountsEachDueDate(): void
     {
         $first = $this->bills->create($this->bill('Rent A', 'rent', 1000, '2026-11-03'));

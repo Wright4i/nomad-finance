@@ -9,6 +9,7 @@
 
   let vehicles = $state<Vehicle[]>([]);
   let message = $state('');
+  let hasStar = $derived(vehicles.some((vehicle) => vehicle.starred));
 
   onMount(() => {
     api<{ vehicles: Vehicle[] }>('/api/vehicles').then((data) => {
@@ -36,7 +37,7 @@
           kind: vehicle.kind,
           mpgMinTenths: vehicle.mpgMinTenths,
           mpgMaxTenths: vehicle.mpgMaxTenths,
-          starred: true,
+          starred: !vehicle.starred,
           currentOdometerMiles: vehicle.currentOdometerMiles,
           fuelPriceMinor: vehicle.fuelPriceMinor,
         },
@@ -70,9 +71,11 @@
                 <span class="block muted text-sm">{vehicle.kind}</span>
               </span>
             </a>
-            <button class="btn" type="button" aria-pressed={vehicle.starred} aria-label={vehicle.starred ? `${vehicle.name} is the default` : `Star ${vehicle.name}`} onclick={() => star(vehicle)}>
-              {vehicle.starred ? '★' : '☆'}
-            </button>
+            {#if vehicle.starred || !hasStar}
+              <button class="btn" type="button" aria-pressed={vehicle.starred} aria-label={vehicle.starred ? `${vehicle.name} is the default` : `Star ${vehicle.name}`} onclick={() => star(vehicle)}>
+                {vehicle.starred ? '★' : '☆'}
+              </button>
+            {/if}
           </div>
           <div class="pay-chips">
             <span class="pay-chip pay-chip-roll" data-chip="odometer">{odometerChip(vehicle.currentOdometerMiles)}</span>

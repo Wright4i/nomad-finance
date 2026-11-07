@@ -121,6 +121,7 @@ final class BillsTest extends TestCase
         self::assertTrue($actions['pausedArchive']);
         self::assertFalse($actions['cardPause']);
         self::assertTrue($actions['archivedRestore']);
+        Reveal::bill(self::driver(), 'Health share', 'active');
         $day = self::driver()->executeScript(<<<'JS'
             const group = [...document.querySelectorAll('.bill-day')].find((node) => {
                 const label = node.querySelector('.bill-date');
@@ -230,6 +231,64 @@ final class BillsTest extends TestCase
         self::assertTrue($mark);
         self::click('misc');
         self::waitForText('Misc name');
+    }
+
+    #[Depends('testTheBucketPickerFollowsTheTypeAndFuelIsLocked')]
+    public function testTheStarredAccountIsTheDrawFromForANewBillAndALockedBill(): void
+    {
+        self::clickLink('Accounts');
+        self::waitForText('Everyday checking');
+        $starred = self::driver()->executeScript(<<<'JS'
+            const button = document.querySelector('button[aria-label="Everyday checking is the default"]');
+            return Boolean(button && button.getAttribute('aria-pressed') === 'true');
+        JS);
+        self::assertTrue($starred === true);
+        self::clickLink('Bills');
+        self::clickLink('New bill');
+        self::assertSame('Everyday checking', self::selectedAccount());
+        self::clickLink('Bills');
+        Reveal::bill(self::driver(), 'Travel card', 'active');
+        self::clickLinkContaining('Travel card');
+        self::assertSame('Everyday checking', self::selectedAccount());
+
+        self::clickLink('Accounts');
+        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
+            WebDriverBy::cssSelector('button[aria-label="Everyday checking is the default"]'),
+        ))->click();
+        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
+            WebDriverBy::cssSelector('button[aria-label="Star Wallet"]'),
+        ))->click();
+        self::wait()->until(function (): bool {
+            $ready = self::driver()->executeScript(
+                'return document.querySelector(\'button[aria-label="Wallet is the default"]\') !== null;',
+            );
+
+            return $ready === true;
+        });
+        self::clickLink('Bills');
+        self::clickLink('New bill');
+        self::assertSame('Wallet', self::selectedAccount());
+        self::clickLink('Bills');
+        Reveal::bill(self::driver(), 'Travel card', 'active');
+        self::clickLinkContaining('Travel card');
+        self::assertSame('Wallet', self::selectedAccount());
+    }
+
+    private static function selectedAccount(): string
+    {
+        $value = self::wait()->until(function (): string|false {
+            $text = self::driver()->executeScript(<<<'JS'
+                const select = document.querySelector('select[name="accountId"]');
+                const option = select && select.selectedOptions[0];
+                const label = option ? option.textContent.trim() : '';
+                return label !== '' && label !== 'Choose an account' ? label : '';
+            JS);
+
+            return is_string($text) && $text !== '' ? $text : false;
+        });
+        self::assertIsString($value);
+
+        return $value;
     }
 
     private static function click(string $label): void

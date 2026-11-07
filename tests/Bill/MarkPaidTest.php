@@ -145,4 +145,79 @@ final class MarkPaidTest extends TestCase
         self::assertSame(0, $this->bills->paidMinor());
         self::assertSame(100, $this->accounts->get($account['id'])['balanceMinor']);
     }
+
+    public function testAYearlyBillEveryTwoAdvancesTwoYears(): void
+    {
+        $account = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 25000,
+        ]);
+        $bill = $this->bills->create([
+            'name' => 'Registration',
+            'type' => 'vehicle',
+            'accountId' => $account['id'],
+            'amountMinor' => 12000,
+            'recurrence' => 'yearly',
+            'every' => 2,
+            'nextDueDate' => '2026-06-15',
+        ]);
+
+        self::assertSame(2, $bill['every']);
+        $paid = $this->bills->markPaid($bill['id'], ['paidOn' => '2026-06-15']);
+        self::assertSame('2028-06-15', $paid['nextDueDate']);
+        self::assertSame('active', $paid['status']);
+
+        $undone = $this->bills->unpay($bill['id']);
+        self::assertSame('2026-06-15', $undone['nextDueDate']);
+    }
+
+    public function testOnceStoresEveryOneAndTwelveIsRefused(): void
+    {
+        $account = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 25000,
+        ]);
+        $once = $this->bills->create([
+            'name' => 'Visa fee',
+            'type' => 'other',
+            'otherLabel' => 'Visa',
+            'accountId' => $account['id'],
+            'amountMinor' => 8000,
+            'recurrence' => 'once',
+            'every' => 4,
+            'nextDueDate' => '2026-04-01',
+        ]);
+        self::assertSame(1, $once['every']);
+
+        $kept = $this->bills->create([
+            'name' => 'Registration',
+            'type' => 'vehicle',
+            'accountId' => $account['id'],
+            'amountMinor' => 12000,
+            'recurrence' => 'yearly',
+            'every' => 11,
+            'nextDueDate' => '2026-06-15',
+        ]);
+        self::assertSame(11, $kept['every']);
+
+        try {
+            $this->bills->create([
+                'name' => 'Registration again',
+                'type' => 'vehicle',
+                'accountId' => $account['id'],
+                'amountMinor' => 12000,
+                'recurrence' => 'yearly',
+                'every' => 12,
+                'nextDueDate' => '2026-06-15',
+            ]);
+            self::fail('Every stops at 11.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertSame('Choose from 1 to 11.', $e->fields['every']);
+        }
+    }
 }

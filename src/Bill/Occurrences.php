@@ -60,6 +60,7 @@ final class Occurrences
         $status = (string) $bill['status'];
         $recurrence = (string) $bill['recurrence'];
         $anchor = (string) $bill['anchorDate'];
+        $every = max(1, (int) ($bill['every'] ?? 1));
         $marks = [];
         $paidDate = $recurrence === 'once'
             ? ($status === 'paid' ? $next : null)
@@ -84,7 +85,7 @@ final class Occurrences
             if ($cursor >= $start && $cursor !== $paidDate) {
                 $marks[] = $base + ['on' => $cursor, 'paid' => false];
             }
-            $advanced = Schedule::advance($recurrence, $anchor, $cursor);
+            $advanced = Schedule::advance($recurrence, $anchor, $cursor, $every);
             if ($advanced <= $cursor) {
                 break;
             }

@@ -135,7 +135,7 @@ final class BillFill
             if ($cursor >= $start) {
                 $count++;
             }
-            $advanced = Schedule::advance($recurrence, $anchor, $cursor);
+            $advanced = Schedule::advance($recurrence, $anchor, $cursor, max(1, (int) ($bill['every_count'] ?? 1)));
             if ($advanced <= $cursor) {
                 break;
             }
@@ -162,7 +162,7 @@ final class BillFill
     {
         $stmt = $this->pdo->prepare(
             'SELECT b.id, b.name, b.type, b.other_label, b.category_id, b.amount_minor, b.currency,
-                    b.recurrence, b.anchor_date, b.next_due_date, b.status
+                    b.recurrence, b.every_count, b.anchor_date, b.next_due_date, b.status
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              WHERE a.user_id = ? AND b.category_id IS NOT NULL'

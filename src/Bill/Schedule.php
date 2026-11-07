@@ -8,23 +8,28 @@ use App\Support\Dates;
 
 final class Schedule
 {
-    public static function advance(string $recurrence, string $anchor, string $current): string
+    public static function advance(string $recurrence, string $anchor, string $current, int $every = 1): string
     {
         $anchorDate = Dates::parse($anchor);
         $currentDate = Dates::parse($current);
+        $every = max(1, $every);
+
+        if ($recurrence === 'daily') {
+            return $currentDate->modify(sprintf('+%d days', $every))->format('Y-m-d');
+        }
 
         if ($recurrence === 'weekly') {
-            return $currentDate->modify('+7 days')->format('Y-m-d');
+            return $currentDate->modify(sprintf('+%d days', 7 * $every))->format('Y-m-d');
         }
 
         if ($recurrence === 'monthly') {
-            $cursor = $currentDate->modify('first day of next month');
+            $cursor = $currentDate->modify(sprintf('first day of +%d months', $every));
 
             return self::clampDay($cursor, (int) $anchorDate->format('j'));
         }
 
         if ($recurrence === 'yearly') {
-            $year = (int) $currentDate->format('Y') + 1;
+            $year = (int) $currentDate->format('Y') + $every;
             $month = (int) $anchorDate->format('n');
             $cursor = new \DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month));
 
@@ -34,23 +39,28 @@ final class Schedule
         throw new \InvalidArgumentException('This bill does not repeat.');
     }
 
-    public static function rewind(string $recurrence, string $anchor, string $current): string
+    public static function rewind(string $recurrence, string $anchor, string $current, int $every = 1): string
     {
         $anchorDate = Dates::parse($anchor);
         $currentDate = Dates::parse($current);
+        $every = max(1, $every);
+
+        if ($recurrence === 'daily') {
+            return $currentDate->modify(sprintf('-%d days', $every))->format('Y-m-d');
+        }
 
         if ($recurrence === 'weekly') {
-            return $currentDate->modify('-7 days')->format('Y-m-d');
+            return $currentDate->modify(sprintf('-%d days', 7 * $every))->format('Y-m-d');
         }
 
         if ($recurrence === 'monthly') {
-            $cursor = $currentDate->modify('first day of previous month');
+            $cursor = $currentDate->modify(sprintf('first day of -%d months', $every));
 
             return self::clampDay($cursor, (int) $anchorDate->format('j'));
         }
 
         if ($recurrence === 'yearly') {
-            $year = (int) $currentDate->format('Y') - 1;
+            $year = (int) $currentDate->format('Y') - $every;
             $month = (int) $anchorDate->format('n');
             $cursor = new \DateTimeImmutable(sprintf('%04d-%02d-01', $year, $month));
 

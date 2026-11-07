@@ -11,10 +11,13 @@ use App\Support\Dates;
  * Paid opens on the most recent dates and grows toward older ones.
  * Other sections open on the earliest dates and grow toward later ones.
  * What is shown stays oldest to newest, and the first window includes a second bill when one exists.
+ * Active keeps going until the window holds ten bills, when that many exist.
  */
 final class BillWindow
 {
     public const DAYS = 7;
+
+    public const ACTIVE_MINIMUM = 10;
 
     /**
      * The date a bill shows on in one section. Null when the bill is not in that section.
@@ -63,9 +66,10 @@ final class BillWindow
      * @param list<array{id:int,name:string,shownOn:string,amountMinor:int}> $rows
      * @return array{rows:list<array{id:int,name:string,shownOn:string,amountMinor:int}>,hasMore:bool}
      */
-    public static function window(array $rows, int $chunks, bool $fromRecent = false): array
+    public static function window(array $rows, int $chunks, bool $fromRecent = false, int $minimum = 2): array
     {
         $chunks = max(1, $chunks);
+        $minimum = max(1, $minimum);
         $ordered = self::order($rows);
         $dates = [];
         foreach ($ordered as $row) {
@@ -77,7 +81,7 @@ final class BillWindow
         }
         if ($fromRecent) {
             $end = $dates[array_key_last($dates)];
-            $start = self::recentStart($dates, $ordered, $chunks);
+            $start = self::recentStart($dates, $ordered, $chunks, $minimum);
             $visible = [];
             $hasMore = false;
             foreach ($ordered as $row) {
@@ -92,7 +96,7 @@ final class BillWindow
 
             return ['rows' => $visible, 'hasMore' => $hasMore];
         }
-        $end = self::forwardEnd($dates, $ordered, $chunks);
+        $end = self::forwardEnd($dates, $ordered, $chunks, $minimum);
         $visible = [];
         $hasMore = false;
         foreach ($ordered as $row) {
@@ -137,10 +141,10 @@ final class BillWindow
      * @param list<string> $dates
      * @param list<array{shownOn:string}> $rows
      */
-    private static function forwardEnd(array $dates, array $rows, int $chunks): string
+    private static function forwardEnd(array $dates, array $rows, int $chunks, int $minimum): string
     {
         $end = self::addDays($dates[0], self::DAYS - 1);
-        $end = self::widenEnd($rows, $dates, $dates[0], $end);
+        $end = self::widenEnd($rows, $dates, $dates[0], $end, $minimum);
         for ($step = 1; $step < $chunks; $step++) {
             $later = null;
             foreach ($dates as $date) {
@@ -152,8 +156,12 @@ final class BillWindow
             if ($later === null) {
                 return $end;
             }
+            $chunkStart = self::addDays($end, 1);
             $stepped = self::addDays($end, self::DAYS);
             $end = $later > $stepped ? self::addDays($later, self::DAYS - 1) : $stepped;
+            if ($minimum > 2) {
+                $end = self::widenEnd($rows, $dates, $chunkStart, $end, $minimum);
+            }
         }
 
         return $end;
@@ -165,11 +173,11 @@ final class BillWindow
      * @param list<string> $dates
      * @param list<array{shownOn:string}> $rows
      */
-    private static function recentStart(array $dates, array $rows, int $chunks): string
+    private static function recentStart(array $dates, array $rows, int $chunks, int $minimum): string
     {
         $end = $dates[array_key_last($dates)];
         $start = self::addDays($end, -(self::DAYS - 1));
-        $start = self::widenStart($rows, $dates, $start, $end);
+        $start = self::widenStart($rows, $dates, $start, $end, $minimum);
         for ($step = 1; $step < $chunks; $step++) {
             $older = null;
             foreach ($dates as $date) {
@@ -180,8 +188,12 @@ final class BillWindow
             if ($older === null) {
                 return $start;
             }
+            $chunkEnd = self::addDays($start, -1);
             $stepped = self::addDays($start, -self::DAYS);
             $start = $older < $stepped ? self::addDays($older, -(self::DAYS - 1)) : $stepped;
+            if ($minimum > 2) {
+                $start = self::widenStart($rows, $dates, $start, $chunkEnd, $minimum);
+            }
         }
 
         return $start;
@@ -191,14 +203,18 @@ final class BillWindow
      * @param list<array{shownOn:string}> $rows
      * @param list<string> $dates
      */
-    private static function widenEnd(array $rows, array $dates, string $start, string $end): string
+    private static function widenEnd(array $rows, array $dates, string $start, string $end, int $minimum): string
     {
-        if (self::countBetween($rows, $start, $end) >= 2) {
+        if (self::countBetween($rows, $start, $end) >= $minimum) {
             return $end;
         }
         foreach ($dates as $date) {
-            if ($date > $end) {
-                return $date;
+            if ($date <= $end) {
+                continue;
+            }
+            $end = $date;
+            if (self::countBetween($rows, $start, $end) >= $minimum) {
+                return $end;
             }
         }
 
@@ -209,19 +225,22 @@ final class BillWindow
      * @param list<array{shownOn:string}> $rows
      * @param list<string> $dates
      */
-    private static function widenStart(array $rows, array $dates, string $start, string $end): string
+    private static function widenStart(array $rows, array $dates, string $start, string $end, int $minimum): string
     {
-        if (self::countBetween($rows, $start, $end) >= 2) {
+        if (self::countBetween($rows, $start, $end) >= $minimum) {
             return $start;
         }
-        $older = null;
-        foreach ($dates as $date) {
-            if ($date < $start) {
-                $older = $date;
+        for ($index = count($dates) - 1; $index >= 0; $index--) {
+            if ($dates[$index] >= $start) {
+                continue;
+            }
+            $start = $dates[$index];
+            if (self::countBetween($rows, $start, $end) >= $minimum) {
+                return $start;
             }
         }
 
-        return $older ?? $start;
+        return $start;
     }
 
     /** @param list<array{shownOn:string}> $rows */

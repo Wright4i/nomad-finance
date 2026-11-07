@@ -61,7 +61,7 @@ final class TripService
      * Route miles between stays, in arrival order.
      * The same miles feed the fuel label.
      *
-     * @return list<array{fromId:int,toId:int,miles:int,driving:bool,coordinates:list<array{0:float,1:float}>}>
+     * @return list<array{fromId:int,toId:int,miles:int,driving:bool,travel:string,coordinates:list<array{0:float,1:float}>}>
      */
     public function route(string $today): array
     {
@@ -81,8 +81,8 @@ final class TripService
             'INSERT INTO trips (
                 user_id, place_name, note, arrive_on, depart_on, latitude, longitude,
                 city, region, address, account_id, total_minor, amount_due_minor, balance_due_on,
-                rating_half_stars, rating_comment, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                rating_half_stars, rating_comment, travel, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $this->actor->id(),
             $data['placeName'],
@@ -100,6 +100,7 @@ final class TripService
             $data['balanceDueOn'],
             $data['ratingHalfStars'],
             $data['ratingComment'],
+            $data['travel'],
             $now,
             $now,
         ]);
@@ -131,7 +132,7 @@ final class TripService
                 'UPDATE trips SET
                     place_name = ?, note = ?, arrive_on = ?, depart_on = ?, latitude = ?, longitude = ?,
                     city = ?, region = ?, address = ?, account_id = ?, total_minor = ?, amount_due_minor = ?,
-                    balance_due_on = ?, rating_half_stars = ?, rating_comment = ?, updated_at = ?
+                    balance_due_on = ?, rating_half_stars = ?, rating_comment = ?, travel = ?, updated_at = ?
                  WHERE id = ? AND user_id = ?'
             )->execute([
                 $data['placeName'],
@@ -149,6 +150,7 @@ final class TripService
                 $data['balanceDueOn'],
                 $data['ratingHalfStars'],
                 $data['ratingComment'],
+                $data['travel'],
                 $now,
                 $id,
                 $this->actor->id(),
@@ -309,6 +311,7 @@ final class TripService
             }
         }
         $rated = $this->rating($input, $existing, $errors);
+        $travel = $this->travel($input, $existing, $errors);
         if ($errors !== []) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
@@ -324,9 +327,34 @@ final class TripService
             'totalMinor' => $total,
             'amountDueMinor' => $due,
             'balanceDueOn' => $balanceDue,
+            'travel' => $travel,
             'ratingHalfStars' => $rated['ratingHalfStars'],
             'ratingComment' => $rated['ratingComment'],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, mixed>|null $existing
+     * @param array<string, string> $errors
+     */
+    private function travel(array $input, ?array $existing, array &$errors): string
+    {
+        $travel = 'drive';
+        if (is_array($existing) && ($existing['travel'] ?? '') === 'fly') {
+            $travel = 'fly';
+        }
+        if (!array_key_exists('travel', $input)) {
+            return $travel;
+        }
+        $raw = $input['travel'];
+        if ($raw !== 'drive' && $raw !== 'fly') {
+            $errors['travel'] = 'Choose drive or fly.';
+
+            return 'drive';
+        }
+
+        return $raw;
     }
 
     /**
@@ -435,6 +463,7 @@ final class TripService
             'exponent' => 2,
             'totalMinor' => (int) $row['total_minor'],
             'amountDueMinor' => (int) $row['amount_due_minor'],
+            'travel' => ($row['travel'] ?? 'drive') === 'fly' ? 'fly' : 'drive',
             'depositMinor' => $deposit,
             'depositCharged' => false,
             'dueCharged' => false,
@@ -462,6 +491,47 @@ final class TripService
         return 0;
     }
 
+    /**
+     * Fuel estimates for stays that arrive in the span, inclusive.
+     * A flight, a first stay, and a drive with no miles or no price add nothing.
+     *
+     * @return list<array{id:int,name:string,costMinor:int}>
+     */
+    public function fuelEstimates(string $start, string $end, ?string $today = null): array
+    {
+        $this->fuelByTrip = null;
+        $map = $this->fuelMap();
+        $stmt = $this->pdo->prepare(
+            'SELECT id, place_name, arrive_on, depart_on FROM trips
+             WHERE user_id = ? AND arrive_on >= ? AND arrive_on <= ?
+             ORDER BY arrive_on, depart_on, place_name COLLATE NOCASE, id'
+        );
+        $stmt->execute([$this->actor->id(), $start, $end]);
+        $listed = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                break;
+            }
+            if (
+                $today !== null
+                && self::status((string) $row['arrive_on'], (string) $row['depart_on'], $today) === 'done'
+            ) {
+                continue;
+            }
+            $cost = $map[(int) $row['id']]['costMinor'] ?? null;
+            if (!is_int($cost) || $cost < 1) {
+                continue;
+            }
+            $listed[] = [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['place_name'],
+                'costMinor' => $cost,
+            ];
+        }
+
+        return $listed;
+    }
+
     /** @return array{miles:?int,milesPerGallon:?string,costMinor:?int,priceMinor:?int} */
     private function fuelFor(int $id): array
     {
@@ -480,6 +550,9 @@ final class TripService
         $drive = $this->roads();
         $milesByTo = [];
         foreach ($drive->legs($stops) as $leg) {
+            if (($leg['travel'] ?? 'drive') === 'fly') {
+                continue;
+            }
             if ($drive->usesRoads() && $leg['driving'] !== true) {
                 continue;
             }
@@ -496,11 +569,11 @@ final class TripService
         return $this->fuelByTrip = $map;
     }
 
-    /** @return list<array{id:int,latitude:string,longitude:string}> */
+    /** @return list<array{id:int,latitude:string,longitude:string,travel:string}> */
     private function stops(): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, latitude, longitude FROM trips
+            'SELECT id, latitude, longitude, travel FROM trips
              WHERE user_id = ?
              ORDER BY arrive_on, depart_on, place_name COLLATE NOCASE, id'
         );
@@ -514,6 +587,7 @@ final class TripService
                 'id' => (int) $row['id'],
                 'latitude' => (string) $row['latitude'],
                 'longitude' => (string) $row['longitude'],
+                'travel' => ($row['travel'] ?? 'drive') === 'fly' ? 'fly' : 'drive',
             ];
         }
 

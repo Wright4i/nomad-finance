@@ -481,6 +481,56 @@ final class TripRulesTest extends TestCase
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
+    public function testAFlightSkipsTheRoadAndKeepsNoFuelMiles(): void
+    {
+        $this->stay(0, 0, '2026-11-01', '2026-11-02', 'Stay 1');
+        $second = $this->trips->create($this->fields([
+            'placeName' => 'Stay 2',
+            'arriveOn' => '2026-11-02',
+            'departOn' => '2026-11-04',
+            'latitude' => '34.05',
+            'longitude' => '-118.24',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+            'travel' => 'fly',
+        ]));
+        self::assertSame('fly', $second['travel']);
+        $legs = $this->trips->route('2026-11-03');
+        self::assertCount(1, $legs);
+        self::assertSame('fly', $legs[0]['travel']);
+        self::assertFalse($legs[0]['driving']);
+        self::assertSame(0, $legs[0]['miles']);
+        self::assertSame([], $legs[0]['coordinates']);
+        self::assertNull($this->trips->get((int) $second['id'], '2026-11-03')['fuel']['miles']);
+        self::assertSame([], $this->trips->fuelEstimates('2026-11-01', '2026-11-30'));
+
+        $kept = $this->trips->update((int) $second['id'], $this->fields([
+            'placeName' => 'Stay 2',
+            'arriveOn' => '2026-11-02',
+            'departOn' => '2026-11-04',
+            'latitude' => '34.05',
+            'longitude' => '-118.24',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        self::assertSame('fly', $kept['travel']);
+
+        try {
+            $this->trips->create($this->fields([
+                'placeName' => 'Stay 3',
+                'arriveOn' => '2026-12-01',
+                'departOn' => '2026-12-02',
+                'travel' => 'sail',
+            ]));
+            self::fail('A stay stored an unknown travel.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertArrayHasKey('travel', $e->fields);
+        }
+    }
+
     /** @return list<array<string, mixed>> */
     private function stayBills(): array
     {

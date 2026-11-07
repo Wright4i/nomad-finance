@@ -183,7 +183,7 @@
     for (const leg of legs) {
       if (leg.coordinates.length < 2) continue;
       const at = leg.coordinates[Math.floor(leg.coordinates.length / 2)];
-      if (leg.airplane || leg.dashed) {
+      if (leg.airplane) {
         flights += 1;
         const badge = document.createElement('span');
         badge.className = 'map-flight';

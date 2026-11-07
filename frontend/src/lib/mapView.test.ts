@@ -17,9 +17,19 @@ test('the globe past-month control defaults to 0 and includes a stay only when t
   assert.equal(stayDrawn('2027-01-08', today, 0), true);
 });
 
-test('a leg with no road route is dashed, has no miles, and marks an airplane', () => {
+test('a drive with no road route is dashed with no miles and no airplane, and a flight keeps the airplane', () => {
+  const missed = paintLeg(
+    { driving: false, miles: 240, coordinates: [], travel: 'drive' },
+    [-160, 0],
+    [-140, 0],
+  );
+  assert.equal(missed.dashed, true);
+  assert.equal(missed.miles, null);
+  assert.equal(missed.airplane, false);
+  assert.ok(missed.coordinates.length >= 2);
+
   const painted = paintLeg(
-    { driving: false, miles: 240, coordinates: [] },
+    { driving: false, miles: 240, coordinates: [], travel: 'fly' },
     [-160, 0],
     [-140, 0],
   );
@@ -44,7 +54,7 @@ test('a leg with no road route is dashed, has no miles, and marks an airplane', 
 
 test('a no-road leg across the date line is the short path, split so it does not wrap', () => {
   const painted = paintLeg(
-    { driving: false, miles: 5000, coordinates: [] },
+    { driving: false, miles: 5000, coordinates: [], travel: 'fly' },
     [-114.215, 33.63],
     [135.502, 34.694],
   );

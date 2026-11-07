@@ -250,6 +250,7 @@
       accountId: trip.accountId,
       totalMinor: trip.totalMinor,
       amountDueMinor: trip.amountDueMinor,
+      travel: trip.travel,
       ratingHalfStars: halfStars,
       ratingComment: comment,
       today: todayISO(),
@@ -361,7 +362,7 @@
           {/if}
         </div>
       {/if}
-      {#if selectedLeg && !selectedLeg.driving}
+      {#if selectedLeg && selectedLeg.travel !== 'fly' && !selectedLeg.driving}
         <p class="muted m-0">The road route is unavailable.</p>
       {/if}
     </article>
@@ -533,7 +534,7 @@
               {#if trip.fuel.milesPerGallon}· {trip.fuel.milesPerGallon} mpg{/if}
               {#if trip.fuel.costMinor !== null}· {formatMinor(trip.fuel.costMinor, baseCurrency, baseExponent)}{/if}
             </span>
-          {:else if legs.find((leg) => leg.toId === trip.id)}
+          {:else if legs.find((leg) => leg.toId === trip.id && leg.driving)}
             <span class="muted"> · {legs.find((leg) => leg.toId === trip.id)?.miles} miles from previous stay</span>
           {/if}
         </div>

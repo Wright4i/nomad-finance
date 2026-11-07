@@ -32,6 +32,7 @@
   let mpgMin = $state('6.0');
   let mpgMax = $state('12.0');
   let starred = $state(false);
+  let othersStarred = $state(false);
   let currentOdometer = $state('');
   let fuelPrice = $state('');
   let vehicle = $state<Vehicle | null>(null);
@@ -48,6 +49,7 @@
   let editFields = $state<Record<string, string>>({});
   let editMessage = $state('');
   let editSaving = $state(false);
+  let showStar = $derived(starred || !othersStarred);
 
   async function load(): Promise<void> {
     if (!id) return;
@@ -63,6 +65,13 @@
   }
 
   onMount(() => {
+    api<{ vehicles: Vehicle[] }>('/api/vehicles')
+      .then((data) => {
+        othersStarred = data.vehicles.some((item) => item.starred && String(item.id) !== (id ?? ''));
+      })
+      .catch(() => {
+        othersStarred = false;
+      });
     load().catch((err: unknown) => {
       message = explain(err).message;
     });
@@ -245,7 +254,9 @@
       {#if fields.mpgMaxTenths}<em>{fields.mpgMaxTenths}</em>{/if}
     </label>
   </div>
-  <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} onclick={() => (starred = !starred)}>{starred ? '★ Default vehicle' : '☆ Make this the default'}</button>
+  {#if showStar}
+    <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} onclick={() => (starred = !starred)}>{starred ? '★ Default vehicle' : '☆ Make this the default'}</button>
+  {/if}
   <div class="flex flex-wrap gap-2">
     <button class="btn primary" type="submit" disabled={saving} aria-busy={saving}>{saving ? 'Saving…' : 'Save vehicle'}</button>
     <a class="btn" href="/vehicles" onclick={(event) => follow(event, '/vehicles')}>Back</a>

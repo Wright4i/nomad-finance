@@ -38,7 +38,7 @@ final class AccountService
         if (!$includeArchived) {
             $sql .= ' AND archived_at IS NULL';
         }
-        $sql .= " ORDER BY CASE side WHEN 'asset' THEN 0 ELSE 1 END, name COLLATE NOCASE, id";
+        $sql .= " ORDER BY starred DESC, type COLLATE NOCASE, name COLLATE NOCASE, id";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$this->actor->id()]);
         $rows = $stmt->fetchAll();
@@ -62,21 +62,36 @@ final class AccountService
     /** @param array<string, mixed> $input */
     public function create(array $input): array
     {
-        $data = $this->validate($input);
+        $data = $this->validate($input, 0);
         $now = gmdate('c');
-        $this->pdo->prepare(
-            'INSERT INTO accounts (
-                user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
-                due_day, credit_limit_minor, autopay_choice, institution, notes, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        )->execute([
-            $this->actor->id(),
-            $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
-            $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
-            $data['autopayChoice'], $data['institution'], $data['notes'], $now, $now,
-        ]);
-        $id = (int) $this->pdo->lastInsertId();
+        $this->pdo->beginTransaction();
+        try {
+            if ($data['starred'] === 1) {
+                $this->clearStars($now, null);
+            }
+            $this->pdo->prepare(
+                'INSERT INTO accounts (
+                    user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
+                    due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
+                    institution, notes, starred, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            )->execute([
+                $this->actor->id(),
+                $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
+                $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
+                $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
+                $data['institution'], $data['notes'], $data['starred'], $now, $now,
+            ]);
+            $id = (int) $this->pdo->lastInsertId();
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
         $this->syncBill($id);
+        $this->aimLockedBills();
 
         return $this->get($id);
     }
@@ -84,21 +99,42 @@ final class AccountService
     /** @param array<string, mixed> $input */
     public function update(int $id, array $input): array
     {
-        $this->get($id);
-        $data = $this->validate($input);
+        $existing = $this->get($id);
+        $data = $this->validate($input, $existing['starred'] === true ? 1 : 0, $existing);
+        if ($data['starred'] === 1 && $existing['archivedAt'] !== null) {
+            throw new ApiException(422, 'Check the highlighted fields.', [
+                'starred' => 'Unarchive this account before starring it.',
+            ]);
+        }
         $now = gmdate('c');
-        $this->pdo->prepare(
-            'UPDATE accounts SET
-                name = ?, type = ?, side = ?, currency = ?, balance_minor = ?, interest_bps = ?,
-                minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, autopay_choice = ?,
-                institution = ?, notes = ?, updated_at = ?
-             WHERE id = ? AND user_id = ?'
-        )->execute([
-            $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
-            $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
-            $data['autopayChoice'], $data['institution'], $data['notes'], $now, $id, $this->actor->id(),
-        ]);
+        $this->pdo->beginTransaction();
+        try {
+            if ($data['starred'] === 1) {
+                $this->clearStars($now, $id);
+            }
+            $this->pdo->prepare(
+                'UPDATE accounts SET
+                    name = ?, type = ?, side = ?, currency = ?, balance_minor = ?, interest_bps = ?,
+                    minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, autopay_choice = ?,
+                    bank_autopay = ?, bill_recurrence = ?, bill_every = ?,
+                    institution = ?, notes = ?, starred = ?, updated_at = ?
+                 WHERE id = ? AND user_id = ?'
+            )->execute([
+                $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
+                $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
+                $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
+                $data['institution'], $data['notes'], $data['starred'], $now,
+                $id, $this->actor->id(),
+            ]);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
         $this->syncBill($id);
+        $this->aimLockedBills();
 
         return $this->get($id);
     }
@@ -113,8 +149,9 @@ final class AccountService
         }
         $now = gmdate('c');
         $this->pdo->prepare(
-            'UPDATE accounts SET archived_at = COALESCE(archived_at, ?), updated_at = ? WHERE id = ? AND user_id = ?'
+            'UPDATE accounts SET archived_at = COALESCE(archived_at, ?), starred = 0, updated_at = ? WHERE id = ? AND user_id = ?'
         )->execute([$now, $now, $id, $this->actor->id()]);
+        $this->aimLockedBills();
 
         return $this->get($id);
     }
@@ -136,10 +173,11 @@ final class AccountService
      *  @return array{
      *    name:string,type:string,side:string,currency:string,balanceMinor:int,
      *    interestBps:?int,minimumDueMinor:?int,dueDay:?int,creditLimitMinor:?int,
-     *    autopayChoice:string,institution:?string,notes:?string
+     *    autopayChoice:string,bankAutopay:int,billRecurrence:string,billEvery:int,
+     *    institution:?string,notes:?string,starred:int
      *  }
      */
-    private function validate(array $input): array
+    private function validate(array $input, int $starredFallback, ?array $existing = null): array
     {
         $errors = [];
         $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
@@ -177,13 +215,42 @@ final class AccountService
         $dueDay = null;
         $limit = null;
         $autopay = 'none';
+        $bank = 0;
+        $billRecurrence = 'monthly';
+        $billEvery = 1;
         $liability = in_array($type, self::LIABILITY, true);
         if ($liability) {
-            $choice = is_string($input['autopayChoice'] ?? null) ? $input['autopayChoice'] : 'none';
+            $choice = is_string($input['autopayChoice'] ?? null)
+                ? $input['autopayChoice']
+                : (is_array($existing) ? (string) ($existing['autopayChoice'] ?? 'none') : 'none');
             if (!in_array($choice, ['none', 'minimum', 'balance'], true)) {
                 $errors['autopayChoice'] = 'Choose none, minimum, or current balance.';
             } else {
                 $autopay = $choice;
+            }
+            if (array_key_exists('bankAutopay', $input)) {
+                $bank = !empty($input['bankAutopay']) ? 1 : 0;
+            } elseif (array_key_exists('autopayChoice', $input) || $existing === null) {
+                $bank = in_array($autopay, ['minimum', 'balance'], true) ? 1 : 0;
+            } else {
+                $bank = !empty($existing['bankAutopay']) ? 1 : 0;
+            }
+            $rawRecurrence = $input['billRecurrence'] ?? (is_array($existing) ? ($existing['billRecurrence'] ?? 'monthly') : 'monthly');
+            if (!is_string($rawRecurrence) || !in_array($rawRecurrence, ['daily', 'monthly', 'yearly'], true)) {
+                $errors['billRecurrence'] = 'Choose daily, monthly, or yearly.';
+            } else {
+                $billRecurrence = $rawRecurrence;
+            }
+            $parsedEvery = array_key_exists('billEvery', $input)
+                ? $this->asInt($input['billEvery'])
+                : (is_array($existing) ? (int) ($existing['billEvery'] ?? 1) : 1);
+            if ($parsedEvery === null || $parsedEvery < 1 || $parsedEvery > 11) {
+                $errors['billEvery'] = 'Choose from 1 to 11.';
+            } else {
+                $billEvery = $parsedEvery;
+            }
+            if ($bank === 1 && $autopay === 'none') {
+                $autopay = 'balance';
             }
             $minimum = $this->optionalMinor($input['minimumDueMinor'] ?? null);
             if ($minimum === false) {
@@ -195,12 +262,10 @@ final class AccountService
                 $errors['dueDay'] = 'Use a day from 1 to 31, or leave it blank.';
                 $dueDay = null;
             }
-            if ($autopay === 'minimum' || $autopay === 'balance') {
-                if (!is_int($dueDay)) {
-                    $errors['dueDay'] = 'Enter the due day.';
-                }
+            if ($bank === 1 && $billRecurrence !== 'daily' && !is_int($dueDay)) {
+                $errors['dueDay'] = 'Enter the due day.';
             }
-            if ($autopay === 'minimum' && !is_int($minimum)) {
+            if ($bank === 1 && $autopay === 'minimum' && !is_int($minimum)) {
                 $errors['minimumDueMinor'] = 'Enter the minimum due.';
             }
         }
@@ -238,9 +303,51 @@ final class AccountService
             'dueDay' => is_int($dueDay) ? $dueDay : null,
             'creditLimitMinor' => is_int($limit) ? $limit : null,
             'autopayChoice' => $autopay,
+            'bankAutopay' => $bank,
+            'billRecurrence' => $billRecurrence,
+            'billEvery' => $billEvery,
             'institution' => is_string($institution) ? $institution : null,
             'notes' => is_string($notes) ? $notes : null,
+            'starred' => array_key_exists('starred', $input) ? (!empty($input['starred']) ? 1 : 0) : $starredFallback,
         ];
+    }
+
+    private function clearStars(string $now, ?int $exceptId): void
+    {
+        if ($exceptId === null) {
+            $this->pdo->prepare(
+                'UPDATE accounts SET starred = 0, updated_at = ? WHERE user_id = ? AND starred = 1'
+            )->execute([$now, $this->actor->id()]);
+
+            return;
+        }
+        $this->pdo->prepare(
+            'UPDATE accounts SET starred = 0, updated_at = ? WHERE user_id = ? AND starred = 1 AND id != ?'
+        )->execute([$now, $this->actor->id(), $exceptId]);
+    }
+
+    private function aimLockedBills(): void
+    {
+        $star = $this->pdo->prepare(
+            'SELECT id FROM accounts WHERE user_id = ? AND starred = 1 AND archived_at IS NULL'
+        );
+        $star->execute([$this->actor->id()]);
+        $found = $star->fetchColumn();
+        $now = gmdate('c');
+        if ($found === false) {
+            $this->pdo->prepare(
+                'UPDATE bills SET account_id = source_account_id, updated_at = ?
+                 WHERE source_account_id IS NOT NULL
+                   AND source_account_id IN (SELECT id FROM accounts WHERE user_id = ?)'
+            )->execute([$now, $this->actor->id()]);
+
+            return;
+        }
+        $this->pdo->prepare(
+            'UPDATE bills SET account_id = ?, updated_at = ?
+             WHERE source_account_id IS NOT NULL
+               AND source_account_id IN (SELECT id FROM accounts WHERE user_id = ?)'
+        )->execute([(int) $found, $now, $this->actor->id()]);
     }
 
     private function syncBill(int $id): void
@@ -358,8 +465,12 @@ final class AccountService
             'dueDay' => $row['due_day'] === null ? null : (int) $row['due_day'],
             'creditLimitMinor' => $row['credit_limit_minor'] === null ? null : (int) $row['credit_limit_minor'],
             'autopayChoice' => (string) ($row['autopay_choice'] ?? 'none'),
+            'bankAutopay' => (int) ($row['bank_autopay'] ?? 0) === 1,
+            'billRecurrence' => (string) ($row['bill_recurrence'] ?? 'monthly'),
+            'billEvery' => max(1, (int) ($row['bill_every'] ?? 1)),
             'institution' => $row['institution'],
             'notes' => $row['notes'],
+            'starred' => (int) ($row['starred'] ?? 0) === 1,
             'archivedAt' => $row['archived_at'],
             'createdAt' => $row['created_at'],
             'updatedAt' => $row['updated_at'],

@@ -108,7 +108,7 @@ final class DemoLibrary
         )->execute([$userId]);
         // Solo full-timer in a Class C. Three paychecks are live. The other pay lengths stay archived so Show archived still has one of each.
         $checking = $this->account($userId, [
-            'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000,
+            'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000, 'starred' => true,
         ], $now);
         $this->account($userId, [
             'name' => 'Closed checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 1840, 'archived' => true,
@@ -130,15 +130,16 @@ final class DemoLibrary
         ], $now);
         $card = $this->account($userId, [
             'name' => 'Travel card', 'type' => 'credit', 'side' => 'liability', 'currency' => 'USD', 'balance' => 86000,
-            'interest' => 1999, 'minimum' => 3500, 'dueDay' => 15, 'limit' => 600000, 'autopay' => 'minimum',
+            'interest' => 1999, 'minimum' => 3500, 'dueDay' => 15, 'limit' => 600000, 'autopay' => 'minimum', 'bankAutopay' => true,
         ], $now);
         $loan = $this->account($userId, [
             'name' => 'Solar loan', 'type' => 'loan', 'side' => 'liability', 'currency' => 'USD', 'balance' => 245000,
-            'interest' => 699, 'minimum' => 8500, 'dueDay' => 1, 'autopay' => 'balance',
+            'interest' => 699, 'minimum' => 8500, 'dueDay' => 1, 'autopay' => 'balance', 'bankAutopay' => true,
         ], $now);
-        $this->account($userId, [
+        $fuelCard = $this->account($userId, [
             'name' => 'Fuel card', 'type' => 'fuel', 'side' => 'liability', 'currency' => 'USD', 'balance' => 6400,
             'interest' => 0, 'minimum' => 2500, 'dueDay' => 20, 'limit' => 50000,
+            'autopay' => 'minimum', 'bankAutopay' => true, 'billRecurrence' => 'daily', 'billEvery' => 2,
         ], $now);
         $otherAsset = $this->account($userId, [
             'name' => 'Solar kit', 'type' => 'other', 'side' => 'asset', 'currency' => 'USD', 'balance' => 185000,
@@ -162,6 +163,10 @@ final class DemoLibrary
         $this->bill($checking, [
             'name' => 'Health share', 'type' => 'healthcare', 'amount' => 216000,
             'recurrence' => 'yearly', 'anchor' => '2026-11-20', 'next' => '2026-11-20', 'status' => 'active',
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Registration', 'type' => 'vehicle', 'amount' => 12000,
+            'recurrence' => 'yearly', 'every' => 2, 'anchor' => '2027-06-15', 'next' => '2027-06-15', 'status' => 'active',
         ], $now);
         $this->bill($checking, [
             'name' => 'Estimated tax', 'type' => 'debt', 'amount' => 22000,
@@ -207,15 +212,20 @@ final class DemoLibrary
             'name' => 'Old meal kit', 'type' => 'groceries', 'amount' => 1200,
             'recurrence' => 'once', 'anchor' => '2026-10-02', 'next' => '2026-10-02', 'status' => 'archived',
         ], $now);
-        $this->bill($card, [
+        $this->bill($checking, [
             'name' => 'Travel card', 'type' => 'debt', 'amount' => 3500,
             'recurrence' => 'monthly', 'anchor' => '2026-11-15', 'next' => '2026-11-15', 'status' => 'active',
             'sourceAccountId' => $card,
         ], $now);
-        $this->bill($loan, [
+        $this->bill($checking, [
             'name' => 'Solar loan', 'type' => 'debt', 'amount' => 245000,
             'recurrence' => 'monthly', 'anchor' => '2026-12-01', 'next' => '2026-12-01', 'status' => 'active',
             'sourceAccountId' => $loan,
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Fuel card', 'type' => 'fuel', 'amount' => 2500,
+            'recurrence' => 'daily', 'every' => 2, 'anchor' => '2027-06-15', 'next' => '2027-06-15', 'status' => 'active', 'autopay' => true,
+            'sourceAccountId' => $fuelCard,
         ], $now);
         $this->bill($checking, [
             'name' => 'Metered electric', 'type' => 'electricity', 'amount' => 1840,
@@ -339,7 +349,7 @@ final class DemoLibrary
         $fuel = SystemBuckets::idForType($this->pdo, $userId, 'fuel');
 
         // Each stay leaves the morning the next one arrives, so every day from the first arrival through the last departure is on a site.
-        $this->stay($userId, $now, 'Devils Garden', 'Site 12', '2026-09-06', '2026-09-18', '38.7834', '-109.5947', 'Moab', 'UT', 'Devils Garden Campground, Moab, UT 84532', $checking, 24000, 0, null, 9, 'Dark sky, quiet loops.');
+        $this->stay($userId, $now, 'Devils Garden', 'Site 12', '2026-09-06', '2026-09-18', '38.7834', '-109.5947', 'Moab', 'UT', 'Devils Garden Campground, Moab, UT 84532', $checking, 24000, 0, null, 9, 'Dark sky, quiet loops.', 'fly');
         $this->stay($userId, $now, 'Watchman', 'Site 7', '2026-09-18', '2026-10-02', '37.2002', '-112.9865', 'Springdale', 'UT', 'Watchman Campground, Springdale, UT 84767', $checking, 42000, 0, null, 8, 'Sites fill at dawn.');
         $this->stay($userId, $now, 'Wahweap', 'Site 22', '2026-10-02', '2026-10-16', '36.9964', '-111.4984', 'Page', 'AZ', 'Wahweap Campground, Page, AZ 86040', $checking, 36400, 0, null, 8, 'Lake wind and a dump station.');
         $this->stay($userId, $now, 'Catalina', 'Site 42', '2026-10-16', '2026-10-30', '32.4260', '-110.9080', 'Tucson', 'AZ', '11570 N Oracle Rd, Tucson, AZ 85737', $checking, 35000, 0, null, 8, 'Saguaros and a rinse station.');
@@ -378,17 +388,18 @@ final class DemoLibrary
         ?string $balanceDue,
         ?int $rating,
         ?string $comment,
+        string $travel = 'drive',
     ): void {
         $this->pdo->prepare(
             'INSERT INTO trips (
                 user_id, place_name, note, arrive_on, depart_on, latitude, longitude,
                 city, region, address, account_id, total_minor, amount_due_minor, balance_due_on,
-                rating_half_stars, rating_comment, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                rating_half_stars, rating_comment, travel, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId, $place, $note, $arrive, $depart, $latitude, $longitude,
             $city, $region, $address, $accountId, $total, $due, $balanceDue,
-            $rating, $comment, $now, $now,
+            $rating, $comment, $travel, $now, $now,
         ]);
         if ($due > 0 && $balanceDue !== null && $balanceDue !== '') {
             $this->stayBill($userId, $accountId, (int) $this->pdo->lastInsertId(), $place, $due, $balanceDue, $now);
@@ -477,15 +488,16 @@ final class DemoLibrary
         return $periodId;
     }
 
-    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool} $row */
+    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool,autopay?:string,starred?:bool,bankAutopay?:bool,billRecurrence?:string,billEvery?:int} $row */
     private function account(int $userId, array $row, string $now): int
     {
         $this->currencies->assert($row['currency']);
         $this->pdo->prepare(
             'INSERT INTO accounts (
                 user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
-                due_day, credit_limit_minor, autopay_choice, archived_at, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
+                archived_at, starred, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId,
             $row['name'],
@@ -498,7 +510,11 @@ final class DemoLibrary
             $row['dueDay'] ?? null,
             $row['limit'] ?? null,
             $row['autopay'] ?? 'none',
+            !empty($row['bankAutopay']) ? 1 : 0,
+            $row['billRecurrence'] ?? 'monthly',
+            $row['billEvery'] ?? 1,
             !empty($row['archived']) ? $now : null,
+            !empty($row['starred']) ? 1 : 0,
             $now,
             $now,
         ]);
@@ -506,7 +522,7 @@ final class DemoLibrary
         return (int) $this->pdo->lastInsertId();
     }
 
-    /** @param array{name:string,type:string,amount:int,recurrence:string,anchor:string,next:string,status:string,otherLabel?:string,autopay?:bool,currency?:string,paidOn?:string} $row */
+    /** @param array{name:string,type:string,amount:int,recurrence:string,anchor:string,next:string,status:string,otherLabel?:string,autopay?:bool,currency?:string,paidOn?:string,every?:int,sourceAccountId?:int} $row */
     private function bill(int $accountId, array $row, string $now): void
     {
         $owner = $this->pdo->prepare('SELECT user_id, currency FROM accounts WHERE id = ?');
@@ -519,9 +535,9 @@ final class DemoLibrary
         $this->pdo->prepare(
             'INSERT INTO bills (
                 name, type, other_label, account_id, category_id, amount_minor, currency,
-                recurrence, anchor_date, next_due_date, last_paid_on, autopay, status, created_at, updated_at,
+                recurrence, every_count, anchor_date, next_due_date, last_paid_on, autopay, status, created_at, updated_at,
                 source_account_id
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $row['name'],
             $row['type'],
@@ -531,6 +547,7 @@ final class DemoLibrary
             $row['amount'],
             $currency,
             $row['recurrence'],
+            $row['every'] ?? 1,
             $row['anchor'],
             $row['next'],
             $row['paidOn'] ?? null,

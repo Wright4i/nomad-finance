@@ -8,10 +8,13 @@ use App\Auth\Actor;
 use App\Envelope\BillFill;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
+use App\Category\SystemBuckets;
 use App\PayCycle\PayCycleService;
 use App\PayCycle\Period;
 use App\Support\Dates;
 use App\Target\TargetService;
+use App\Trip\Drive;
+use App\Trip\TripService;
 use PDO;
 use Throwable;
 
@@ -23,6 +26,7 @@ final class EnvelopeService
         private readonly CurrencyCatalog $currencies,
         private readonly TargetService $targets,
         private readonly PayCycleService $payCycles,
+        private readonly ?Drive $drive = null,
     ) {
     }
 
@@ -129,6 +133,76 @@ final class EnvelopeService
             if (is_string($storedStart)) {
                 $this->releaseOtherGoals((int) $period['id'], $storedStart, $amounts, $lockedIds);
             }
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return $this->present($today, (int) $cycle['id'], null, $upcoming, true);
+    }
+
+    /**
+     * Replace this month's assignments with the bills that occur in the month.
+     * Fuel also includes each stay that arrives in the month and has not ended.
+     * Maximums stay. A typed amount is replaced.
+     *
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function recalculate(array $input): array
+    {
+        $today = $this->day(is_string($input['today'] ?? null) ? $input['today'] : '');
+        $this->prepare($today);
+        $cycle = $this->cycle($this->asInt($input['payCycleId'] ?? null) ?? 0);
+        if ($cycle['archived_at'] !== null) {
+            throw new ApiException(409, 'Unarchive this pay cycle before assigning.');
+        }
+
+        $upcoming = ($input['upcoming'] ?? false) === true || ($input['upcoming'] ?? null) === 1 || ($input['upcoming'] ?? null) === '1';
+        if ($upcoming) {
+            $next = $this->nextSpan($cycle, $today);
+            if ($next === null) {
+                throw new ApiException(422, 'This pay cycle has no next period to plan.');
+            }
+            $periodId = $this->storePeriod($cycle, $next['start'], $next['end']);
+            $spanStart = $next['start'];
+        } else {
+            $open = $this->openSpan($cycle, $today);
+            $period = $this->periodRow((int) $cycle['id'], $open['start']);
+            if ($period === null) {
+                throw new ApiException(404, 'Pay period not found.');
+            }
+            $periodId = (int) $period['id'];
+            $spanStart = (string) $period['period_start'];
+        }
+
+        $sums = $this->monthBillSums($spanStart, !$upcoming, $today);
+        $lockedIds = $this->lockedIds();
+        $goalAmounts = [];
+        $goals = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role != 'locked'");
+        $goals->execute([$this->actor->id()]);
+        while ($id = $goals->fetchColumn()) {
+            $goalId = (int) $id;
+            $goalAmounts[$goalId] = $sums[$goalId] ?? 0;
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare('DELETE FROM assignments WHERE pay_period_id = ?')->execute([$periodId]);
+            $insert = $this->pdo->prepare(
+                'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
+            );
+            foreach ($sums as $categoryId => $amount) {
+                if ($amount < 1) {
+                    continue;
+                }
+                $insert->execute([$periodId, $categoryId, $amount, $amount]);
+            }
+            $this->releaseOtherGoals($periodId, $spanStart, $goalAmounts, $lockedIds);
+            $this->syncAmounts($today);
             $this->pdo->commit();
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -800,6 +874,10 @@ final class EnvelopeService
                 $total += (int) $bill['amountMinor'];
             }
         }
+        $month = $this->calendarMonth($open['start']);
+        foreach ($this->stayFuel($month['start'], $month['end'], $today) as $stay) {
+            $total += $stay['costMinor'];
+        }
 
         return $total;
     }
@@ -827,11 +905,16 @@ final class EnvelopeService
     private function monthBillSums(string $day, bool $overdue, string $today): array
     {
         $month = $this->calendarMonth($day);
-        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
-            $today,
+        $picture = $this->withStayFuel(
+            (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+                $today,
+                $month['start'],
+                $month['end'],
+                $overdue,
+            ),
             $month['start'],
             $month['end'],
-            $overdue,
+            $today,
         );
         $sums = [];
         foreach ($picture['bills'] as $categoryId => $bills) {
@@ -1357,12 +1440,43 @@ final class EnvelopeService
         $month = $this->calendarMonth((string) $period['start']);
         $overdue = ($period['editable'] ?? false) === true && ($period['upcoming'] ?? false) !== true;
 
-        return (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
-            $today,
+        return $this->withStayFuel(
+            (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+                $today,
+                $month['start'],
+                $month['end'],
+                $overdue,
+            ),
             $month['start'],
             $month['end'],
-            $overdue,
+            $today,
         );
+    }
+
+    /**
+     * @param array{bills: array<int, list<array{id:int,name:string,amountMinor:int}>>, leftOut: list<string>} $picture
+     * @return array{bills: array<int, list<array{id:int,name:string,amountMinor:int}>>, leftOut: list<string>}
+     */
+    private function withStayFuel(array $picture, string $start, string $end, string $today): array
+    {
+        $fuelId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'fuel');
+        foreach ($this->stayFuel($start, $end, $today) as $stay) {
+            $picture['bills'][$fuelId][] = [
+                'id' => -$stay['id'],
+                'name' => $stay['name'],
+                'amountMinor' => $stay['costMinor'],
+            ];
+        }
+
+        return $picture;
+    }
+
+    /** @return list<array{id:int,name:string,costMinor:int}> */
+    private function stayFuel(string $start, string $end, string $today): array
+    {
+        $trips = new TripService($this->pdo, $this->actor, $this->currencies, $this->drive ?? new Drive(true));
+
+        return $trips->fuelEstimates($start, $end, $today);
     }
 
     /** A bill saved before any pay period existed fills on the next load. */

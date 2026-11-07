@@ -28,6 +28,7 @@
   let showArchived = $state(false);
   let archived = $state<Category[]>([]);
   let sourcesDialog: HTMLDialogElement | undefined = $state();
+  let recalculateDialog: HTMLDialogElement | undefined = $state();
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
   let editable = $derived(sheet?.period?.editable === true);
@@ -40,6 +41,11 @@
     const data = await api<EnvelopeSheet>(`/api/budget?${params}`);
     sheet = data;
     payCycleId = data.payCycleId;
+    applyDrafts(data);
+    ready = true;
+  }
+
+  function applyDrafts(data: EnvelopeSheet): void {
     const next: Record<number, string> = {};
     const caps: Record<number, string> = {};
     for (const category of data.categories) {
@@ -48,7 +54,6 @@
     }
     drafts = next;
     maximumDrafts = caps;
-    ready = true;
   }
 
   onMount(() => {
@@ -178,14 +183,36 @@
       payCycleId = data.payCycleId;
       upcoming = data.period?.upcoming === true;
       periodId = null;
-      const next: Record<number, string> = {};
-      const caps: Record<number, string> = {};
-      for (const category of data.categories) {
-        next[category.id] = minorToInput(category.amountMinor, data.exponent);
-        caps[category.id] = maximumInput(category, data.exponent);
-      }
-      drafts = next;
-      maximumDrafts = caps;
+      applyDrafts(data);
+    } catch (err) {
+      const problem = explain(err);
+      message = problem.message;
+      fields = problem.fields;
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function confirmRecalculate(): Promise<void> {
+    if (!sheet || !editable) return;
+    saving = true;
+    message = '';
+    fields = {};
+    try {
+      const data = await api<EnvelopeSheet>('/api/budget/recalculate', {
+        method: 'POST',
+        body: {
+          today: todayISO(),
+          payCycleId: sheet.payCycleId,
+          upcoming: sheet.period?.upcoming === true,
+        },
+      });
+      sheet = data;
+      payCycleId = data.payCycleId;
+      upcoming = data.period?.upcoming === true;
+      periodId = null;
+      applyDrafts(data);
+      recalculateDialog?.close();
     } catch (err) {
       const problem = explain(err);
       message = problem.message;
@@ -262,7 +289,18 @@
           <p class="m-0" data-month={sheet.period.start.slice(0, 7)}>{formatMonth(sheet.period.start)}</p>
         {/if}
         <button class="btn" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
+        <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>
       </div>
+      <dialog class="modal" bind:this={recalculateDialog} aria-labelledby="recalculate-title">
+        <div class="modal-body">
+          <h2 id="recalculate-title" class="m-0 text-2xl">Recalculate this month?</h2>
+          <p class="m-0">This replaces every bucket's assignment for {sheet.period ? formatMonth(sheet.period.start) : 'this month'} with the bills that occur in that month. Fuel also includes the estimate for each stay that is still open and arrives in the month. Amounts you typed are replaced. Account balances stay as you typed them.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn danger" type="button" disabled={saving} aria-busy={saving} onclick={() => void confirmRecalculate()}>Recalculate this month</button>
+          <button class="btn" type="button" onclick={() => recalculateDialog?.close()}>Cancel</button>
+        </div>
+      </dialog>
       {#if sheet.period?.upcoming}
         <p class="muted m-0">These amounts are in place when this month opens. Available to assign still follows the current month.</p>
       {:else if !editable && sheet.period}
@@ -291,6 +329,9 @@
               {@const hold = holdOf(category)}
               {@const level = levelOf(category, rows)}
               {@const over = hold !== null && category.amountMinor > hold}
+              {@const href = category.role === 'locked' && category.billType
+                ? `/bills?type=${encodeURIComponent(category.billType)}`
+                : `/buckets/${category.id}`}
               <div class="bucket-cell">
               <article
                 class="bucket-tile envelope-tile"
@@ -304,10 +345,10 @@
                     <span class="bucket-wave"></span>
                   {/if}
                 </span>
-                <span class="flex items-center gap-1">
+                <a class="bucket-name" href={href} onclick={(event) => follow(event, href)}>
                   <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
-                  <strong><a href={`/buckets/${category.id}`} onclick={(event) => follow(event, `/buckets/${category.id}`)}>{category.name}</a></strong>
-                </span>
+                  <strong>{category.name}</strong>
+                </a>
                 <label class="bucket-field">
                   <span>Assigned</span>
                   <span class="money-input">

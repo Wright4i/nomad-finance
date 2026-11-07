@@ -343,7 +343,7 @@ final class LogTest extends TestCase
                     return title && title.textContent.trim() === name;
                 });
                 if (!article) return null;
-                const heading = article.closest('section').querySelector('h2').textContent.replace(/\s+/g, ' ').trim();
+                const heading = article.closest('section').getAttribute('data-label') || '';
                 const buttons = [...article.querySelectorAll('button')].map((button) => button.textContent.trim());
                 return { heading, buttons };
             };
@@ -417,7 +417,7 @@ final class LogTest extends TestCase
                     return title && title.textContent.trim() === name;
                 });
                 if (!article) return null;
-                const heading = article.closest('section').querySelector('h2').textContent.replace(/\s+/g, ' ').trim();
+                const heading = article.closest('section').getAttribute('data-label') || '';
                 const buttons = [...article.querySelectorAll('button')].map((button) => button.textContent.trim());
                 return { heading, buttons };
             };

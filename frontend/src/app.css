@@ -1672,7 +1672,35 @@ a.bucket-tile:hover {
   border-color: color-mix(in oklab, var(--tone, var(--teal)) 55%, var(--line));
 }
 
-  .bill-columns > .card:has(> a:hover),
+.account-tile {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  animation-name: tile-in;
+  animation-duration: 220ms;
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: backwards;
+  animation-delay: min(calc(var(--stagger, 0) * 40ms), 480ms);
+}
+
+.account-tile > a.bucket-tile {
+  height: 100%;
+  padding-right: 2.6rem;
+  animation: none;
+}
+
+.account-star {
+  position: absolute;
+  z-index: 2;
+  top: 0.35rem;
+  right: 0.35rem;
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0;
+}
+
+  .bill-columns > .card:has(a:hover),
   .payor-columns > .card:has(.pay-card-head a:hover),
   .vehicle-columns > .card:has(.pay-card-head a:hover),
   .hero:has(.available-open:hover),
@@ -2058,12 +2086,28 @@ button.entry-chip {
   border-top: 1px solid var(--line);
 }
 
+.bills-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  height: calc(100dvh - 5rem);
+  min-height: 0;
+}
+
+.bills-page > .bill-section:not([hidden]) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .bill-section {
   min-width: 0;
 }
 
 .bill-scroll {
-  max-height: 22rem;
+  flex: 1 1 auto;
+  min-height: 12rem;
   overflow-x: hidden;
   overflow-y: scroll;
   overscroll-behavior: contain;
@@ -2114,6 +2158,127 @@ button.entry-chip {
 
 .bill-columns > :only-child {
   grid-column: 1 / -1;
+}
+
+.bill-columns > .card.bill-card {
+  padding: 0.55rem 0.7rem;
+}
+
+.bill-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.bill-tab {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tone, var(--text));
+  padding: 0.32rem 0.85rem;
+  font-weight: 650;
+}
+
+.bill-tab[aria-selected="true"] {
+  background: color-mix(in oklab, var(--tone, var(--teal)) 22%, transparent);
+  border-color: color-mix(in oklab, var(--tone, var(--teal)) 55%, var(--line));
+}
+
+.bill-filter {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.bill-slim {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem 0.7rem;
+}
+
+.bill-slim-main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.bill-slim-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.5rem;
+  min-width: 0;
+}
+
+.bill-slim-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bill-open {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+}
+
+.bill-chevron {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.bill-card[data-open="true"] .bill-chevron {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.bill-more {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.7rem;
+}
+
+.bill-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.bill-detail-chip {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--tone, var(--teal)) 18%, transparent);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+@media (max-width: 767px) {
+  .bills-page {
+    height: calc(100dvh - 3rem - 4.25rem - env(safe-area-inset-top, 0px));
+  }
+
+  .bill-filter {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bill-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .vehicle-columns {
@@ -2286,7 +2451,7 @@ button.entry-chip {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bucket-tile.envelope-tile strong a:hover {
+  .bucket-tile.envelope-tile a.bucket-name:hover strong {
     text-decoration: underline;
   }
 }
@@ -2357,7 +2522,12 @@ a.bucket-tile .money {
   overflow-wrap: break-word;
 }
 
-.bucket-tile.envelope-tile strong a {
+.bucket-tile.envelope-tile a.bucket-name {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  color: inherit;
   text-decoration: none;
 }
 
@@ -3042,7 +3212,7 @@ dialog.modal.gauge-modal[open] {
 }
 
 .span-slider input[type="range"] {
-  --fill: calc(var(--thumb) / 2 + (var(--span, 1) - 1) / 5 * (100% - var(--thumb)));
+  --fill: calc(var(--thumb) / 2 + (var(--span, 1) - 1) / var(--span-steps, 5) * (100% - var(--thumb)));
   width: 100%;
   margin: 0.35rem 0 0;
   padding: 0;
@@ -3397,12 +3567,12 @@ a.planner-stay {
     top: 0.4rem;
   }
 
-  .span-slider input[type="range"],
-  .span-slider-ticks {
+  .modal .span-slider input[type="range"],
+  .modal .span-slider-ticks {
     opacity: 0.45;
   }
 
-  .span-slider input[type="range"] {
+  .modal .span-slider input[type="range"] {
     cursor: default;
   }
 

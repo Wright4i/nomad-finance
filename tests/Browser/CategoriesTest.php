@@ -187,10 +187,11 @@ final class CategoriesTest extends TestCase
         self::clickLinkContaining('Rent');
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
-                const name = document.querySelector('input[name="name"]');
-                const amount = document.querySelector('input[name="targetAmount"]');
-                const archive = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Archive');
-                return !name && !amount && !archive;
+                const type = document.querySelector('select[name="billType"]');
+                return location.pathname === '/bills'
+                    && new URLSearchParams(location.search).get('type') === 'rent'
+                    && type instanceof HTMLSelectElement
+                    && type.value === 'rent';
             JS);
 
             return $ready === true;
@@ -384,14 +385,14 @@ final class CategoriesTest extends TestCase
     public function testUnpayRestoresAOneOffAndPauseRemains(): void
     {
         self::driver()->get(self::$base . '/bills');
-        self::waitForText('Pause');
+        self::waitForText('Active');
         Reveal::bill(self::driver(), 'Urgent care', 'paid');
         self::waitForText('Urgent care');
         Reveal::bill(self::driver(), 'Estimated tax', 'active');
         self::waitForTextGone('Stop reminding');
         $billColors = self::driver()->executeScript(<<<'JS'
             const heading = (label) => {
-                const node = [...document.querySelectorAll('h2')].find((item) => item.textContent.trim() === label);
+                const node = document.querySelector(`[role="tab"][data-section="${label.toLowerCase()}"]`);
                 return node ? getComputedStyle(node).color : '';
             };
             const mark = (name) => {
@@ -404,12 +405,18 @@ final class CategoriesTest extends TestCase
         self::assertIsArray($billColors);
         self::assertCount(6, $billColors);
         self::assertSame(6, count(array_unique($billColors)));
-        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Unpay"]'))->click();
+        Reveal::bill(self::driver(), 'Urgent care', 'paid');
+        self::openBill('Urgent care');
+        self::wait()->until(
+            WebDriverExpectedCondition::elementToBeClickable(
+                WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Unpay"]'),
+            ),
+        )->click();
         $moved = self::wait()->until(function (): bool {
             $placed = self::driver()->executeScript(<<<'JS'
                 const section = (label) => {
-                    const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === label);
-                    return heading && heading.closest('section') ? heading.closest('section').innerText : '';
+                    const node = document.querySelector(`section[data-section="${label.toLowerCase()}"]`);
+                    return node ? node.textContent : '';
                 };
                 return section('Active').includes('Urgent care') && !section('Paid').includes('Urgent care');
             JS);
@@ -417,12 +424,17 @@ final class CategoriesTest extends TestCase
             return $placed === true;
         });
         self::assertTrue($moved);
-        self::driver()->findElement(WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Pause"]'))->click();
+        self::driver()->executeScript('document.querySelector(\'[role="tab"][data-section="active"]\')?.click()');
+        self::openBill('Urgent care');
+        self::wait()->until(
+            WebDriverExpectedCondition::elementToBeClickable(
+                WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Pause"]'),
+            ),
+        )->click();
         $paused = self::wait()->until(function (): bool {
             $placed = self::driver()->executeScript(<<<'JS'
-                const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === 'Paused');
-                const section = heading && heading.closest('section') ? heading.closest('section').innerText : '';
-                return section.includes('Urgent care');
+                const section = document.querySelector('section[data-section="paused"]');
+                return section ? section.textContent.includes('Urgent care') : false;
             JS);
 
             return $placed === true;
@@ -472,6 +484,16 @@ final class CategoriesTest extends TestCase
         );
         $element->clear();
         $element->sendKeys($value);
+    }
+
+    private static function openBill(string $name): void
+    {
+        self::driver()->executeScript(<<<'JS'
+            const name = arguments[0];
+            const article = [...document.querySelectorAll('article')].find((node) => node.textContent.includes(name));
+            const opener = article ? article.querySelector('button.bill-open') : null;
+            if (opener && opener.getAttribute('aria-expanded') !== 'true') opener.click();
+        JS, [$name]);
     }
 
     private static function waitForText(string $text): void

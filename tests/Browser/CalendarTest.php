@@ -255,11 +255,11 @@ final class CalendarTest extends TestCase
         self::waitForText('Metered electric');
         $actions = self::driver()->executeScript(<<<'JS'
             const buttons = (section, name) => {
-                const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === section);
-                const card = heading && heading.parentElement
-                    ? [...heading.parentElement.querySelectorAll('article')].find((node) => node.innerText.includes(name))
+                const root = document.querySelector(`section[data-section="${section.toLowerCase()}"]`);
+                const card = root
+                    ? [...root.querySelectorAll('article')].find((node) => node.textContent.includes(name))
                     : null;
-                return card ? [...card.querySelectorAll('button')].map((node) => node.textContent.trim()) : [];
+                return card ? [...card.querySelectorAll('button')].map((node) => node.textContent.trim()).filter(Boolean) : [];
             };
             return { active: buttons('Active', 'Metered electric'), paid: buttons('Paid', 'Metered electric') };
         JS);

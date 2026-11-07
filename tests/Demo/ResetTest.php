@@ -76,6 +76,15 @@ final class ResetTest extends TestCase
         $checking = $this->named($seeded, 'Everyday checking');
         self::assertSame('checking', $checking['type']);
         self::assertSame(318000, $checking['balanceMinor']);
+        self::assertTrue($checking['starred']);
+        $draw = $this->pdo->query(
+            "SELECT draw.name FROM bills b
+             JOIN accounts draw ON draw.id = b.account_id
+             JOIN accounts source ON source.id = b.source_account_id
+             JOIN user u ON u.id = source.user_id
+             WHERE u.role = 'demo' AND source.name = 'Travel card'"
+        )->fetchColumn();
+        self::assertSame('Everyday checking', $draw);
 
         $accounts->create([
             'name' => 'Scratch',
@@ -183,7 +192,12 @@ final class ResetTest extends TestCase
             'SELECT DISTINCT b.recurrence FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? ORDER BY b.recurrence',
             [$demoId],
         );
-        self::assertSame(['monthly', 'once', 'weekly', 'yearly'], $recurrences);
+        self::assertSame(['daily', 'monthly', 'once', 'weekly', 'yearly'], $recurrences);
+        $every = $this->pdo->prepare(
+            'SELECT b.every_count FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? AND b.name = \'Registration\''
+        );
+        $every->execute([$demoId]);
+        self::assertSame(2, (int) $every->fetchColumn());
         $statuses = $this->column(
             'SELECT DISTINCT b.status FROM bills b JOIN accounts a ON a.id = b.account_id WHERE a.user_id = ? ORDER BY b.status',
             [$demoId],
@@ -219,6 +233,7 @@ final class ResetTest extends TestCase
             'Fill-up',
             'Fill-up',
             'Fresh water',
+            'Fuel card',
             'Fuel stop',
             'Groceries',
             'Health share',
@@ -237,6 +252,7 @@ final class ResetTest extends TestCase
             'Phone',
             'Propane',
             'RV insurance',
+            'Registration',
             'Repair parts',
             'Rig service',
             'Roadside',
@@ -375,6 +391,8 @@ final class ResetTest extends TestCase
         self::assertSame(400, (int) $this->pdo->query(
             "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.name = 'Bunkhouse'"
         )->fetchColumn());
+        self::assertSame('fly', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'Devils Garden'")->fetchColumn());
+        self::assertSame('drive', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());
         self::assertSame('2026-11-22', $this->pdo->query("SELECT balance_due_on FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());
         self::assertSame('2026-12-01', $this->pdo->query("SELECT balance_due_on FROM trips WHERE place_name = 'Cottonwood'")->fetchColumn());
         self::assertNull($this->pdo->query("SELECT rating_half_stars FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());

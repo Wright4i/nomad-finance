@@ -58,7 +58,7 @@ final class EnvelopeRulesTest extends TestCase
         $this->ownerId = (int) $_SESSION['user_id'];
         $auth->enterDemo();
         $targets = new TargetService($this->pdo, $actor);
-        $this->envelopes = new EnvelopeService($this->pdo, $actor, $catalog, $targets, new PayCycleService($this->pdo, $actor));
+        $this->envelopes = new EnvelopeService($this->pdo, $actor, $catalog, $targets, new PayCycleService($this->pdo, $actor), new Drive(false));
         $this->categories = new CategoryService($this->pdo, $actor, $targets);
         $this->bills = new BillService($this->pdo, $catalog, $actor);
         $this->accounts = new AccountService($this->pdo, $catalog, $actor);
@@ -258,6 +258,142 @@ final class EnvelopeRulesTest extends TestCase
             $held['availableMinor'] - ($cleared['assignedMinor'] - $held['assignedMinor']),
             $cleared['availableMinor'],
         );
+    }
+
+    public function testAStayRaisesTheFuelAssignmentByItsEstimate(): void
+    {
+        $catalog = new CurrencyCatalog();
+        $actor = new Actor($this->pdo);
+        $trips = new TripService($this->pdo, $actor, $catalog, new Drive(false));
+        $november = $trips->fuelEstimates('2026-11-01', '2026-11-30', '2026-11-03');
+        $names = array_column($november, 'name');
+        self::assertContains('McDowell Mountain', $names);
+        self::assertContains('Lost Dutchman', $names);
+        self::assertContains('Cattail Cove', $names);
+        self::assertNotContains('Usery Mountain', $names);
+        self::assertNotContains('Cottonwood', $names);
+        $stayMinor = array_sum(array_column($november, 'costMinor'));
+        self::assertGreaterThan(0, $stayMinor);
+
+        $sheet = $this->envelopes->show('2026-11-03');
+        $fuel = $this->category($sheet, 'Fuel');
+        $billsOnly = 0;
+        $listed = 0;
+        foreach ($fuel['bills'] as $bill) {
+            if (in_array($bill['name'], $names, true)) {
+                $listed += (int) $bill['amountMinor'];
+                continue;
+            }
+            $billsOnly += (int) $bill['amountMinor'];
+        }
+        self::assertSame(8500, $billsOnly);
+        self::assertSame($stayMinor, $listed);
+        self::assertSame(8500 + $stayMinor, (int) $fuel['billMinor']);
+        self::assertGreaterThanOrEqual((int) $fuel['billMinor'], (int) $fuel['amountMinor']);
+
+        try {
+            $this->envelopes->save([
+                'today' => '2026-11-03',
+                'payCycleId' => $sheet['payCycleId'],
+                'amounts' => [['categoryId' => (int) $fuel['id'], 'amountMinor' => (int) $fuel['billMinor'] - 1]],
+            ]);
+            self::fail('Fuel accepted an assignment under its stays.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertSame('Assigned cannot be lower than the bills.', $e->fields['amount-' . $fuel['id']]);
+        }
+
+        $december = $trips->fuelEstimates('2026-12-01', '2026-12-31', '2026-11-03');
+        $later = $trips->fuelEstimates('2026-11-01', '2026-11-30', '2026-11-25');
+        $laterNames = array_column($later, 'name');
+        self::assertContains('Cattail Cove', $laterNames);
+        self::assertNotContains('Lost Dutchman', $laterNames);
+        self::assertNotContains('McDowell Mountain', $laterNames);
+        $laterSheet = $this->envelopes->show('2026-11-25');
+        $laterListed = array_column($this->category($laterSheet, 'Fuel')['bills'], 'name');
+        self::assertContains('Cattail Cove', $laterListed);
+        self::assertNotContains('Lost Dutchman', $laterListed);
+        self::assertNotContains('McDowell Mountain', $laterListed);
+        $decemberNames = array_column($december, 'name');
+        self::assertContains('Cottonwood', $decemberNames);
+        self::assertContains('Midland', $decemberNames);
+        self::assertContains('La Posa South', $decemberNames);
+        self::assertNotContains('Cattail Cove', $decemberNames);
+        $next = $this->envelopes->show('2026-11-03', $this->payCycleId($sheet, 'Remote salary'), null, true);
+        $nextFuel = $this->category($next, 'Fuel');
+        $nextStay = 0;
+        foreach ($nextFuel['bills'] as $bill) {
+            if (in_array($bill['name'], $decemberNames, true)) {
+                $nextStay += (int) $bill['amountMinor'];
+            }
+        }
+        self::assertSame(array_sum(array_column($december, 'costMinor')), $nextStay);
+        self::assertGreaterThanOrEqual((int) $nextFuel['billMinor'], (int) $nextFuel['amountMinor']);
+    }
+
+    public function testRecalculateReplacesTheMonthAndALogLeavesTheBucketsAlone(): void
+    {
+        $sheet = $this->envelopes->show('2026-11-03');
+        $before = $this->storedAssignments();
+        $balance = $this->balance('Everyday checking');
+        $checking = $this->accountId('Everyday checking');
+        $vehicle = $this->pdo->query("SELECT id FROM vehicles WHERE name = 'Bunkhouse'");
+        $vehicleId = (int) $vehicle->fetchColumn();
+        $logged = $this->bills->log([
+            'kind' => 'need',
+            'type' => 'groceries',
+            'name' => 'Market run',
+            'accountId' => $checking,
+            'amountMinor' => 1800,
+            'date' => '2026-11-05',
+            'today' => '2026-11-05',
+        ]);
+        $fuel = $this->bills->log([
+            'kind' => 'fuel',
+            'accountId' => $checking,
+            'amountMinor' => 2500,
+            'vehicleId' => $vehicleId,
+            'odometerMiles' => 10600,
+            'date' => '2026-11-05',
+            'today' => '2026-11-05',
+        ]);
+        self::assertSame('once', $logged['recurrence']);
+        self::assertSame('active', $logged['status']);
+        self::assertNull($logged['lastPaidOn']);
+        self::assertSame('once', $fuel['recurrence']);
+        self::assertSame('Fuel', $fuel['name']);
+        self::assertSame($before, $this->storedAssignments());
+        self::assertSame($balance, $this->balance('Everyday checking'));
+
+        $needs = $this->categoryId($sheet, 'Road cushion');
+        $held = $this->envelopes->save([
+            'today' => '2026-11-03',
+            'payCycleId' => $sheet['payCycleId'],
+            'amounts' => [['categoryId' => $needs, 'amountMinor' => 50000]],
+            'maximums' => [['categoryId' => $needs, 'amountMinor' => 80000]],
+        ]);
+        $october = $this->period($held, '2026-10-01');
+        $again = $this->envelopes->recalculate([
+            'today' => '2026-11-03',
+            'payCycleId' => $held['payCycleId'],
+        ]);
+        self::assertSame(38500, $this->amount($again, 'Road cushion'));
+        self::assertSame(38500, $this->billMinor($again, 'Road cushion'));
+        self::assertSame(80000, $this->targetAmount($again, 'Road cushion'));
+        self::assertSame($this->billMinor($again, 'Fuel'), $this->amount($again, 'Fuel'));
+        self::assertGreaterThan(8500, $this->billMinor($again, 'Fuel'));
+        $groceries = $this->category($again, 'Groceries');
+        $market = 0;
+        foreach ($groceries['bills'] as $bill) {
+            if ($bill['name'] === 'Market run') {
+                $market += (int) $bill['amountMinor'];
+            }
+        }
+        self::assertSame(1800, $market);
+        self::assertSame((int) $groceries['billMinor'], (int) $groceries['amountMinor']);
+        self::assertSame($balance, $this->balance('Everyday checking'));
+        $closed = $this->envelopes->show('2026-11-03', $again['payCycleId'], $october);
+        self::assertSame(20000, $this->amount($closed, 'Road cushion'));
     }
 
     public function testALockedBucketAssignsTheBillsAndKeepsTheMaximumOpen(): void
@@ -941,6 +1077,30 @@ final class EnvelopeRulesTest extends TestCase
             }
         }
         self::fail($name . ' is missing.');
+    }
+
+    private function accountId(string $name): int
+    {
+        foreach ($this->accounts->list(true) as $account) {
+            if ($account['name'] === $name) {
+                return (int) $account['id'];
+            }
+        }
+        self::fail($name . ' is missing.');
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function storedAssignments(): array
+    {
+        $rows = $this->pdo->query(
+            'SELECT p.period_start, c.name, a.amount_minor, a.filled_minor
+             FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             JOIN categories c ON c.id = a.category_id
+             ORDER BY p.period_start, c.name'
+        )->fetchAll();
+
+        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
     }
 
     private function balance(string $name): int

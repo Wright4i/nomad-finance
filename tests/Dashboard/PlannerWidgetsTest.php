@@ -53,7 +53,7 @@ final class PlannerWidgetsTest extends TestCase
             $this->pdo,
             $catalog,
             $actor,
-            new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor), new PayCycleService($this->pdo, $actor)),
+            new EnvelopeService($this->pdo, $actor, $catalog, new TargetService($this->pdo, $actor), new PayCycleService($this->pdo, $actor), new Drive(false)),
             new PayCycleService($this->pdo, $actor),
             new TripService($this->pdo, $actor, $catalog, new Drive(false)),
             new CalendarEntryService($this->pdo, $actor),

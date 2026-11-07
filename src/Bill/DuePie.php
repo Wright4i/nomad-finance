@@ -32,6 +32,7 @@ final class DuePie
                 'exponent' => (int) ($bill['exponent'] ?? $baseExponent),
                 'status' => 'active',
                 'recurrence' => (string) ($bill['recurrence'] ?? 'once'),
+                'every' => max(1, (int) ($bill['every'] ?? 1)),
                 'anchorDate' => (string) ($bill['anchorDate'] ?? $bill['nextDueDate']),
                 'nextDueDate' => (string) $bill['nextDueDate'],
                 'lastPaidOn' => $bill['lastPaidOn'] ?? null,

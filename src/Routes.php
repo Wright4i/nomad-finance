@@ -229,8 +229,14 @@ final class Routes
                     $section = $params['section'] ?? '';
                     if (is_string($section) && $section !== '') {
                         $chunks = $params['chunks'] ?? 1;
+                        $filter = [
+                            'name' => is_string($params['name'] ?? null) ? $params['name'] : '',
+                            'accountId' => is_numeric($params['accountId'] ?? null) ? (int) $params['accountId'] : 0,
+                            'type' => is_string($params['type'] ?? null) ? $params['type'] : '',
+                            'amount' => is_string($params['amount'] ?? null) ? $params['amount'] : '',
+                        ];
 
-                        return Json::write($response, $bills->section($section, is_numeric($chunks) ? (int) $chunks : 1));
+                        return Json::write($response, $bills->section($section, is_numeric($chunks) ? (int) $chunks : 1, $filter));
                     }
 
                     return Json::write($response, ['bills' => $bills->list()]);
@@ -389,6 +395,9 @@ final class Routes
                 });
                 $secure->put('/budget', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {
                     return Json::write($response, $envelopes->save(self::body($request)));
+                });
+                $secure->post('/budget/recalculate', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {
+                    return Json::write($response, $envelopes->recalculate(self::body($request)));
                 });
 
                 $secure->get('/dashboard', function (ServerRequestInterface $request, ResponseInterface $response) use ($dashboard) {

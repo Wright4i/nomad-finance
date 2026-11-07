@@ -227,6 +227,48 @@ final class LogRulesTest extends TestCase
         self::assertSame($before, $this->balance());
     }
 
+    public function testALockedBillDrawsFromTheStarredAccount(): void
+    {
+        $checking = $this->accounts->create([
+            'name' => 'Everyday',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 1000,
+            'starred' => true,
+        ]);
+        $card = $this->accounts->create([
+            'name' => 'Card star',
+            'type' => 'credit',
+            'currency' => 'USD',
+            'balanceMinor' => 50000,
+            'minimumDueMinor' => 2500,
+            'dueDay' => 15,
+            'autopayChoice' => 'minimum',
+        ]);
+        $bill = $this->named('Card star');
+        self::assertTrue($bill['locked']);
+        self::assertSame($checking['id'], $bill['accountId']);
+        self::assertSame($card['id'], $bill['sourceAccountId']);
+
+        $wallet = $this->accounts->create([
+            'name' => 'Wallet star',
+            'type' => 'cash',
+            'currency' => 'USD',
+            'balanceMinor' => 100,
+            'starred' => true,
+        ]);
+        self::assertSame($wallet['id'], $this->named('Card star')['accountId']);
+
+        $this->accounts->update($wallet['id'], [
+            'name' => 'Wallet star',
+            'type' => 'cash',
+            'currency' => 'USD',
+            'balanceMinor' => 100,
+            'starred' => false,
+        ]);
+        self::assertSame($card['id'], $this->named('Card star')['accountId']);
+    }
+
     public function testALiabilityBillHidesWhenAutopayIsOffAndStaysLocked(): void
     {
         $card = $this->accounts->create([

@@ -127,6 +127,13 @@
     if (next === 'need') spendType = 'groceries';
     if (next === 'want') spendType = 'restaurants';
     if (next === 'saving') spendType = 'debt';
+    if (next === 'fuel') {
+      const fuel = accounts.find((item) => item.type === 'fuel');
+      if (fuel) accountId = String(fuel.id);
+      return;
+    }
+    const starred = accounts.find((item) => item.starred);
+    if (starred) accountId = String(starred.id);
   }
 
   function bucketName(): string {
@@ -187,7 +194,7 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">New log</h1>
-  <p class="muted m-0">A log is a one-time bill left unpaid. Mark it paid later. The account balance stays as you typed it.</p>
+  <p class="muted m-0">A log is a one-time bill left unpaid. It does not change a bucket. Recalculate on Budget counts that bill. Mark it paid later. The account balance stays as you typed it.</p>
   <Note bind:message />
   <div class="field">
     <span>Kind</span>

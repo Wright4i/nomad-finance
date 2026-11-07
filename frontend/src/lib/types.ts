@@ -21,8 +21,12 @@ export type Account = {
   dueDay: number | null;
   creditLimitMinor: number | null;
   autopayChoice: 'none' | 'minimum' | 'balance';
+  bankAutopay: boolean;
+  billRecurrence: 'daily' | 'monthly' | 'yearly';
+  billEvery: number;
   institution: string | null;
   notes: string | null;
+  starred: boolean;
   archivedAt: string | null;
 };
 
@@ -36,6 +40,7 @@ export type Bill = {
   exponent: number;
   amountMinor: number;
   recurrence: string;
+  every: number;
   anchorDate: string;
   nextDueDate: string;
   lastPaidOn: string | null;
@@ -189,6 +194,7 @@ export type DriveLeg = {
   toId: number;
   miles: number;
   driving: boolean;
+  travel: 'drive' | 'fly';
   coordinates: [number, number][];
 };
 
@@ -228,6 +234,7 @@ export type Trip = {
   exponent: number;
   totalMinor: number;
   amountDueMinor: number;
+  travel: 'drive' | 'fly';
   depositMinor: number;
   depositCharged: boolean;
   dueCharged: boolean;

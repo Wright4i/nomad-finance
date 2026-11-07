@@ -16,8 +16,13 @@ final class Reveal
             $ready = $driver->executeScript(<<<'JS'
                 const name = arguments[0];
                 const section = arguments[1];
-                const root = section ? document.querySelector(`[data-section="${section}"]`) : document;
+                const root = section ? document.querySelector(`section[data-section="${section}"]`) : document;
                 if (!root) return false;
+                if (section && root.hasAttribute('hidden')) {
+                    const tab = document.querySelector(`[role="tab"][data-section="${section}"]`);
+                    if (tab) tab.click();
+                    return false;
+                }
                 const named = (node) => {
                     const strong = node.querySelector('strong');
                     const text = (strong ? strong.textContent : node.textContent).replace(/\s+/g, ' ').trim();
@@ -34,8 +39,13 @@ final class Reveal
                         }
                     }
                     hit.scrollIntoView({ block: 'center', inline: 'nearest' });
+                    if (root.dataset.revealMark !== name) {
+                        root.dataset.revealMark = name;
+                        return false;
+                    }
                     return true;
                 }
+                root.dataset.revealMark = '';
                 const scrollers = section
                     ? [...root.querySelectorAll('.bill-scroll')]
                     : [...document.querySelectorAll('.bill-scroll')];

@@ -11,12 +11,22 @@
 
   let { id = null }: { id?: string | null } = $props();
 
+  function dayAfter(iso: string): string {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!match) return iso;
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    date.setUTCDate(date.getUTCDate() + 1);
+    return date.toISOString().slice(0, 10);
+  }
+
   let placeName = $state('');
   let note = $state('');
   let arriveOn = $state(todayISO());
-  let departOn = $state(todayISO());
+  let departOn = $state(id == null ? dayAfter(todayISO()) : todayISO());
+  let departFollows = $state(id == null);
   let balanceDueOn = $state(todayISO());
   let balanceDueTouched = $state(false);
+  let travel = $state<'drive' | 'fly'>('drive');
   let latitude = $state('');
   let longitude = $state('');
   let city = $state<string | null>(null);
@@ -48,6 +58,8 @@
       note = trip.note ?? '';
       arriveOn = trip.arriveOn;
       departOn = trip.departOn;
+      departFollows = false;
+      travel = trip.travel === 'fly' ? 'fly' : 'drive';
       balanceDueOn = trip.balanceDueOn ?? trip.arriveOn;
       balanceDueTouched = true;
       latitude = trip.latitude;
@@ -76,6 +88,12 @@
 
   $effect(() => {
     if (!balanceDueTouched) balanceDueOn = arriveOn;
+  });
+
+  $effect(() => {
+    if (!departFollows) return;
+    const next = dayAfter(arriveOn);
+    if (departOn !== next) departOn = next;
   });
 
   $effect(() => {
@@ -142,6 +160,7 @@
       accountId: accountId === '' ? null : Number(accountId),
       totalMinor: parseMajor(total || '0', exponent),
       amountDueMinor: parseMajor(amountDue || '0', exponent),
+      travel,
       today: todayISO(),
       ...extra,
     };
@@ -209,14 +228,22 @@
   <div class="flex gap-2">
     <label class="field flex-1">
       <span>Arrival</span>
-      <DateField name="arriveOn" bind:value={arriveOn} />
+      <DateField name="arriveOn" bind:value={arriveOn} oninput={() => { if (!id) departFollows = true; }} />
       {#if fields.arriveOn}<em>{fields.arriveOn}</em>{/if}
     </label>
     <label class="field flex-1">
       <span>Departure</span>
-      <DateField name="departOn" bind:value={departOn} />
+      <DateField name="departOn" bind:value={departOn} oninput={() => (departFollows = false)} />
       {#if fields.departOn}<em>{fields.departOn}</em>{/if}
     </label>
+  </div>
+  <div class="field">
+    <span>Travel</span>
+    <div class="flex gap-2" role="group" aria-label="Travel">
+      <button class="choice" class:on={travel === 'drive'} type="button" onclick={() => (travel = 'drive')}>drive</button>
+      <button class="choice" class:on={travel === 'fly'} type="button" onclick={() => (travel = 'fly')}>fly</button>
+    </div>
+    {#if fields.travel}<em>{fields.travel}</em>{/if}
   </div>
   <label class="field">
     <span>Balance due</span>
@@ -272,7 +299,14 @@
     <span>Total</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input name="total" inputmode="decimal" bind:value={total} />
+      <input
+        name="total"
+        inputmode="decimal"
+        bind:value={total}
+        oninput={(event) => {
+          amountDue = event.currentTarget.value;
+        }}
+      />
     </span>
     {#if fields.totalMinor}<em>{fields.totalMinor}</em>{/if}
   </label>
