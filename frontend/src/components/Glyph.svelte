@@ -193,6 +193,14 @@
     {:else if mark === 'crosshair'}
       <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
       <path d="M12 3.2v3.1M12 17.7v3.1M3.2 12h3.1M17.7 12h3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'up'}
+      <path d="M6 14.5 12 8.5l6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'down'}
+      <path d="M6 9.5 12 15.5l6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'collapse'}
+      <path d="M14.5 6.5 9 12l5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'expand'}
+      <path d="M9.5 6.5 15 12l-5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {/if}
   </svg>
 </span>

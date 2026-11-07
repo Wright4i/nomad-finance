@@ -124,10 +124,14 @@ final class BillFillTest extends TestCase
         $this->pdo->prepare(
             'UPDATE assignments SET amount_minor = filled_minor + 400 WHERE category_id = ?'
         )->execute([$needs]);
-        $updated = $this->bills->update($bill['id'], $this->bill('Rent', 'rent', 2000, '2026-11-10'));
+        $updated = $this->bills->update($bill['id'], $this->bill('Rent', 'rent', 1100, '2026-11-10'));
+        $open = $this->assignment($needs, $this->homeId());
+        self::assertSame(1100, $open['filled_minor']);
+        self::assertSame(1400, $open['amount_minor']);
+        $updated = $this->bills->update($updated['id'], $this->bill('Rent', 'rent', 2000, '2026-11-10'));
         $open = $this->assignment($needs, $this->homeId());
         self::assertSame(2000, $open['filled_minor']);
-        self::assertSame(2400, $open['amount_minor']);
+        self::assertSame(2000, $open['amount_minor']);
         $this->bills->markPaid($updated['id'], ['paidOn' => '2026-11-10']);
         self::assertSame($open, $this->assignment($needs, $this->homeId()));
         self::assertSame(100000, $this->balance());

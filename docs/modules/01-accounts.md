@@ -7,6 +7,7 @@ Create and edit an account for the signed-in user. Demo and the owner do not see
 | Name | Required, trimmed, 1–80 characters |
 | Type | checking, savings, cash, credit, loan, fuel, other |
 | Side | Implied, except other, which asks asset or liability |
+| Include in Budget | Checkbox, assets only. On counts the balance in available to assign. A new checking, cash, or other asset starts on. A new savings account starts off. A liability has no checkbox and stays out |
 | Currency | Not asked. The account is stored as dollars |
 | Balance | Integer cents, zero or greater |
 | Interest | Optional basis points, 0–100000. 500 is 5 percent a year. Credit and loan use it for interest lost. Savings uses it for interest gained |

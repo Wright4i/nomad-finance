@@ -46,8 +46,12 @@ A reminder to pay, drawn from one account, with an amount in cents.
 _Avoid_: Invoice, transaction, posting
 
 **Trip**:
-A stay at one place from an arrival date through a departure date.
+A stay at one place from an arrival date through a departure date. Another stay may share a night.
 _Avoid_: Envelope, booking
+
+**Route**:
+The order of stays the driving line and the fuel miles follow.
+_Avoid_: Itinerary
 
 **Place**:
 The named spot a trip sits on, with coordinates.
@@ -85,19 +89,15 @@ A budget bucket in one group: Needs, Wants, or Savings. The amount it holds is w
 _Avoid_: Bill type, account type, envelope
 
 **Locked bucket**:
-One bucket for one bill type, in that type's group. Other and misc are one each. Its name and group stay fixed. Its assignment starts at the bills for the month. That amount can be typed higher, and it cannot be lower than those bills. Its maximum starts at the bills. It cannot be archived or edited. A bill files there unless the form points it at a manual bucket in the same group. A fuel bill cannot.
+One bucket for one bill type, in that type's group. Other and misc are one each. Its name and group stay fixed. Its auto-assigned amount is the bills for the month. The envelope is what can be typed. It cannot be archived or edited. A bill files there unless the form points it at a manual bucket in the same group. A fuel bill cannot.
 _Avoid_: Default bucket, Fuel Bucket, goal bucket
 
 **Goal bucket**:
 A bucket a person creates. It can hold a target, and a bill of the same group can point at it. A fuel bill cannot.
 _Avoid_: Locked bucket
 
-**Target**:
-A goal on one bucket: an amount needed by a date, or an amount to hold. It compares with the bucket amount. A locked bucket's maximum is an amount to hold.
-_Avoid_: Plan, budget
-
 **Bill amount**:
-The one amount on a bill, in cents. The envelope stores that same amount.
+The one amount on a bill, in cents.
 _Avoid_: Vendor amount, balance
 
 **Assignment**:
@@ -109,12 +109,20 @@ Retired. An assignment cannot be negative.
 _Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-Income still coming in this month, plus every asset account except savings, minus what the buckets already hold. A payday before today is left out. Savings accounts, credit cards, loans, fuel accounts, and tracking accounts stay out. The line under the number is what is already assigned of that income plus those accounts. Needs is 50% of that income plus those accounts, Wants 30%, and Savings 20%, half up to the cent. A closed or upcoming month does not change the number. The number can be zero, and it can be negative when the buckets hold more than that income and those accounts.
+Income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold. A payday before today is left out. Credit cards, loans, fuel accounts, and tracking accounts stay out. The line under the number is what is already assigned of that income plus those accounts. Needs is 50% of that income plus those accounts, Wants 30%, and Savings 20%, half up to the cent. A closed or upcoming month does not change the number. The number can be zero, and it can be negative when the buckets hold more than that income and those accounts.
 _Avoid_: To be budgeted
 
+**Auto-assigned**:
+The bills, and on Fuel the trip fuel, already counted on a bucket for the month. It is not typed.
+_Avoid_: Filled, bill total
+
 **Envelope**:
-An assignment of cash to a bucket for the month on screen. Remaining is that assignment.
+The amount typed on a bucket for the month, above what is auto-assigned. A new bill or trip fuel lowers it by the same amount when it has room, so the target stays. It does not go below zero.
 _Avoid_: Bucket, posting
+
+**Target**:
+On the budget tile, auto-assigned plus the envelope for the month. It is not typed. A goal can also store an amount to hold, or an amount needed by a date.
+_Avoid_: Plan, budget
 
 **Plan**:
 Retired from the books. The gauges stay on the calendar.
@@ -133,7 +141,7 @@ Retired. A posting is not split across buckets.
 _Avoid_: Line item
 
 **Logged fuel**:
-An unpaid one-time fuel bill named Fuel, filed on the locked Fuel bucket. It can record a vehicle, an odometer, and a price per gallon. It does not change an account balance or a bucket.
+An unpaid one-time fuel bill named Fuel, filed on the locked Fuel bucket. It can record a vehicle, an odometer, and a price per gallon. It does not change an account balance. It raises the Fuel bucket's auto-assigned amount.
 _Avoid_: Fuel label, posting
 
 **Want log**:

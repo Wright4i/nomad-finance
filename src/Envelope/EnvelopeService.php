@@ -595,7 +595,7 @@ final class EnvelopeService
 
     /**
      * The amount under the headline is income still coming in this month
-     * plus every asset account except savings. A payday before today is left out.
+     * plus every asset account marked Include in Budget. A payday before today is left out.
      * Those lines are that total. The headline is the total minus what is already assigned.
      *
      * @return array{income: list<array{id:int,payor:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,amountMinor:int}>}
@@ -627,7 +627,7 @@ final class EnvelopeService
         $stmt = $this->pdo->prepare(
             'SELECT id, name, type, balance_minor FROM accounts
              WHERE user_id = ? AND archived_at IS NULL
-               AND side = \'asset\' AND type != \'savings\'
+               AND side = \'asset\' AND in_budget = 1
              ORDER BY name COLLATE NOCASE, id'
         );
         $stmt->execute([$this->actor->id()]);
@@ -689,24 +689,47 @@ final class EnvelopeService
         return $categories;
     }
 
-    /** @return array<int, int> */
+    /**
+     * A typed row is the target. A row whose amount equals its fill is the bill copy
+     * on another payor, and it stays out of the target while a typed row exists.
+     *
+     * @return array<int, int>
+     */
     private function goalSums(string $start, string $end): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT a.category_id, SUM(a.amount_minor) AS total
+            'SELECT a.category_id, a.amount_minor, a.filled_minor
              FROM assignments a
              JOIN pay_periods p ON p.id = a.pay_period_id
              JOIN categories c ON c.id = a.category_id
              WHERE p.user_id = ? AND c.role != \'locked\' AND a.amount_minor > 0
-               AND p.period_start >= ? AND p.period_start <= ?
-             GROUP BY a.category_id'
+               AND p.period_start >= ? AND p.period_start <= ?'
         );
         $stmt->execute([$this->actor->id(), $start, $end]);
-        $sums = [];
+        $rows = [];
         while ($row = $stmt->fetch()) {
-            if (is_array($row)) {
-                $sums[(int) $row['category_id']] = (int) $row['total'];
+            if (!is_array($row)) {
+                continue;
             }
+            $rows[(int) $row['category_id']][] = [
+                'amount' => (int) $row['amount_minor'],
+                'filled' => (int) $row['filled_minor'],
+            ];
+        }
+        $sums = [];
+        foreach ($rows as $categoryId => $entries) {
+            $typed = 0;
+            $all = 0;
+            $hasTyped = false;
+            foreach ($entries as $entry) {
+                $all += $entry['amount'];
+                $pure = $entry['filled'] > 0 && $entry['amount'] === $entry['filled'];
+                if (!$pure) {
+                    $hasTyped = true;
+                    $typed += $entry['amount'];
+                }
+            }
+            $sums[$categoryId] = $hasTyped ? $typed : $all;
         }
 
         return $sums;
@@ -1036,10 +1059,10 @@ final class EnvelopeService
     }
 
     /**
-     * Assigned and Max are the sums for the buckets in that group for this month.
-     * Max is the saved target when one is set. A locked bucket with no saved target uses its unpaid bills.
-     * Target is that group's share of income still coming in plus non-savings assets: Needs 50%, Wants 30%, Savings 20%. Half up to the cent.
-     * The gauges keep their own share of goal assignments.
+     * Auto-assigned is the bills and trip fuel. Envelope is what was typed above that.
+     * Assigned is their sum, the target. Max is the saved amount to hold.
+     * targetMinor is that group's share of income still coming in plus assets included in the budget: Needs 50%, Wants 30%, Savings 20%. Half up to the cent.
+     * goalOver is set when the target is over that share. The gauges keep their own share of goal assignments.
      *
      * @param list<array<string, mixed>> $groups
      * @param list<array<string, mixed>> $categories
@@ -1048,6 +1071,8 @@ final class EnvelopeService
     private function headings(array $groups, array $categories, int $poolMinor): array
     {
         $assigned = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        $auto = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        $envelope = ['needs' => 0, 'wants' => 0, 'savings' => 0];
         $maximum = ['needs' => 0, 'wants' => 0, 'savings' => 0];
         foreach ($categories as $category) {
             $group = $category['group'] ?? '';
@@ -1055,19 +1080,27 @@ final class EnvelopeService
                 continue;
             }
             $amount = (int) ($category['amountMinor'] ?? 0);
-            if ($amount > 0) {
-                $assigned[$group] += $amount;
+            $bills = (int) ($category['billMinor'] ?? 0);
+            $target = max($amount, $bills);
+            if ($target > 0) {
+                $assigned[$group] += $target;
             }
+            if ($bills > 0) {
+                $auto[$group] += $bills;
+            }
+            $envelope[$group] += max(0, $amount - $bills);
             $maximum[$group] += $this->bucketMaximum($category);
         }
         foreach ($groups as $index => $group) {
             $name = (string) ($group['group'] ?? '');
             $percent = (int) ($group['targetPercent'] ?? 0);
+            $goal = $poolMinor > 0 && $percent > 0 ? intdiv($poolMinor * $percent + 50, 100) : 0;
             $groups[$index]['assignedMinor'] = $assigned[$name] ?? 0;
+            $groups[$index]['autoMinor'] = $auto[$name] ?? 0;
+            $groups[$index]['envelopeMinor'] = $envelope[$name] ?? 0;
             $groups[$index]['maximumMinor'] = $maximum[$name] ?? 0;
-            $groups[$index]['targetMinor'] = $poolMinor > 0 && $percent > 0
-                ? intdiv($poolMinor * $percent + 50, 100)
-                : 0;
+            $groups[$index]['targetMinor'] = $goal;
+            $groups[$index]['goalOver'] = $goal > 0 && ($assigned[$name] ?? 0) > $goal;
         }
 
         return $groups;
@@ -1503,7 +1536,7 @@ final class EnvelopeService
         if ((int) $bills->fetchColumn() === 0) {
             return;
         }
-        (new BillFill($this->pdo, $this->currencies, $this->actor))->apply($today);
+        (new BillFill($this->pdo, $this->currencies, $this->actor, $this->drive ?? new Drive(true)))->apply($today);
     }
 
     private function day(string $value): string

@@ -769,9 +769,10 @@ final class BillService
     }
 
     /**
-     * A fuel, need, want, or saving log is an unpaid one-time bill. It does not move a balance
-     * and it does not write a bucket. Recalculate counts the bill. An unpaid fuel log still
-     * advances the odometer. A need log does not accept Fuel.
+     * A fuel, need, want, or saving log is an unpaid one-time bill. It does not move a balance.
+     * It raises that bucket's auto-assigned amount, and the envelope shrinks by the same
+     * amount when it has room, so the target stays. An unpaid fuel log still advances the odometer.
+     * A need log does not accept Fuel.
      *
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -925,6 +926,8 @@ final class BillService
             throw $e;
         }
 
+        $this->fill->apply($today);
+
         return $this->get($id);
     }
 
@@ -976,8 +979,10 @@ final class BillService
         )->execute([
             $name, $type, $other, $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
         ]);
+        $id = (int) $this->pdo->lastInsertId();
+        $this->fill->apply($today);
 
-        return $this->get((int) $this->pdo->lastInsertId());
+        return $this->get($id);
     }
 
     /** @param array<string, string> $errors */

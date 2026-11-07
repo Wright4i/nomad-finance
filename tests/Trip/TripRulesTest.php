@@ -214,34 +214,151 @@ final class TripRulesTest extends TestCase
         self::assertNull($again['fuel']['priceMinor']);
     }
 
-    public function testAHandoffDayIsAllowedAndASharedNightIsNamed(): void
+    public function testAHandoffDayIsAllowedAndASharedNightIsKept(): void
     {
         $first = $this->stay(0, 0, '2026-11-01', '2026-11-05', 'Stay 1');
         $second = $this->stay(0, 0, '2026-11-05', '2026-11-08', 'Stay 2');
+        $first = $this->trips->get((int) $first['id'], '2026-11-03');
+        $second = $this->trips->get((int) $second['id'], '2026-11-03');
         self::assertSame('2026-11-05', $second['arriveOn']);
+        self::assertFalse($first['moveLater']);
+        self::assertFalse($second['moveEarlier']);
+        $nested = $this->stay(0, 0, '2026-11-04', '2026-11-05', 'Stay 3');
+        self::assertSame('Stay 3', $nested['placeName']);
+        self::assertTrue($nested['moveEarlier']);
+        $updated = $this->trips->update((int) $first['id'], [
+            'placeName' => 'Stay 1',
+            'arriveOn' => '2026-11-06',
+            'departOn' => '2026-11-09',
+            'latitude' => '36.17',
+            'longitude' => '-115.14',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'today' => '2026-11-03',
+        ]);
+        self::assertSame('2026-11-09', $updated['departOn']);
+    }
+
+    public function testANestedStayTradesPlacesAndFuelFollowsTheRoute(): void
+    {
+        $vegas = $this->trips->create($this->fields([
+            'placeName' => 'Las Vegas RV Resort',
+            'arriveOn' => '2026-10-23',
+            'departOn' => '2026-11-23',
+            'latitude' => '36.17',
+            'longitude' => '-115.14',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $dad = $this->trips->create($this->fields([
+            'placeName' => 'Dad house',
+            'arriveOn' => '2026-11-22',
+            'departOn' => '2026-11-23',
+            'latitude' => '36.27',
+            'longitude' => '-115.24',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $vegas = $this->trips->get((int) $vegas['id'], '2026-11-06');
+        $dad = $this->trips->get((int) $dad['id'], '2026-11-06');
+        self::assertTrue($vegas['moveLater']);
+        self::assertFalse($vegas['moveEarlier']);
+        self::assertTrue($dad['moveEarlier']);
+        self::assertFalse($dad['moveLater']);
+        $before = $this->trips->route('2026-11-06');
+        self::assertSame([(int) $vegas['id'], (int) $dad['id']], [$before[0]['fromId'], $before[0]['toId']]);
+        $dadMiles = $this->trips->get((int) $dad['id'], '2026-11-06')['fuel']['miles'];
+        self::assertSame($before[0]['miles'], $dadMiles);
+        self::assertGreaterThan(0, $dadMiles);
+
+        $this->trips->move((int) $dad['id'], 'earlier');
+        $after = $this->trips->route('2026-11-06');
+        self::assertSame([(int) $dad['id'], (int) $vegas['id']], [$after[0]['fromId'], $after[0]['toId']]);
+        $vegasAfter = $this->trips->get((int) $vegas['id'], '2026-11-06');
+        self::assertSame($after[0]['miles'], $vegasAfter['fuel']['miles']);
+        self::assertSame($dadMiles, $vegasAfter['fuel']['miles']);
+        self::assertNull($this->trips->get((int) $dad['id'], '2026-11-06')['fuel']['miles']);
+        self::assertTrue($vegasAfter['moveEarlier']);
+        self::assertFalse($vegasAfter['moveLater']);
+
+        $this->trips->move((int) $dad['id'], 'earlier');
+        $still = $this->trips->route('2026-11-06');
+        self::assertSame((int) $dad['id'], $still[0]['fromId']);
         try {
-            $this->stay(0, 0, '2026-11-04', '2026-11-06', 'Stay 3');
-            self::fail('An overnight overlap was stored.');
+            $this->trips->move((int) $dad['id'], 'up');
+            self::fail('An unknown route move was accepted.');
         } catch (ApiException $e) {
             self::assertSame(422, $e->status);
-            self::assertStringContainsString('Stay 1', $e->fields['arriveOn']);
         }
-        try {
-            $this->trips->update((int) $first['id'], [
-                'placeName' => 'Stay 1',
-                'arriveOn' => '2026-11-06',
-                'departOn' => '2026-11-09',
-                'latitude' => '36.17',
-                'longitude' => '-115.14',
-                'totalMinor' => 0,
-                'amountDueMinor' => 0,
-                'today' => '2026-11-03',
-            ]);
-            self::fail('An updated stay was allowed to share a night.');
-        } catch (ApiException $e) {
-            self::assertSame(422, $e->status);
-            self::assertStringContainsString('Stay 2', $e->fields['arriveOn']);
+    }
+
+    public function testAStayThatEndsLaterStaysSecondAndADayBetweenBlocksTheJump(): void
+    {
+        $vegas = $this->trips->create($this->fields([
+            'placeName' => 'Las Vegas RV Resort',
+            'arriveOn' => '2026-10-23',
+            'departOn' => '2026-11-23',
+            'latitude' => '36.17',
+            'longitude' => '-115.14',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $later = $this->trips->create($this->fields([
+            'placeName' => 'After resort',
+            'arriveOn' => '2026-11-22',
+            'departOn' => '2026-11-24',
+            'latitude' => '36.30',
+            'longitude' => '-115.30',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $vegas = $this->trips->get((int) $vegas['id'], '2026-11-06');
+        $later = $this->trips->get((int) $later['id'], '2026-11-06');
+        self::assertFalse($vegas['moveLater']);
+        self::assertFalse($later['moveEarlier']);
+        $this->trips->move((int) $later['id'], 'earlier');
+        $kept = $this->trips->route('2026-11-06');
+        self::assertSame((int) $vegas['id'], $kept[0]['fromId']);
+        self::assertSame((int) $later['id'], $kept[0]['toId']);
+
+        $this->trips->delete((int) $later['id'], true);
+        $middle = $this->trips->create($this->fields([
+            'placeName' => 'Middle camp',
+            'arriveOn' => '2026-11-10',
+            'departOn' => '2026-11-12',
+            'latitude' => '36.20',
+            'longitude' => '-115.20',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $dad = $this->trips->create($this->fields([
+            'placeName' => 'Dad house',
+            'arriveOn' => '2026-11-22',
+            'departOn' => '2026-11-23',
+            'latitude' => '36.27',
+            'longitude' => '-115.24',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $fresh = [];
+        foreach ($this->trips->list('2026-11-06') as $trip) {
+            $fresh[$trip['placeName']] = $trip;
         }
+        self::assertTrue($fresh['Las Vegas RV Resort']['moveLater']);
+        self::assertTrue($fresh['Middle camp']['moveEarlier']);
+        self::assertFalse($fresh['Middle camp']['moveLater']);
+        self::assertFalse($fresh['Dad house']['moveEarlier']);
+        $this->trips->move((int) $dad['id'], 'earlier');
+        $legs = $this->trips->route('2026-11-06');
+        self::assertSame((int) $vegas['id'], $legs[0]['fromId']);
+        self::assertSame((int) $middle['id'], $legs[0]['toId']);
+        self::assertSame((int) $dad['id'], $legs[1]['toId']);
     }
 
     public function testARatingIsStoredAsHalfStarsAndDoesNotPost(): void

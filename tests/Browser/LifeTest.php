@@ -298,6 +298,7 @@ final class LifeTest extends TestCase
             ['Accounts', true, false],
             ['Vehicles', true, false],
         ], $marks['icons']);
+        self::assertCollapsedSidebar();
         self::clickLink('Planner');
         self::waitForText('Current Month');
         self::click('Next Month');
@@ -351,6 +352,116 @@ final class LifeTest extends TestCase
 
             return $open === false;
         });
+        self::assertANestedNightShowsAndCanMoveEarlier();
+    }
+
+    private static function assertANestedNightShowsAndCanMoveEarlier(): void
+    {
+        $created = self::driver()->executeAsyncScript(<<<'JS'
+            const done = arguments[arguments.length - 1];
+            fetch('/api/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+                .then((response) => response.json())
+                .then((session) => fetch('/api/trips', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': session.csrfToken,
+                    },
+                    body: JSON.stringify({
+                        placeName: 'Dad house',
+                        arriveOn: '2026-11-22',
+                        departOn: '2026-11-23',
+                        latitude: '33.40',
+                        longitude: '-111.80',
+                        totalMinor: 0,
+                        amountDueMinor: 0,
+                        travel: 'drive',
+                        today: '2026-11-06',
+                    }),
+                }))
+                .then(async (response) => {
+                    const data = await response.json();
+                    done({
+                        ok: response.status,
+                        message: data.message || '',
+                        earlier: data.trip ? data.trip.moveEarlier : null,
+                    });
+                })
+                .catch((err) => done({ ok: 0, message: String(err), earlier: null }));
+        JS);
+        self::assertIsArray($created);
+        self::assertSame(201, $created['ok'], (string) ($created['message'] ?? ''));
+        self::assertTrue($created['earlier']);
+
+        self::clickLink('Trips');
+        self::waitForText('Previous month');
+        self::openTripMonth('2026-11');
+        self::waitForText('Dad house');
+        $night = self::driver()->executeScript(<<<'JS'
+            const row = (name) => [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes(name));
+            const day = document.querySelector('button[data-date="2026-11-22"]');
+            const dad = row('Dad house');
+            const lost = row('Lost Dutchman');
+            const cattail = row('Cattail Cove');
+            const names = [...document.querySelectorAll('.stay-list strong')].map((node) => node.textContent.trim());
+            const miles = (node) => {
+                const match = node && node.textContent ? node.textContent.match(/(\d+) miles from previous stay/) : null;
+                return match ? match[1] : '';
+            };
+            return {
+                arrive: day ? day.getAttribute('data-stay-arrive') : '',
+                depart: day ? day.getAttribute('data-stay-depart') : '',
+                dad: dad ? dad.getAttribute('data-stay-color') : '',
+                lost: lost ? lost.getAttribute('data-stay-color') : '',
+                dadEarlier: Boolean(dad && dad.querySelector('[aria-label="Earlier on the route"]')),
+                dadLater: Boolean(dad && dad.querySelector('[aria-label="Later on the route"]')),
+                lostLater: Boolean(lost && lost.querySelector('[aria-label="Later on the route"]')),
+                lostEarlier: Boolean(lost && lost.querySelector('[aria-label="Earlier on the route"]')),
+                cattailEarlier: Boolean(cattail && cattail.querySelector('[aria-label="Earlier on the route"]')),
+                cattailLater: Boolean(cattail && cattail.querySelector('[aria-label="Later on the route"]')),
+                dadAfterLost: names.indexOf('Dad house') > names.indexOf('Lost Dutchman'),
+                miles: miles(dad),
+            };
+        JS);
+        self::assertIsArray($night);
+        self::assertNotSame('', $night['dad']);
+        self::assertSame($night['dad'], $night['arrive']);
+        self::assertSame($night['lost'], $night['depart']);
+        self::assertNotSame($night['arrive'], $night['depart']);
+        self::assertTrue($night['dadEarlier']);
+        self::assertFalse($night['dadLater']);
+        self::assertTrue($night['lostLater']);
+        self::assertFalse($night['lostEarlier']);
+        self::assertFalse($night['cattailEarlier']);
+        self::assertFalse($night['cattailLater']);
+        self::assertTrue($night['dadAfterLost']);
+
+        self::clickStayAction('Dad house', 'Earlier on the route');
+        self::wait()->until(function (): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const names = [...document.querySelectorAll('.stay-list strong')].map((node) => node.textContent.trim());
+                const dad = names.indexOf('Dad house');
+                const lost = names.indexOf('Lost Dutchman');
+                return dad >= 0 && lost >= 0 && dad < lost;
+            JS);
+
+            return $ready === true;
+        });
+        $moved = self::driver()->executeScript(<<<'JS'
+            const row = (name) => [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes(name));
+            const miles = (node) => {
+                const match = node && node.textContent ? node.textContent.match(/(\d+) miles from previous stay/) : null;
+                return match ? match[1] : '';
+            };
+            return { dad: miles(row('Dad house')), lost: miles(row('Lost Dutchman')) };
+        JS);
+        self::assertIsArray($moved);
+        if ($night['miles'] !== '') {
+            self::assertNotSame($night['miles'], $moved['dad']);
+            self::assertNotSame('', $moved['dad']);
+        }
     }
 
     private static function choose(string $name, string $label): void
@@ -365,6 +476,99 @@ final class LifeTest extends TestCase
         });
         $element = self::driver()->findElement(WebDriverBy::name($name));
         (new WebDriverSelect($element))->selectByVisibleText($label);
+    }
+
+    private static function assertCollapsedSidebar(): void
+    {
+        self::clickCss('button[aria-label="Collapse sidebar"]');
+        $mini = self::driver()->executeScript(<<<'JS'
+            const nav = document.querySelector('nav[aria-label="Primary"]');
+            const shown = (node) => (node ? getComputedStyle(node).display : '');
+            const planner = [...nav.querySelectorAll('a')].find((node) => node.textContent.trim() === 'Planner');
+            const name = nav.querySelector('.nav-name');
+            const letter = name ? getComputedStyle(name, '::first-letter').fontSize : '';
+            const group = nav.querySelector('.nav-group');
+            const shell = document.querySelector('.shell');
+            const columns = shell ? getComputedStyle(shell).gridTemplateColumns.split(' ') : [];
+            return {
+                collapsed: nav.classList.contains('collapsed'),
+                mark: nav.querySelector('.brand-mark') ? nav.querySelector('.brand-mark').textContent : '',
+                word: shown(nav.querySelector('.brand-word')),
+                log: shown(nav.querySelector('.nav-log .nav-label')),
+                planner: shown(planner ? planner.querySelector('.nav-label') : null),
+                group: shown(group),
+                reset: shown(nav.querySelector('.nav-reset')),
+                nameSize: name ? getComputedStyle(name).fontSize : '',
+                letter,
+                theme: document.querySelector('.theme-toggle') ? document.querySelector('.theme-toggle').getAttribute('aria-label') : '',
+                logout: Boolean(nav.querySelector('.nav-logout svg')),
+                rail: columns.length ? Number.parseFloat(columns[0]) : 0,
+            };
+        JS);
+        self::assertIsArray($mini);
+        self::assertTrue($mini['collapsed']);
+        self::assertSame('N', $mini['mark']);
+        self::assertSame('none', $mini['word']);
+        self::assertSame('none', $mini['log']);
+        self::assertSame('none', $mini['planner']);
+        self::assertSame('none', $mini['group']);
+        self::assertSame('none', $mini['reset']);
+        self::assertSame('0px', $mini['nameSize']);
+        self::assertGreaterThan(0, (float) $mini['letter']);
+        self::assertSame('Night', $mini['theme']);
+        self::assertTrue($mini['logout']);
+        self::assertLessThan(120, $mini['rail']);
+
+        self::driver()->executeScript(<<<'JS'
+            window.__tipAt = 0;
+            const orig = window.setTimeout;
+            window.setTimeout = function (fn, ms, ...rest) {
+                if (ms === 100) window.__tipAt = performance.now();
+                return orig.call(window, fn, ms, ...rest);
+            };
+        JS);
+        $planner = self::driver()->findElement(WebDriverBy::cssSelector('nav[aria-label="Primary"] a[href="/"]'));
+        self::driver()->action()->moveToElement($planner)->perform();
+        $elapsed = self::wait()->until(function (): float|false {
+            $tip = self::driver()->executeScript(<<<'JS'
+                const tip = document.querySelector('.nav-tip');
+                if (!tip || tip.textContent.trim() !== 'Planner' || !window.__tipAt) return null;
+                return performance.now() - window.__tipAt;
+            JS);
+
+            return is_numeric($tip) ? (float) $tip : false;
+        });
+        self::assertGreaterThanOrEqual(90, $elapsed);
+
+        self::clickCss('.theme-toggle');
+        self::wait()->until(function (): bool {
+            $light = self::driver()->executeScript(<<<'JS'
+                return document.documentElement.classList.contains('light')
+                    && document.querySelector('.theme-toggle')?.getAttribute('aria-label') === 'Day';
+            JS);
+
+            return $light === true;
+        });
+        self::clickCss('.theme-toggle');
+        self::wait()->until(function (): bool {
+            $night = self::driver()->executeScript(<<<'JS'
+                return !document.documentElement.classList.contains('light')
+                    && document.querySelector('.theme-toggle')?.getAttribute('aria-label') === 'Night';
+            JS);
+
+            return $night === true;
+        });
+
+        self::clickCss('button[aria-label="Expand sidebar"]');
+        self::wait()->until(function (): bool {
+            $open = self::driver()->executeScript(<<<'JS'
+                const nav = document.querySelector('nav[aria-label="Primary"]');
+                const label = nav.querySelector('a .nav-label');
+                return !nav.classList.contains('collapsed') && label && getComputedStyle(label).display !== 'none';
+            JS);
+
+            return $open === true;
+        });
     }
 
     private static function click(string $label): void

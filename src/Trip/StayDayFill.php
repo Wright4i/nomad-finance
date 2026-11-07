@@ -9,7 +9,9 @@ namespace App\Trip;
  * The split runs from the top-left corner to the bottom-right.
  * Arrival is the upper-right half. Departure is the lower-left half.
  * A day strictly inside the stay fills both halves.
- * A half already claimed by an earlier stay stays with that stay.
+ * A stay that arrives while another is still there takes the upper-right half.
+ * The stay already there keeps the lower-left half.
+ * The first arrival on a day is the one that shows.
  */
 final class StayDayFill
 {
@@ -19,25 +21,39 @@ final class StayDayFill
      */
     public static function halves(array $stays, string $day): array
     {
+        $covering = [];
+        foreach ($stays as $stay) {
+            if ($day >= $stay['arriveOn'] && $day <= $stay['departOn']) {
+                $covering[] = $stay;
+            }
+        }
+        $ongoing = null;
+        foreach ($covering as $stay) {
+            if ($day !== $stay['arriveOn'] && $day !== $stay['departOn']) {
+                $ongoing = $stay['color'];
+                break;
+            }
+        }
         $arrive = null;
         $depart = null;
-        foreach ($stays as $stay) {
-            $arriveOn = $stay['arriveOn'];
-            $departOn = $stay['departOn'];
-            if ($day < $arriveOn || $day > $departOn) {
-                continue;
+        foreach ($covering as $stay) {
+            if ($day === $stay['arriveOn'] && $arrive === null) {
+                $arrive = $stay['color'];
             }
-            $color = $stay['color'];
-            if ($day === $arriveOn && $arrive === null) {
-                $arrive = $color;
+            $sameDay = $day === $stay['arriveOn'] && $day === $stay['departOn'];
+            if ($day === $stay['departOn'] && $depart === null && !($sameDay && $ongoing !== null)) {
+                $depart = $stay['color'];
             }
-            if ($day === $departOn && $depart === null) {
-                $depart = $color;
-            }
-            if ($day !== $arriveOn && $day !== $departOn) {
-                $arrive = $color;
-                $depart = $color;
-            }
+        }
+        if ($arrive !== null && $depart === null && $ongoing !== null) {
+            $depart = $ongoing;
+        }
+        if ($depart !== null && $arrive === null && $ongoing !== null) {
+            $arrive = $ongoing;
+        }
+        if ($arrive === null && $depart === null && $ongoing !== null) {
+            $arrive = $ongoing;
+            $depart = $ongoing;
         }
 
         return ['arrive' => $arrive, 'depart' => $depart];

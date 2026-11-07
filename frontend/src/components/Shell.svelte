@@ -8,6 +8,7 @@
 
   let { children }: { children: Snippet } = $props();
   let open = $state(false);
+  let collapsed = $state(false);
   let resetting = $state(false);
   let savingTheme = $state(false);
   let resetDialog: HTMLDialogElement | undefined = $state();
@@ -163,6 +164,56 @@
     route.path;
     open = false;
   });
+
+  function tip(node: HTMLElement, label: string): { update: (next: string) => void; destroy: () => void } {
+    let current = label;
+    let timer = 0;
+    let bubble: HTMLDivElement | null = null;
+    const hide = (): void => {
+      window.clearTimeout(timer);
+      timer = 0;
+      bubble?.remove();
+      bubble = null;
+    };
+    const show = (): void => {
+      hide();
+      if (!current) return;
+      timer = window.setTimeout(() => {
+        if (!current) return;
+        const el = document.createElement('div');
+        el.className = 'nav-tip';
+        el.setAttribute('role', 'tooltip');
+        el.textContent = current;
+        document.body.appendChild(el);
+        const box = node.getBoundingClientRect();
+        const tipBox = el.getBoundingClientRect();
+        let left = box.right + 8;
+        if (left + tipBox.width > window.innerWidth - 8) {
+          left = Math.max(8, box.left - tipBox.width - 8);
+        }
+        el.style.left = `${left}px`;
+        el.style.top = `${box.top + box.height / 2}px`;
+        bubble = el;
+      }, 100);
+    };
+    node.addEventListener('mouseenter', show);
+    node.addEventListener('mouseleave', hide);
+    node.addEventListener('focus', show);
+    node.addEventListener('blur', hide);
+    return {
+      update(next: string) {
+        current = next;
+        if (!current) hide();
+      },
+      destroy() {
+        hide();
+        node.removeEventListener('mouseenter', show);
+        node.removeEventListener('mouseleave', hide);
+        node.removeEventListener('focus', show);
+        node.removeEventListener('blur', hide);
+      },
+    };
+  }
 </script>
 
 <a class="skip" href="#main">Skip to content</a>
@@ -182,37 +233,66 @@
     <button class="scrim md:hidden" type="button" aria-label="Close menu" onclick={() => (open = false)}></button>
   {/if}
 
-  <nav class="nav drawer md:static" class:open aria-label="Primary">
-    <div class="px-2 pt-2 pb-3">
-      <p class="brand text-5xl m-0 text-[var(--teal)]">Nomad</p>
-      <p class="kicker mt-2">Finance</p>
+  <nav class="nav drawer md:static" class:open class:collapsed aria-label="Primary">
+    <div class="nav-brand">
+      <button
+        class="nav-collapse"
+        type="button"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        use:tip={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        onclick={() => (collapsed = !collapsed)}
+      >
+        <Glyph name={collapsed ? 'expand' : 'collapse'} mini />
+      </button>
+      <div class="nav-brand-copy">
+        <p class="brand text-5xl m-0 text-[var(--teal)]" use:tip={collapsed ? 'Nomad Finance' : ''}>
+          <span class="brand-mark">N</span><span class="brand-word">omad</span>
+        </p>
+        <p class="kicker mt-2">Finance</p>
+      </div>
     </div>
     <hr class="nav-rule" />
-    <a class="nav-log" href="/log" class:active={active('/log')} onclick={(event) => visit(event, '/log')}>
+    <a
+      class="nav-log"
+      href="/log"
+      class:active={active('/log')}
+      use:tip={collapsed ? 'New log' : ''}
+      onclick={(event) => visit(event, '/log')}
+    >
       <span class="nav-log-label">
         <Glyph name="log" mini />
-        <span>New log</span>
+        <span class="nav-label">New log</span>
       </span>
     </a>
     <hr class="nav-rule" />
     {#each groups as group, index}
-      {#if index > 0}<hr class="nav-rule" />{/if}
+      {#if index > 0}<hr class="nav-rule nav-group" />{/if}
       {#each group as item}
-        <a href={item.href} class:active={active(item.href)} onclick={(event) => visit(event, item.href)}>
+        <a
+          href={item.href}
+          class:active={active(item.href)}
+          use:tip={collapsed ? item.label : ''}
+          onclick={(event) => visit(event, item.href)}
+        >
           <Glyph name={item.mark} mini />
-          {item.label}
+          <span class="nav-label">{item.label}</span>
         </a>
       {/each}
     {/each}
     <div class="nav-foot">
       <hr class="nav-rule" />
       {#if session.user && session.user.role !== 'demo'}
-        <button class="linkish" type="button" onclick={askAccount}>{session.user.name}</button>
+        <button class="linkish nav-account" type="button" use:tip={collapsed ? session.user.name : ''} onclick={askAccount}>
+          <span class="nav-name">{session.user.name}</span>
+        </button>
       {:else}
-        <p class="px-3 text-sm muted">{session.user?.name}</p>
+        <p class="nav-account px-3 text-sm muted" use:tip={collapsed ? (session.user?.name ?? '') : ''}>
+          <span class="nav-name">{session.user?.name}</span>
+        </p>
       {/if}
       {#if session.user?.role === 'demo'}
-        <button class="linkish" type="button" disabled={resetting} aria-busy={resetting} onclick={askReset}>
+        <button class="linkish nav-reset" type="button" disabled={resetting} aria-busy={resetting} onclick={askReset}>
           {resetting ? 'Resetting…' : 'Reset demo data'}
         </button>
       {/if}
@@ -236,15 +316,24 @@
         >
           <Glyph name="sun" mini />
         </button>
+        <button
+          class="theme-toggle"
+          type="button"
+          aria-label={theme === 'light' ? 'Day' : 'Night'}
+          use:tip={collapsed ? (theme === 'light' ? 'Day' : 'Night') : ''}
+          onclick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+        >
+          <Glyph name={theme === 'light' ? 'sun' : 'moon'} mini />
+        </button>
       </div>
-      <button class="linkish" type="button" onclick={logout}>
+      <button class="linkish nav-logout" type="button" use:tip={collapsed ? 'Log out' : ''} onclick={logout}>
         <span class="glyph mini" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none">
             <path d="M10 5.5H6.8A1.8 1.8 0 0 0 5 7.3v9.4a1.8 1.8 0 0 0 1.8 1.8H10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
             <path d="M10 12h9M15.8 8.2 19.6 12l-3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </span>
-        Log out
+        <span class="nav-label">Log out</span>
       </button>
     </div>
   </nav>

@@ -215,7 +215,7 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '500.00';
+            return $value === '115.00';
         });
         $headings = self::driver()->executeScript(<<<'JS'
             const read = (name) => {
@@ -229,9 +229,11 @@ final class EnvelopesTest extends TestCase
                 const labelBox = label ? label.getBoundingClientRect() : null;
                 const sumsBox = sums ? sums.getBoundingClientRect() : null;
                 return {
-                    assigned: figure('assigned'),
-                    max: figure('max'),
+                    auto: figure('auto'),
+                    envelope: figure('envelope'),
                     target: figure('target'),
+                    goal: figure('goal'),
+                    goalOver: heading ? heading.querySelector('[data-figure="goal"]')?.classList.contains('over') === true : false,
                     beside: Boolean(labelBox && sumsBox && sumsBox.left >= labelBox.right - 4 && Math.abs(sumsBox.top - labelBox.top) < 24),
                 };
             };
@@ -240,10 +242,10 @@ final class EnvelopesTest extends TestCase
         self::assertIsArray($headings);
         foreach (['needs', 'wants', 'savings'] as $group) {
             self::assertIsArray($headings[$group]);
-            self::assertStringStartsWith('ASSIGNED $', $headings[$group]['assigned']);
-            self::assertStringStartsWith('MAX $', $headings[$group]['max']);
+            self::assertStringStartsWith('AUTO-ASSIGNED $', $headings[$group]['auto']);
+            self::assertStringStartsWith('ENVELOPE $', $headings[$group]['envelope']);
             self::assertStringStartsWith('TARGET $', $headings[$group]['target']);
-            self::assertStringNotContainsString('USD', $headings[$group]['assigned'] . $headings[$group]['max'] . $headings[$group]['target']);
+            self::assertStringNotContainsString('USD', $headings[$group]['auto'] . $headings[$group]['envelope'] . $headings[$group]['target'] . $headings[$group]['goal']);
             self::assertTrue($headings[$group]['beside']);
         }
         $hero = self::driver()->executeScript(<<<'JS'
@@ -263,9 +265,9 @@ final class EnvelopesTest extends TestCase
         preg_match('/assigned of\s+(\$[\d,]+\.\d{2})/', $hero['of'], $ofMatch);
         $ofCents = self::cents($ofMatch[1]);
         self::assertGreaterThan(self::cents($hero['text']), $ofCents);
-        self::assertSame('TARGET ' . self::money(intdiv($ofCents * 50 + 50, 100)), $headings['needs']['target']);
-        self::assertSame('TARGET ' . self::money(intdiv($ofCents * 30 + 50, 100)), $headings['wants']['target']);
-        self::assertSame('TARGET ' . self::money(intdiv($ofCents * 20 + 50, 100)), $headings['savings']['target']);
+        self::assertSame('(50% goal - ' . self::money(intdiv($ofCents * 50 + 50, 100)) . ')', $headings['needs']['goal']);
+        self::assertSame('(30% goal - ' . self::money(intdiv($ofCents * 30 + 50, 100)) . ')', $headings['wants']['goal']);
+        self::assertSame('(20% goal - ' . self::money(intdiv($ofCents * 20 + 50, 100)) . ')', $headings['savings']['goal']);
         self::clickAvailable();
         $sources = self::driver()->executeScript(<<<'JS'
             const dialog = document.querySelector('dialog.modal[open]');
@@ -307,7 +309,7 @@ final class EnvelopesTest extends TestCase
                 const box = water ? water.getBoundingClientRect() : null;
                 const wave = water ? water.querySelector('.bucket-wave') : null;
                 const assigned = row ? row.querySelector('input[name^="amount-"]') : null;
-                const maximum = row ? row.querySelector('input[name^="maximum-"]') : null;
+                const maximum = row ? row.querySelector('[data-field="target"]') : null;
                 const heading = row ? row.querySelector('strong') : null;
                 const label = row ? row.querySelector('.bucket-field > span') : null;
                 const glyph = row ? row.querySelector('.glyph') : null;
@@ -351,7 +353,6 @@ final class EnvelopesTest extends TestCase
         self::assertHardStroke((string) $bars['needs']['nameStroke']);
         self::assertFieldInk($bars['needs']);
         self::assertHardIcon((string) $bars['needs']['glyphFilter']);
-        self::assertFalse($bars['needs']['maximumDisabled']);
         self::assertTrue($bars['wants']['found']);
         self::assertTrue($bars['rent']['found']);
         self::assertTrue($bars['rent']['input']);
@@ -360,9 +361,7 @@ final class EnvelopesTest extends TestCase
         self::assertHardIcon((string) $bars['rent']['glyphFilter']);
         self::assertFieldInkStaysWhiteInDay();
         self::assertFalse($bars['rent']['assignedDisabled']);
-        self::assertSame('840.00', $bars['rent']['assignedValue']);
-        self::assertFalse($bars['rent']['maximumDisabled']);
-        self::assertSame('840.00', $bars['rent']['maximumValue']);
+        self::assertSame('0.00', $bars['rent']['assignedValue']);
         self::assertSame('1', $bars['rent']['water']);
         self::assertSame('absolute', $bars['needs']['positioned']);
         self::assertGreaterThan(0, (float) $bars['needs']['water']);
@@ -371,54 +370,32 @@ final class EnvelopesTest extends TestCase
         self::assertSame(0, $bars['wants']['waves']);
         self::assertSame(3, $bars['rent']['waves']);
         self::assertEqualBucketRows();
-        self::driver()->executeScript(<<<'JS'
-            const input = document.querySelector('input[aria-label="Maximum Road cushion"]');
-            input.value = '1.00';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        JS);
-        self::wait()->until(function (): bool {
-            $tone = self::driver()->executeScript(<<<'JS'
-                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Road cushion');
-                if (!tile || !tile.classList.contains('over')) return '';
-                const water = tile.querySelector('.bucket-water');
-                return water ? getComputedStyle(water).getPropertyValue('--tone').trim() : '';
-            JS);
-
-            return $tone === '#e08a2a';
-        });
-        self::assertOverageFooter('Road cushion', 'Over by ' . self::money(49900));
-        self::driver()->executeScript(<<<'JS'
-            const input = document.querySelector('input[aria-label="Maximum Road cushion"]');
-            input.value = '';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        JS);
-        self::wait()->until(function (): bool {
-            $over = self::driver()->executeScript(<<<'JS'
-                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Road cushion');
-                if (!tile) return true;
-                const footer = tile.parentElement ? tile.parentElement.querySelector('.bucket-overage') : null;
-                return tile.classList.contains('over') || Boolean(footer);
-            JS);
-
-            return $over === false;
-        });
         self::assertSame('bucket-wave', $bars['needs']['wave']);
         self::assertSame('5s', $bars['needs']['duration']);
         self::assertSame('ease-in-out', $bars['needs']['timing']);
         self::assertNotSame('0px', $bars['needs']['radius']);
         self::waitForText('Nov 2026');
         self::driver()->executeScript(<<<'JS'
-            const input = document.querySelector('input[aria-label="Assigned Rent"]');
-            input.value = '1.00';
+            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Rent');
+            const input = tile ? tile.querySelector('input') : null;
+            input.value = '25.00';
             input.dispatchEvent(new Event('input', { bubbles: true }));
         JS);
-        self::waitForText('Assigned cannot be lower than the bills.');
+        self::wait()->until(function (): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Rent');
+                const target = tile ? tile.querySelector('[data-field="target"]') : null;
+                return target ? target.innerText : '';
+            JS);
+
+            return $ready === '$865.00';
+        });
         self::driver()->executeScript(<<<'JS'
-            const input = document.querySelector('input[aria-label="Assigned Rent"]');
-            input.value = '840.00';
+            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Rent');
+            const input = tile ? tile.querySelector('input') : null;
+            input.value = '0.00';
             input.dispatchEvent(new Event('input', { bubbles: true }));
         JS);
-        self::waitForTextGone('Assigned cannot be lower than the bills.');
         self::click('Next month');
         self::waitForText('Dec 2026');
         self::wait()->until(function (): bool {
@@ -454,7 +431,7 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '500.00';
+            return $value === '115.00';
         });
         self::click('Previous month');
         self::waitForText('A closed month can be read.');
@@ -482,10 +459,10 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '500.00';
+            return $value === '115.00';
         });
         $assignedBefore = self::assignedCents();
-        self::typeAssigned('Road cushion', '600.00');
+        self::typeAssigned('Road cushion', '215.00');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -493,7 +470,7 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '600.00';
+            return $value === '215.00';
         });
         $raised = self::money($assignedBefore + 10000);
         self::waitForText($raised);
@@ -526,12 +503,12 @@ final class EnvelopesTest extends TestCase
                 const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
                 const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
                 const dialog = document.getElementById('recalculate-title');
-                return input && input.value === '600.00' && dialog instanceof HTMLElement && !dialog.closest('dialog')?.open
+                return input && input.value === '215.00' && dialog instanceof HTMLElement && !dialog.closest('dialog')?.open
                     ? input.value
                     : '';
             JS);
 
-            return $value === '600.00';
+            return $value === '215.00';
         });
         self::click('Recalculate');
         self::click('Recalculate this month');
@@ -542,7 +519,7 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '385.00';
+            return $value === '0.00';
         });
         self::click('Previous month');
         self::wait()->until(function (): bool {
@@ -564,6 +541,41 @@ final class EnvelopesTest extends TestCase
             JS);
 
             return $ready === true;
+        });
+        self::driver()->get(self::$base . '/accounts/new');
+        self::waitForText('Include in Budget');
+        self::assertTrue(self::driver()->findElement(WebDriverBy::name('inBudget'))->isSelected());
+        self::click('savings');
+        self::assertFalse(self::driver()->findElement(WebDriverBy::name('inBudget'))->isSelected());
+        self::click('credit');
+        self::assertCount(0, self::driver()->findElements(WebDriverBy::name('inBudget')));
+        self::clickLink('Accounts');
+        self::waitForText('Travel card');
+        self::clickLinkContaining('Travel card');
+        self::waitForText('Autopay is on at the bank');
+        self::assertCount(0, self::driver()->findElements(WebDriverBy::name('inBudget')));
+        self::clickLink('Accounts');
+        self::clickLinkContaining('Emergency fund');
+        self::wait()->until(function (): bool {
+            $name = self::driver()->findElements(WebDriverBy::name('name'));
+
+            return $name !== [] && $name[0]->getAttribute('value') === 'Emergency fund';
+        });
+        $box = self::driver()->findElement(WebDriverBy::name('inBudget'));
+        self::assertFalse($box->isSelected());
+        $box->click();
+        self::click('Save account');
+        self::waitForText('Everyday checking');
+        self::clickLink('Budget');
+        self::waitForText('Available to assign');
+        self::clickAvailable();
+        self::wait()->until(function (): bool {
+            $accounts = self::driver()->executeScript(<<<'JS'
+                const dialog = document.querySelector('dialog.modal[open] [data-source="accounts"]');
+                return dialog ? dialog.innerText : '';
+            JS);
+
+            return is_string($accounts) && str_contains($accounts, 'Emergency fund');
         });
     }
 
@@ -779,7 +791,7 @@ final class EnvelopesTest extends TestCase
             const heading = row ? row.querySelector('strong') : null;
             const label = row ? row.querySelector('.bucket-field > span') : null;
             const assigned = row ? row.querySelector('input[name^="amount-"]') : null;
-            const maximum = row ? row.querySelector('input[name^="maximum-"]') : null;
+            const maximum = row ? row.querySelector('[data-field="target"]') : null;
             const read = (node, stroke) => node ? getComputedStyle(node)[stroke ? 'webkitTextStroke' : 'color'] : '';
             return {
                 nameStroke: read(heading, true),
@@ -891,7 +903,7 @@ final class EnvelopesTest extends TestCase
 
     private static function typeAssigned(string $name, string $value): void
     {
-        $by = WebDriverBy::cssSelector('input[aria-label="Assigned ' . $name . '"]');
+        $by = WebDriverBy::cssSelector('input[aria-label="Envelope ' . $name . '"]');
         $input = self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by));
         self::driver()->executeScript('arguments[0].focus(); arguments[0].select();', [$input]);
         $input->sendKeys($value);

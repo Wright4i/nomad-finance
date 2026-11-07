@@ -390,16 +390,19 @@ final class DemoLibrary
         ?string $comment,
         string $travel = 'drive',
     ): void {
+        $next = $this->pdo->prepare('SELECT COALESCE(MAX(route_order), -1) + 1 FROM trips WHERE user_id = ?');
+        $next->execute([$userId]);
+        $routeOrder = (int) $next->fetchColumn();
         $this->pdo->prepare(
             'INSERT INTO trips (
                 user_id, place_name, note, arrive_on, depart_on, latitude, longitude,
                 city, region, address, account_id, total_minor, amount_due_minor, balance_due_on,
-                rating_half_stars, rating_comment, travel, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                rating_half_stars, rating_comment, travel, route_order, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId, $place, $note, $arrive, $depart, $latitude, $longitude,
             $city, $region, $address, $accountId, $total, $due, $balanceDue,
-            $rating, $comment, $travel, $now, $now,
+            $rating, $comment, $travel, $routeOrder, $now, $now,
         ]);
         if ($due > 0 && $balanceDue !== null && $balanceDue !== '') {
             $this->stayBill($userId, $accountId, (int) $this->pdo->lastInsertId(), $place, $due, $balanceDue, $now);
@@ -496,8 +499,8 @@ final class DemoLibrary
             'INSERT INTO accounts (
                 user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                 due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
-                archived_at, starred, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                archived_at, starred, in_budget, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId,
             $row['name'],
@@ -515,6 +518,7 @@ final class DemoLibrary
             $row['billEvery'] ?? 1,
             !empty($row['archived']) ? $now : null,
             !empty($row['starred']) ? 1 : 0,
+            $row['side'] === 'asset' && $row['type'] !== 'savings' ? 1 : 0,
             $now,
             $now,
         ]);

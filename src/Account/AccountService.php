@@ -73,14 +73,14 @@ final class AccountService
                 'INSERT INTO accounts (
                     user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                     due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
-                    institution, notes, starred, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    institution, notes, starred, in_budget, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $this->actor->id(),
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
-                $data['institution'], $data['notes'], $data['starred'], $now, $now,
+                $data['institution'], $data['notes'], $data['starred'], $data['inBudget'], $now, $now,
             ]);
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->commit();
@@ -117,13 +117,13 @@ final class AccountService
                     name = ?, type = ?, side = ?, currency = ?, balance_minor = ?, interest_bps = ?,
                     minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, autopay_choice = ?,
                     bank_autopay = ?, bill_recurrence = ?, bill_every = ?,
-                    institution = ?, notes = ?, starred = ?, updated_at = ?
+                    institution = ?, notes = ?, starred = ?, in_budget = ?, updated_at = ?
                  WHERE id = ? AND user_id = ?'
             )->execute([
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
-                $data['institution'], $data['notes'], $data['starred'], $now,
+                $data['institution'], $data['notes'], $data['starred'], $data['inBudget'], $now,
                 $id, $this->actor->id(),
             ]);
             $this->pdo->commit();
@@ -174,7 +174,7 @@ final class AccountService
      *    name:string,type:string,side:string,currency:string,balanceMinor:int,
      *    interestBps:?int,minimumDueMinor:?int,dueDay:?int,creditLimitMinor:?int,
      *    autopayChoice:string,bankAutopay:int,billRecurrence:string,billEvery:int,
-     *    institution:?string,notes:?string,starred:int
+     *    institution:?string,notes:?string,starred:int,inBudget:int
      *  }
      */
     private function validate(array $input, int $starredFallback, ?array $existing = null): array
@@ -292,6 +292,21 @@ final class AccountService
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
 
+        $inBudget = 0;
+        if ($side === 'asset') {
+            if (array_key_exists('inBudget', $input)) {
+                $inBudget = !empty($input['inBudget']) ? 1 : 0;
+            } elseif (
+                is_array($existing)
+                && ($existing['type'] ?? '') === $type
+                && ($existing['side'] ?? '') === $side
+            ) {
+                $inBudget = !empty($existing['inBudget']) ? 1 : 0;
+            } else {
+                $inBudget = $type === 'savings' ? 0 : 1;
+            }
+        }
+
         return [
             'name' => $name,
             'type' => $type,
@@ -309,6 +324,7 @@ final class AccountService
             'institution' => is_string($institution) ? $institution : null,
             'notes' => is_string($notes) ? $notes : null,
             'starred' => array_key_exists('starred', $input) ? (!empty($input['starred']) ? 1 : 0) : $starredFallback,
+            'inBudget' => $inBudget,
         ];
     }
 
@@ -471,6 +487,7 @@ final class AccountService
             'institution' => $row['institution'],
             'notes' => $row['notes'],
             'starred' => (int) ($row['starred'] ?? 0) === 1,
+            'inBudget' => (int) ($row['in_budget'] ?? 0) === 1,
             'archivedAt' => $row['archived_at'],
             'createdAt' => $row['created_at'],
             'updatedAt' => $row['updated_at'],

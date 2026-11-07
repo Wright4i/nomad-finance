@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Auth\Actor;
 use App\Auth\AuthService;
+use App\Bill\BillService;
 use App\Database\Database;
 use App\Demo\DemoLibrary;
+use App\Envelope\BillFill;
 use App\Money\CurrencyCatalog;
+use App\Trip\Drive;
 
 return [
     'settings' => require __DIR__ . '/settings.php',
@@ -13,6 +17,13 @@ return [
         $settings = $container->get('settings');
 
         return Database::connect($settings['db'], $settings['migrations']);
+    },
+    BillService::class => static function (Psr\Container\ContainerInterface $container): BillService {
+        $pdo = $container->get(PDO::class);
+        $currencies = $container->get(CurrencyCatalog::class);
+        $actor = $container->get(Actor::class);
+
+        return new BillService($pdo, $currencies, $actor, new BillFill($pdo, $currencies, $actor, new Drive(true)));
     },
     AuthService::class => static function (Psr\Container\ContainerInterface $container): AuthService {
         $settings = $container->get('settings');

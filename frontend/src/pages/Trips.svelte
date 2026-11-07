@@ -60,21 +60,41 @@
   /**
    * Same split as StayDayFill.
    * Arrival is the upper-right half. Departure is the lower-left half.
-   * A day strictly inside the stay fills both. An earlier stay keeps a half.
+   * A day strictly inside one stay fills both.
+   * A stay that arrives while another is still there takes the upper-right half.
    */
   function dayFill(date: string): { arrive: string | null; depart: string | null } {
-    let arrive: string | null = null;
-    let depart: string | null = null;
+    const covering: { arriveOn: string; departOn: string; color: string }[] = [];
     trips.forEach((trip, tripIndex) => {
       if (date < trip.arriveOn || date > trip.departOn) return;
-      const color = stayColor(trip, tripIndex);
-      if (date === trip.arriveOn && arrive === null) arrive = color;
-      if (date === trip.departOn && depart === null) depart = color;
-      if (date !== trip.arriveOn && date !== trip.departOn) {
-        arrive = color;
-        depart = color;
-      }
+      covering.push({
+        arriveOn: trip.arriveOn,
+        departOn: trip.departOn,
+        color: stayColor(trip, tripIndex),
+      });
     });
+    let ongoing: string | null = null;
+    for (const stay of covering) {
+      if (date !== stay.arriveOn && date !== stay.departOn) {
+        ongoing = stay.color;
+        break;
+      }
+    }
+    let arrive: string | null = null;
+    let depart: string | null = null;
+    for (const stay of covering) {
+      if (date === stay.arriveOn && arrive === null) arrive = stay.color;
+      const sameDay = date === stay.arriveOn && date === stay.departOn;
+      if (date === stay.departOn && depart === null && !(sameDay && ongoing !== null)) {
+        depart = stay.color;
+      }
+    }
+    if (arrive !== null && depart === null && ongoing !== null) depart = ongoing;
+    if (depart !== null && arrive === null && ongoing !== null) arrive = ongoing;
+    if (arrive === null && depart === null && ongoing !== null) {
+      arrive = ongoing;
+      depart = ongoing;
+    }
     return { arrive, depart };
   }
 
@@ -167,6 +187,26 @@
     locateToken += 1;
   }
 
+  async function moveStay(id: number, direction: 'earlier' | 'later'): Promise<void> {
+    if (moving) return;
+    moving = true;
+    const selectedId = trips[index]?.id;
+    try {
+      await api(`/api/trips/${id}/route`, { method: 'POST', body: { direction } });
+      const tripData = await api<{ trips: Trip[] }>(`/api/trips?today=${todayISO()}`);
+      trips = tripData.trips;
+      if (selectedId != null) {
+        const kept = trips.findIndex((trip) => trip.id === selectedId);
+        if (kept >= 0) index = kept;
+      }
+      await loadRoute();
+    } catch (err: unknown) {
+      message = explain(err).message;
+    } finally {
+      moving = false;
+    }
+  }
+
   function shiftMonth(by: number): void {
     const [year, monthNumber] = month.split('-').map(Number);
     const date = new Date(year, monthNumber - 1 + by, 1);
@@ -183,6 +223,13 @@
   }
 
   let locateToken = $state(0);
+  let moving = $state(false);
+  let monthStays = $derived(
+    trips
+      .filter(overlaps)
+      .slice()
+      .sort((left, right) => left.routeOrder - right.routeOrder || left.id - right.id),
+  );
   let commentDraft = $state('');
   let commentFor = $state<number | null>(null);
   let savedComment = $state('');
@@ -516,7 +563,7 @@
         >{day}</button>
       {/each}
     </div>
-    {#each trips.filter(overlaps) as trip (trip.id)}
+    {#each monthStays as trip (trip.id)}
       {@const tripIndex = trips.findIndex((item) => item.id === trip.id)}
       <div
         class="stay-list stay-fill"
@@ -539,6 +586,16 @@
           {/if}
         </div>
         <div class="stay-list-actions">
+          {#if trip.moveEarlier}
+            <button class="icon-btn" type="button" aria-label="Earlier on the route" disabled={moving} onclick={() => moveStay(trip.id, 'earlier')}>
+              <Glyph name="up" mini />
+            </button>
+          {/if}
+          {#if trip.moveLater}
+            <button class="icon-btn" type="button" aria-label="Later on the route" disabled={moving} onclick={() => moveStay(trip.id, 'later')}>
+              <Glyph name="down" mini />
+            </button>
+          {/if}
           <button class="icon-btn" type="button" aria-label="Locate stay" onclick={() => locate(trip.id)}>
             <Glyph name="crosshair" mini />
           </button>

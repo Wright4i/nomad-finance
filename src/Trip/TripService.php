@@ -18,6 +18,9 @@ final class TripService
     /** @var array<int, array{miles:?int,milesPerGallon:?string,costMinor:?int,priceMinor:?int}>|null */
     private ?array $fuelByTrip = null;
 
+    /** @var array<int, array{moveEarlier:bool,moveLater:bool}>|null */
+    private ?array $moveByTrip = null;
+
     public function __construct(
         private readonly PDO $pdo,
         private readonly Actor $actor,
@@ -31,6 +34,7 @@ final class TripService
     {
         $today = $this->dayOrToday($today);
         $this->fuelByTrip = $withFuel ? null : [];
+        $this->moveByTrip = null;
         $stmt = $this->pdo->prepare(
             'SELECT t.*, a.name AS account_name, a.currency, a.side, a.balance_minor, a.credit_limit_minor, a.type AS account_type
              FROM trips t
@@ -53,12 +57,13 @@ final class TripService
     public function get(int $id, string $today): array
     {
         $this->fuelByTrip = null;
+        $this->moveByTrip = null;
 
         return $this->present($this->row($id), $this->dayOrToday($today));
     }
 
     /**
-     * Route miles between stays, in arrival order.
+     * Route miles between stays, in route order.
      * The same miles feed the fuel label.
      *
      * @return list<array{fromId:int,toId:int,miles:int,driving:bool,travel:string,coordinates:list<array{0:float,1:float}>}>
@@ -73,16 +78,17 @@ final class TripService
     /** @param array<string, mixed> $input */
     public function create(array $input): array
     {
-        $data = $this->validate($input, null, null);
+        $data = $this->validate($input, null);
         $place = $this->locality($input, null, $data);
+        $routeOrder = $this->routeSlot($data['arriveOn']);
         $today = $this->dayOrToday(is_string($input['today'] ?? null) ? $input['today'] : '');
         $now = gmdate('c');
         $this->pdo->prepare(
             'INSERT INTO trips (
                 user_id, place_name, note, arrive_on, depart_on, latitude, longitude,
                 city, region, address, account_id, total_minor, amount_due_minor, balance_due_on,
-                rating_half_stars, rating_comment, travel, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                rating_half_stars, rating_comment, travel, route_order, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $this->actor->id(),
             $data['placeName'],
@@ -101,6 +107,7 @@ final class TripService
             $data['ratingHalfStars'],
             $data['ratingComment'],
             $data['travel'],
+            $routeOrder,
             $now,
             $now,
         ]);
@@ -124,7 +131,7 @@ final class TripService
     public function update(int $id, array $input): array
     {
         $existing = $this->row($id);
-        $data = $this->validate($input, $id, $existing);
+        $data = $this->validate($input, $existing);
         $place = $this->locality($input, $existing, $data);
         $today = $this->dayOrToday(is_string($input['today'] ?? null) ? $input['today'] : '');
         $now = gmdate('c');
@@ -158,6 +165,64 @@ final class TripService
         $this->syncDueBill($id, $data, $today);
 
         return $this->get($id, $today);
+    }
+
+    public function move(int $id, string $direction): void
+    {
+        if ($direction !== 'earlier' && $direction !== 'later') {
+            throw new ApiException(422, 'Move the stay earlier or later on the route.');
+        }
+        $this->row($id);
+        $this->moveByTrip = null;
+        $stmt = $this->pdo->prepare(
+            'SELECT id, route_order, arrive_on, depart_on FROM trips
+             WHERE user_id = ?
+             ORDER BY route_order, id'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                break;
+            }
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'routeOrder' => (int) $row['route_order'],
+                'arriveOn' => (string) $row['arrive_on'],
+                'departOn' => (string) $row['depart_on'],
+            ];
+        }
+        $index = null;
+        foreach ($rows as $at => $row) {
+            if ($row['id'] === $id) {
+                $index = $at;
+                break;
+            }
+        }
+        if ($index === null) {
+            return;
+        }
+        $neighbor = $direction === 'earlier' ? $index - 1 : $index + 1;
+        if ($neighbor < 0 || $neighbor >= count($rows)) {
+            return;
+        }
+        $current = $rows[$index];
+        $other = $rows[$neighbor];
+        if (!StayRoute::orderable($current, $other)) {
+            return;
+        }
+        $this->pdo->prepare('UPDATE trips SET route_order = ? WHERE id = ? AND user_id = ?')->execute([
+            $other['routeOrder'],
+            $current['id'],
+            $this->actor->id(),
+        ]);
+        $this->pdo->prepare('UPDATE trips SET route_order = ? WHERE id = ? AND user_id = ?')->execute([
+            $current['routeOrder'],
+            $other['id'],
+            $this->actor->id(),
+        ]);
+        $this->moveByTrip = null;
+        $this->fuelByTrip = null;
     }
 
     public function delete(int $id, bool $confirm): void
@@ -234,14 +299,14 @@ final class TripService
 
     private function refill(string $today): void
     {
-        (new BillFill($this->pdo, $this->currencies, $this->actor))->apply($today);
+        (new BillFill($this->pdo, $this->currencies, $this->actor, $this->drive ?? new Drive(true)))->apply($today);
     }
 
     /** @param array<string, mixed> $input
      *  @param array<string, mixed>|null $existing
      *  @return array<string, mixed>
      */
-    private function validate(array $input, ?int $exceptId, ?array $existing = null): array
+    private function validate(array $input, ?array $existing = null): array
     {
         $errors = [];
         $place = trim(is_string($input['placeName'] ?? null) ? $input['placeName'] : '');
@@ -263,12 +328,6 @@ final class TripService
         }
         if ($arrive !== null && $depart !== null && $depart < $arrive) {
             $errors['departOn'] = 'Departure is on or after arrival.';
-        }
-        if ($arrive !== null && $depart !== null && $depart >= $arrive && !isset($errors['arriveOn']) && !isset($errors['departOn'])) {
-            $other = $this->overlappingStay($arrive, $depart, $exceptId);
-            if ($other !== null) {
-                $errors['arriveOn'] = $other . ' already covers a night in these dates.';
-            }
         }
         $balanceDue = $arrive;
         if (array_key_exists('balanceDueOn', $input)) {
@@ -464,6 +523,9 @@ final class TripService
             'totalMinor' => (int) $row['total_minor'],
             'amountDueMinor' => (int) $row['amount_due_minor'],
             'travel' => ($row['travel'] ?? 'drive') === 'fly' ? 'fly' : 'drive',
+            'routeOrder' => (int) ($row['route_order'] ?? 0),
+            'moveEarlier' => $this->movesFor((int) $row['id'])['moveEarlier'],
+            'moveLater' => $this->movesFor((int) $row['id'])['moveLater'],
             'depositMinor' => $deposit,
             'depositCharged' => false,
             'dueCharged' => false,
@@ -575,7 +637,7 @@ final class TripService
         $stmt = $this->pdo->prepare(
             'SELECT id, latitude, longitude, travel FROM trips
              WHERE user_id = ?
-             ORDER BY arrive_on, depart_on, place_name COLLATE NOCASE, id'
+             ORDER BY route_order, id'
         );
         $stmt->execute([$this->actor->id()]);
         $stops = [];
@@ -683,26 +745,72 @@ final class TripService
         return Stretch::fillUps($rows, $originMiles === false || $originMiles === null ? null : (int) $originMiles);
     }
 
-    private function overlappingStay(string $arrive, string $depart, ?int $exceptId): ?string
+    private function routeSlot(string $arriveOn): int
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, place_name FROM trips
-             WHERE user_id = ? AND arrive_on < ? AND depart_on > ?
-             ORDER BY arrive_on, id'
+            'SELECT route_order, arrive_on FROM trips WHERE user_id = ? ORDER BY route_order, id'
         );
-        $stmt->execute([$this->actor->id(), $depart, $arrive]);
+        $stmt->execute([$this->actor->id()]);
+        $slot = 0;
+        $insertAt = null;
         while ($row = $stmt->fetch()) {
             if (!is_array($row)) {
                 break;
             }
-            if ($exceptId !== null && (int) $row['id'] === $exceptId) {
-                continue;
+            $order = (int) $row['route_order'];
+            if ($insertAt === null && (string) $row['arrive_on'] > $arriveOn) {
+                $insertAt = $order;
             }
+            $slot = $order + 1;
+        }
+        if ($insertAt === null) {
+            return $slot;
+        }
+        $this->pdo->prepare(
+            'UPDATE trips SET route_order = route_order + 1 WHERE user_id = ? AND route_order >= ?'
+        )->execute([$this->actor->id(), $insertAt]);
 
-            return (string) $row['place_name'];
+        return $insertAt;
+    }
+
+    /** @return array{moveEarlier:bool,moveLater:bool} */
+    private function movesFor(int $id): array
+    {
+        if ($this->moveByTrip === null) {
+            $this->moveByTrip = $this->loadMoves();
         }
 
-        return null;
+        return $this->moveByTrip[$id] ?? ['moveEarlier' => false, 'moveLater' => false];
+    }
+
+    /** @return array<int, array{moveEarlier:bool,moveLater:bool}> */
+    private function loadMoves(): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, arrive_on, depart_on FROM trips WHERE user_id = ? ORDER BY route_order, id'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                break;
+            }
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'arriveOn' => (string) $row['arrive_on'],
+                'departOn' => (string) $row['depart_on'],
+            ];
+        }
+        $map = [];
+        $count = count($rows);
+        foreach ($rows as $index => $row) {
+            $map[$row['id']] = [
+                'moveEarlier' => $index > 0 && StayRoute::orderable($row, $rows[$index - 1]),
+                'moveLater' => $index + 1 < $count && StayRoute::orderable($row, $rows[$index + 1]),
+            ];
+        }
+
+        return $map;
     }
 
     private function openAccount(int $id): bool

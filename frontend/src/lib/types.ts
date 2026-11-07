@@ -27,6 +27,7 @@ export type Account = {
   institution: string | null;
   notes: string | null;
   starred: boolean;
+  inBudget: boolean;
   archivedAt: string | null;
 };
 
@@ -77,8 +78,11 @@ export type EnvelopeGroup = {
   shareBasisPoints: number;
   over: boolean;
   assignedMinor: number;
+  autoMinor: number;
+  envelopeMinor: number;
   maximumMinor: number;
   targetMinor: number;
+  goalOver: boolean;
 };
 
 export type EnvelopeBill = {
@@ -235,6 +239,9 @@ export type Trip = {
   totalMinor: number;
   amountDueMinor: number;
   travel: 'drive' | 'fly';
+  routeOrder: number;
+  moveEarlier: boolean;
+  moveLater: boolean;
   depositMinor: number;
   depositCharged: boolean;
   dueCharged: boolean;

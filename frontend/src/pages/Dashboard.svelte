@@ -729,7 +729,7 @@
                 <p class="envelope-available">
                   <span>Available to assign</span>
                   <span class="money">{money(data.envelopes.availableMinor)}</span>
-                  <span class="muted" title="Income still coming in this month, plus every asset account except savings.">
+                  <span class="muted" title="Income still coming in this month, plus every asset marked Include in Budget.">
                     {money(data.envelopes.assignedMinor)} assigned of {money(data.envelopes.poolMinor)}
                   </span>
                 </p>

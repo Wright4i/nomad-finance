@@ -19,7 +19,6 @@
   let periodId = $state<number | null>(null);
   let upcoming = $state(false);
   let drafts = $state<Record<number, string>>({});
-  let maximumDrafts = $state<Record<number, string>>({});
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
@@ -47,13 +46,10 @@
 
   function applyDrafts(data: EnvelopeSheet): void {
     const next: Record<number, string> = {};
-    const caps: Record<number, string> = {};
     for (const category of data.categories) {
-      next[category.id] = minorToInput(category.amountMinor, data.exponent);
-      caps[category.id] = maximumInput(category, data.exponent);
+      next[category.id] = minorToInput(Math.max(0, category.amountMinor - (category.billMinor ?? 0)), data.exponent);
     }
     drafts = next;
-    maximumDrafts = caps;
   }
 
   onMount(() => {
@@ -93,14 +89,20 @@
     archived = data.categories;
   }
 
-  function maximumInput(category: EnvelopeSheet['categories'][number], exponent: number): string {
-    if (category.role === 'locked') {
-      const cap = category.target?.amountMinor ?? 0;
-      const bills = category.billMinor ?? 0;
-      return minorToInput(cap > 0 ? cap : bills, exponent);
-    }
-    const cap = category.target?.amountMinor;
-    return cap === null || cap === undefined ? '' : minorToInput(cap, exponent);
+  function autoOf(category: EnvelopeSheet['categories'][number]): number {
+    return category.billMinor ?? 0;
+  }
+
+  function typedEnvelope(category: EnvelopeSheet['categories'][number]): number | null {
+    if (!sheet) return null;
+    const raw = (drafts[category.id] ?? '').trim();
+    if (raw === '') return 0;
+    return parseMajor(raw, sheet.exponent);
+  }
+
+  function targetOf(category: EnvelopeSheet['categories'][number]): number {
+    const envelope = typedEnvelope(category);
+    return autoOf(category) + (envelope ?? 0);
   }
 
   function holdOf(category: EnvelopeSheet['categories'][number]): number | null {
@@ -141,27 +143,11 @@
     message = '';
     const open = sheet.categories.filter((category) => category.archivedAt === null);
     const amounts = open.map((category) => {
-      const raw = (drafts[category.id] ?? '').trim();
-      const amountMinor = raw === '' ? 0 : parseMajor(raw, sheet.exponent);
-      if (amountMinor === null) {
+      const envelope = typedEnvelope(category);
+      if (envelope === null) {
         fields[`amount-${category.id}`] = 'Enter an amount of zero or more.';
-      } else if (category.role === 'locked' && amountMinor < (category.billMinor ?? 0)) {
-        fields[`amount-${category.id}`] = 'Assigned cannot be lower than the bills.';
       }
-      return { categoryId: category.id, amountMinor: amountMinor ?? 0 };
-    });
-    const maximums = open.map((category) => {
-      const raw = (maximumDrafts[category.id] ?? '').trim();
-      if (raw === '') return { categoryId: category.id, amountMinor: null };
-      const amountMinor = parseMajor(raw, sheet.exponent);
-      if (amountMinor === null) {
-        fields[`maximum-${category.id}`] = 'Enter an amount.';
-        return { categoryId: category.id, amountMinor: null };
-      }
-      if (category.role === 'locked' && amountMinor === (category.billMinor ?? 0)) {
-        return { categoryId: category.id, amountMinor: null };
-      }
-      return { categoryId: category.id, amountMinor };
+      return { categoryId: category.id, amountMinor: autoOf(category) + (envelope ?? 0) };
     });
     if (Object.keys(fields).length > 0) return;
 
@@ -170,7 +156,7 @@
       const planning = sheet.period?.upcoming === true;
       const data = await api<EnvelopeSheet>('/api/budget', {
         method: 'PUT',
-        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, maximums, upcoming: planning },
+        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, upcoming: planning },
       });
       if (data.celebrate && !prefersReducedMotion()) {
         celebrateEase = true;
@@ -228,7 +214,7 @@
     <h1 class="text-3xl m-0">Budget</h1>
     <a class="btn primary" href="/buckets/new" onclick={(event) => { event.preventDefault(); go('/buckets/new'); }}>Add bucket</a>
   </div>
-  <p class="muted m-0">Available to assign is income still coming in this month, plus every asset account except savings, minus what the buckets already hold. An assignment does not change an account balance.</p>
+  <p class="muted m-0">Available to assign is income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold. An assignment does not change an account balance.</p>
   <Note bind:message />
 
   {#if ready && sheet}
@@ -240,7 +226,7 @@
           <p class="kicker m-0">Available to assign</p>
           <p class="figure">{formatMinor(sheet.availableMinor, sheet.baseCurrency, sheet.exponent)}</p>
         </button>
-        <p class="muted m-0" title="Income still coming in this month, plus every asset account except savings.">
+        <p class="muted m-0" title="Income still coming in this month, plus every asset marked Include in Budget.">
           {formatMinor(sheet.assignedMinor, sheet.baseCurrency, sheet.exponent)} assigned of {formatMinor(sheet.poolMinor, sheet.baseCurrency, sheet.exponent)}
         </p>
       </section>
@@ -318,9 +304,10 @@
               <span class="group-name">{group.label}</span>
               {#if heading}
                 <span class="group-sums">
-                  <span data-figure="assigned"><span>Assigned</span> <strong>{formatMinor(heading.assignedMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
-                  <span data-figure="max"><span>Max</span> <strong>{formatMinor(heading.maximumMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
-                  <span data-figure="target"><span>Target</span> <strong>{formatMinor(heading.targetMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
+                  <span data-figure="auto"><span>Auto-assigned</span> <strong>{formatMinor(heading.autoMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
+                  <span data-figure="envelope"><span>Envelope</span> <strong>{formatMinor(heading.envelopeMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
+                  <span data-figure="target"><span>Target</span> <strong>{formatMinor(heading.assignedMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
+                  <span data-figure="goal" class:over={heading.goalOver}>({heading.targetPercent}% goal - {formatMinor(heading.targetMinor, sheet.baseCurrency, sheet.exponent)})</span>
                 </span>
               {/if}
             </h2>
@@ -349,13 +336,17 @@
                   <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
                   <strong>{category.name}</strong>
                 </a>
+                <div class="bucket-field">
+                  <span>Auto-assigned</span>
+                  <strong class="bucket-locked" data-field="auto">{formatMinor(autoOf(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                </div>
                 <label class="bucket-field">
-                  <span>Assigned</span>
+                  <span>Envelope</span>
                   <span class="money-input">
                     <span class="money-mark" aria-hidden="true">$</span>
                     <input
                       name={`amount-${category.id}`}
-                      aria-label={`Assigned ${category.name}`}
+                      aria-label={`Envelope ${category.name}`}
                       inputmode="decimal"
                       disabled={!editable || category.archivedAt !== null}
                       value={drafts[category.id] ?? ''}
@@ -367,26 +358,11 @@
                     />
                   </span>
                 </label>
-                <label class="bucket-field">
-                  <span>Max</span>
-                  <span class="money-input">
-                    <span class="money-mark" aria-hidden="true">$</span>
-                    <input
-                      name={`maximum-${category.id}`}
-                      aria-label={`Maximum ${category.name}`}
-                      inputmode="decimal"
-                      disabled={!editable || category.archivedAt !== null}
-                      value={maximumDrafts[category.id] ?? ''}
-                      oninput={(event) => {
-                        maximumDrafts[category.id] = (event.currentTarget as HTMLInputElement).value;
-                        queueSave();
-                      }}
-                      onkeydown={saveNow}
-                    />
-                  </span>
-                </label>
+                <div class="bucket-field">
+                  <span>Target</span>
+                  <strong class="bucket-locked" data-field="target">{formatMinor(targetOf(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                </div>
                 {#if fields[`amount-${category.id}`]}<em>{fields[`amount-${category.id}`]}</em>{/if}
-                {#if fields[`maximum-${category.id}`]}<em>{fields[`maximum-${category.id}`]}</em>{/if}
               </article>
               {#if over}
                 <p class="bucket-overage">Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</p>

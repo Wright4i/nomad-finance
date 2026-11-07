@@ -365,6 +365,41 @@ a { color: inherit; }
   border-top: 1px solid var(--line);
 }
 
+.nav-brand {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.nav-brand-copy {
+  min-width: 0;
+  padding: 0.5rem 0.5rem 0.75rem;
+}
+
+.nav-collapse {
+  display: none;
+}
+
+.nav-tip {
+  position: fixed;
+  z-index: 80;
+  transform: translateY(-50%);
+  padding: 0.28rem 0.55rem;
+  border-radius: 0.45rem;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.theme-pill > .theme-toggle {
+  display: none;
+}
+
 .nav-foot {
   margin-top: auto;
   display: flex;
@@ -777,6 +812,21 @@ a.planner-stay:active {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.72;
+}
+
+.group-sums [data-figure='goal'] {
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.group-sums [data-figure='goal'].over {
+  color: #ff6b6b;
+}
+
+:root.light .group-sums [data-figure='goal'].over {
+  color: #b42318;
 }
 
 .glyph {
@@ -2577,12 +2627,19 @@ a.bucket-tile .money {
 
 .bucket-tile.envelope-tile .bucket-field > span,
 .bucket-tile.envelope-tile .bucket-field input,
+.bucket-tile.envelope-tile .bucket-locked,
 .bucket-tile.envelope-tile .money-mark {
   color: rgb(255 255 255);
   -webkit-text-fill-color: rgb(255 255 255);
   -webkit-text-stroke: 1px rgb(0 0 0);
   paint-order: stroke fill;
   text-shadow: none;
+}
+
+:root.light .bucket-tile.envelope-tile .bucket-locked {
+  color: rgb(255 255 255);
+  -webkit-text-fill-color: rgb(255 255 255);
+  -webkit-text-stroke: 1px rgb(0 0 0);
 }
 
 .bucket-tile.envelope-tile input {
@@ -2645,6 +2702,7 @@ a.bucket-tile .money {
 
   .topbar, .scrim { display: none; }
   .shell { display: grid; grid-template-columns: 16.5rem 1fr; }
+  .shell:has(.nav.collapsed) { grid-template-columns: 4.75rem 1fr; }
   .nav {
     position: sticky;
     top: 0;
@@ -2657,6 +2715,108 @@ a.bucket-tile .money {
   }
   .nav a, .nav button.linkish {
     padding: 0.45rem 0.9rem;
+  }
+  .nav-collapse {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 2.1rem;
+    height: 2.1rem;
+    margin: 0.35rem 0.35rem 0 0;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg-raise);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .nav.collapsed {
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+    align-items: center;
+  }
+  .nav.collapsed .nav-collapse {
+    margin: 0.2rem 0 0;
+  }
+  .nav.collapsed .nav-brand,
+  .nav.collapsed .nav-brand-copy {
+    width: 100%;
+    align-items: center;
+    text-align: center;
+    padding: 0;
+  }
+  .nav.collapsed .nav-brand { flex-direction: column; }
+  .nav.collapsed .kicker,
+  .nav.collapsed .brand-word,
+  .nav.collapsed .nav-label,
+  .nav.collapsed .nav-group,
+  .nav.collapsed .nav-reset,
+  .nav.collapsed .nav-foot > .nav-rule {
+    display: none;
+  }
+  .nav.collapsed .brand {
+    font-size: 2rem;
+    line-height: 1;
+  }
+  .nav.collapsed a,
+  .nav.collapsed button.linkish {
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-inline: auto;
+    padding: 0;
+  }
+  .nav.collapsed a.nav-log {
+    border-radius: 0.7rem;
+    font-size: 1rem;
+  }
+  .nav.collapsed .nav-account {
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+  }
+  .nav.collapsed .nav-name {
+    display: block;
+    font-size: 0;
+    line-height: 1;
+  }
+  .nav.collapsed .nav-name::first-letter {
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+  .nav.collapsed .theme-pill {
+    width: 2.5rem;
+    height: 2.5rem;
+    margin-inline: auto;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg-raise);
+  }
+  .nav.collapsed .theme-slant,
+  .nav.collapsed .theme-pill > button:not(.theme-toggle) {
+    display: none;
+  }
+  .nav.collapsed .theme-pill > .theme-toggle,
+  html.light .nav.collapsed .theme-pill > .theme-toggle {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .nav.collapsed .theme-pill > .theme-toggle .glyph {
+    opacity: 1;
+    transform: none;
+    color: inherit;
+  }
+  .nav.collapsed .nav-logout {
+    border-radius: 999px;
   }
 }
 

@@ -6,6 +6,7 @@ namespace App\Tests\Trip;
 
 use App\Trip\StayDayChoice;
 use App\Trip\StayDayFill;
+use App\Trip\StayRoute;
 use App\Trip\StayTone;
 use PHPUnit\Framework\TestCase;
 
@@ -105,5 +106,48 @@ final class StayColorTest extends TestCase
             ['arrive' => 'rose', 'depart' => 'coral'],
             StayDayFill::halves($stays, '2026-11-05'),
         );
+    }
+
+    public function testAnArrivalDuringAStayShowsThatNight(): void
+    {
+        $stays = [
+            ['arriveOn' => '2026-10-23', 'departOn' => '2026-11-23', 'color' => 'coral'],
+            ['arriveOn' => '2026-11-22', 'departOn' => '2026-11-23', 'color' => 'rose'],
+        ];
+
+        self::assertSame(
+            ['arrive' => 'coral', 'depart' => 'coral'],
+            StayDayFill::halves($stays, '2026-11-21'),
+        );
+        self::assertSame(
+            ['arrive' => 'rose', 'depart' => 'coral'],
+            StayDayFill::halves($stays, '2026-11-22'),
+        );
+        self::assertSame(
+            ['arrive' => null, 'depart' => 'coral'],
+            StayDayFill::halves($stays, '2026-11-23'),
+        );
+        self::assertSame(
+            ['arrive' => 'tide', 'depart' => 'rose'],
+            StayDayFill::halves([
+                ['arriveOn' => '2026-11-20', 'departOn' => '2026-11-24', 'color' => 'tide'],
+                ['arriveOn' => '2026-11-22', 'departOn' => '2026-11-23', 'color' => 'rose'],
+            ], '2026-11-23'),
+        );
+    }
+
+    public function testANestedStayCanTradePlacesAndALaterEndingStayCannot(): void
+    {
+        $vegas = ['arriveOn' => '2026-10-23', 'departOn' => '2026-11-23'];
+        $dad = ['arriveOn' => '2026-11-22', 'departOn' => '2026-11-23'];
+        $after = ['arriveOn' => '2026-11-22', 'departOn' => '2026-11-24'];
+        $same = ['arriveOn' => '2026-11-22', 'departOn' => '2026-11-23'];
+        $handoff = ['arriveOn' => '2026-11-23', 'departOn' => '2026-11-28'];
+
+        self::assertTrue(StayRoute::orderable($vegas, $dad));
+        self::assertTrue(StayRoute::orderable($dad, $same));
+        self::assertFalse(StayRoute::orderable($vegas, $after));
+        self::assertFalse(StayRoute::orderable($vegas, $handoff));
+        self::assertFalse(StayRoute::orderable($dad, $after));
     }
 }

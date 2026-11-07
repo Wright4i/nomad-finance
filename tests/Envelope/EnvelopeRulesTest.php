@@ -362,8 +362,20 @@ final class EnvelopeRulesTest extends TestCase
         self::assertNull($logged['lastPaidOn']);
         self::assertSame('once', $fuel['recurrence']);
         self::assertSame('Fuel', $fuel['name']);
-        self::assertSame($before, $this->storedAssignments());
+        self::assertNotSame($before, $this->storedAssignments());
         self::assertSame($balance, $this->balance('Everyday checking'));
+        $afterLog = $this->envelopes->show('2026-11-05');
+        $groceries = $this->category($afterLog, 'Groceries');
+        $market = 0;
+        foreach ($groceries['bills'] as $bill) {
+            if ($bill['name'] === 'Market run') {
+                $market += (int) $bill['amountMinor'];
+            }
+        }
+        self::assertSame(1800, $market);
+        self::assertGreaterThanOrEqual((int) $groceries['billMinor'], (int) $groceries['amountMinor']);
+        $fuelBucket = $this->category($afterLog, 'Fuel');
+        self::assertGreaterThanOrEqual((int) $fuelBucket['billMinor'], (int) $fuelBucket['amountMinor']);
 
         $needs = $this->categoryId($sheet, 'Road cushion');
         $held = $this->envelopes->save([
@@ -438,6 +450,62 @@ final class EnvelopeRulesTest extends TestCase
         $december = $this->envelopes->show('2026-12-01', $sheet['payCycleId']);
         self::assertSame($this->billMinor($december, 'Rent'), $this->amount($december, 'Rent'));
         self::assertNotSame($bills + 1500, $this->amount($december, 'Rent'));
+    }
+
+    public function testABillFillDoesNotStackOnATypedTarget(): void
+    {
+        $sheet = $this->envelopes->show('2026-11-03');
+        $road = $this->categoryId($sheet, 'Road cushion');
+        $camp = $this->pdo->prepare(
+            'SELECT p.id FROM pay_periods p
+             JOIN pay_cycles c ON c.id = p.pay_cycle_id
+             WHERE c.user_id = ? AND c.payor = ? AND p.period_start = ?'
+        );
+        $camp->execute([$_SESSION['user_id'], 'Camp host', '2026-11-01']);
+        $periodId = (int) $camp->fetchColumn();
+        self::assertGreaterThan(0, $periodId);
+        $this->pdo->prepare(
+            'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, 38500, 38500)'
+        )->execute([$periodId, $road]);
+
+        $stacked = $this->envelopes->show('2026-11-03');
+        self::assertSame(50000, $this->amount($stacked, 'Road cushion'));
+        self::assertSame(38500, $this->billMinor($stacked, 'Road cushion'));
+
+        $this->bills->create([
+            'name' => 'Extra night',
+            'type' => 'rent',
+            'accountId' => $this->accountId('Everyday checking'),
+            'categoryId' => $road,
+            'amountMinor' => 1000,
+            'currency' => 'USD',
+            'recurrence' => 'once',
+            'nextDueDate' => '2026-11-12',
+            'today' => '2026-11-03',
+        ]);
+        $after = $this->envelopes->show('2026-11-03');
+        self::assertSame(39500, $this->billMinor($after, 'Road cushion'));
+        self::assertSame(50000, $this->amount($after, 'Road cushion'));
+    }
+
+    public function testIncludeInBudgetChoosesWhichAssetsCount(): void
+    {
+        $sheet = $this->envelopes->show('2026-11-03');
+        $names = array_column($sheet['sources']['accounts'], 'name');
+        self::assertNotContains('Emergency fund', $names);
+        self::assertContains('Everyday checking', $names);
+
+        $fund = $this->namedAccount('Emergency fund');
+        $this->accounts->update($fund['id'], $this->accountInput($fund, true));
+        $withFund = $this->envelopes->show('2026-11-03');
+        self::assertContains('Emergency fund', array_column($withFund['sources']['accounts'], 'name'));
+        self::assertSame($sheet['poolMinor'] + $fund['balanceMinor'], $withFund['poolMinor']);
+
+        $checking = $this->namedAccount('Everyday checking');
+        $this->accounts->update($checking['id'], $this->accountInput($checking, false));
+        $without = $this->envelopes->show('2026-11-03');
+        self::assertNotContains('Everyday checking', array_column($without['sources']['accounts'], 'name'));
+        self::assertSame($withFund['poolMinor'] - $checking['balanceMinor'], $without['poolMinor']);
     }
 
     public function testAnAssignmentStaysOnTheOpenPeriod(): void
@@ -751,6 +819,9 @@ final class EnvelopeRulesTest extends TestCase
         foreach (['needs', 'wants', 'savings'] as $group) {
             $heading = $this->group($sheet, $group);
             self::assertSame($this->sumAssigned($sheet, $group), $heading['assignedMinor']);
+            self::assertSame($this->sumAuto($sheet, $group), $heading['autoMinor']);
+            self::assertSame($this->sumEnvelope($sheet, $group), $heading['envelopeMinor']);
+            self::assertSame($heading['assignedMinor'] > $heading['targetMinor'] && $heading['targetMinor'] > 0, $heading['goalOver']);
             self::assertSame($this->sumMaximum($sheet, $group), $heading['maximumMinor']);
             self::assertGreaterThanOrEqual(0, $heading['assignedMinor']);
             self::assertGreaterThanOrEqual(0, $heading['maximumMinor']);
@@ -917,6 +988,32 @@ final class EnvelopeRulesTest extends TestCase
     }
 
     /** @param array<string, mixed> $sheet */
+    private function sumAuto(array $sheet, string $group): int
+    {
+        $total = 0;
+        foreach ($sheet['categories'] as $category) {
+            if ($category['group'] !== $group) {
+                continue;
+            }
+            $total += (int) ($category['billMinor'] ?? 0);
+        }
+
+        return $total;
+    }
+
+    private function sumEnvelope(array $sheet, string $group): int
+    {
+        $total = 0;
+        foreach ($sheet['categories'] as $category) {
+            if ($category['group'] !== $group) {
+                continue;
+            }
+            $total += max(0, (int) $category['amountMinor'] - (int) ($category['billMinor'] ?? 0));
+        }
+
+        return $total;
+    }
+
     private function sumAssigned(array $sheet, string $group): int
     {
         $total = 0;
@@ -1055,6 +1152,33 @@ final class EnvelopeRulesTest extends TestCase
             }
         }
         self::fail($start . ' is missing.');
+    }
+
+    /** @return array<string, mixed> */
+    /** @return array<string, mixed> */
+    private function namedAccount(string $name): array
+    {
+        foreach ($this->accounts->list(true) as $account) {
+            if ($account['name'] === $name) {
+                return $account;
+            }
+        }
+        self::fail($name . ' is missing.');
+    }
+
+    /** @param array<string, mixed> $account
+     *  @return array<string, mixed>
+     */
+    private function accountInput(array $account, bool $inBudget): array
+    {
+        return [
+            'name' => $account['name'],
+            'type' => $account['type'],
+            'side' => $account['side'],
+            'balanceMinor' => $account['balanceMinor'],
+            'interestBps' => $account['interestBps'],
+            'inBudget' => $inBudget,
+        ];
     }
 
     /** @return array<string, mixed> */

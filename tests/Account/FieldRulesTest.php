@@ -177,6 +177,62 @@ final class FieldRulesTest extends TestCase
         }
     }
 
+    public function testIncludeInBudgetIsOnlyForAssets(): void
+    {
+        $checking = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'balanceMinor' => 100,
+        ]);
+        self::assertTrue($checking['inBudget']);
+
+        $savings = $this->accounts->create([
+            'name' => 'Savings',
+            'type' => 'savings',
+            'balanceMinor' => 100,
+        ]);
+        self::assertFalse($savings['inBudget']);
+        $included = $this->accounts->update($savings['id'], [
+            'name' => 'Savings',
+            'type' => 'savings',
+            'balanceMinor' => 100,
+            'inBudget' => true,
+        ]);
+        self::assertTrue($included['inBudget']);
+
+        $card = $this->accounts->create([
+            'name' => 'Card',
+            'type' => 'credit',
+            'balanceMinor' => 100,
+            'inBudget' => true,
+        ]);
+        self::assertFalse($card['inBudget']);
+
+        $tab = $this->accounts->create([
+            'name' => 'Tab',
+            'type' => 'other',
+            'side' => 'liability',
+            'balanceMinor' => 100,
+            'inBudget' => true,
+        ]);
+        self::assertFalse($tab['inBudget']);
+
+        $kept = $this->accounts->update($checking['id'], [
+            'name' => 'Checking',
+            'type' => 'checking',
+            'balanceMinor' => 100,
+            'inBudget' => false,
+        ]);
+        self::assertFalse($kept['inBudget']);
+        $forced = $this->accounts->update($checking['id'], [
+            'name' => 'Checking',
+            'type' => 'credit',
+            'balanceMinor' => 100,
+            'inBudget' => true,
+        ]);
+        self::assertFalse($forced['inBudget']);
+    }
+
     public function testOtherRequiresASide(): void
     {
         try {

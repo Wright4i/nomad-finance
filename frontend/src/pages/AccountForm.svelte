@@ -26,6 +26,8 @@
   let billRecurrence = $state<'daily' | 'monthly' | 'yearly'>('monthly');
   let billEvery = $state(1);
   let starred = $state(false);
+  let inBudget = $state(true);
+  let budgetTouched = $state(false);
   let othersStarred = $state(false);
   let archivedAt = $state<string | null>(null);
   let fields = $state<Record<string, string>>({});
@@ -35,6 +37,7 @@
   let showLiability = $derived(type === 'credit' || type === 'loan' || type === 'fuel');
   let showLimit = $derived(type === 'credit' || type === 'fuel');
   let showSide = $derived(type === 'other');
+  let showBudget = $derived(type === 'checking' || type === 'savings' || type === 'cash' || (type === 'other' && side === 'asset'));
   let showStar = $derived(starred || !othersStarred);
   const everyWord: Record<string, [string, string]> = {
     daily: ['day', 'days'],
@@ -71,10 +74,25 @@
       billRecurrence = account.billRecurrence === 'daily' || account.billRecurrence === 'yearly' ? account.billRecurrence : 'monthly';
       billEvery = account.billEvery >= 1 && account.billEvery <= 11 ? account.billEvery : 1;
       starred = account.starred;
+      budgetTouched = true;
+      inBudget = account.inBudget;
     } catch (err) {
       message = explain(err).message;
     }
   });
+
+  function chooseType(option: string): void {
+    type = option;
+    if (budgetTouched) return;
+    const asset = option === 'checking' || option === 'savings' || option === 'cash' || (option === 'other' && side === 'asset');
+    inBudget = asset && option !== 'savings';
+  }
+
+  function chooseSide(next: string): void {
+    side = next;
+    if (budgetTouched) return;
+    inBudget = next === 'asset' && type !== 'savings';
+  }
 
   function blankMinor(input: string, key: string): number | null {
     if (input.trim() === '') return null;
@@ -119,6 +137,7 @@
       institution,
       notes,
       starred,
+      inBudget: showBudget && inBudget,
     };
     saving = true;
     try {
@@ -180,7 +199,7 @@
     <span>Type</span>
     <div class="flex flex-wrap gap-2">
       {#each types as option}
-        <button class="choice" class:on={type === option} type="button" style={`--tone: var(--tone-${option})`} onclick={() => (type = option)}>
+        <button class="choice" class:on={type === option} type="button" style={`--tone: var(--tone-${option})`} onclick={() => chooseType(option)}>
           <Glyph name={option} mini />
           {option}
         </button>
@@ -192,8 +211,8 @@
     <div class="field">
       <span>Side</span>
       <div class="flex gap-2">
-        <button class="choice" class:on={side === 'asset'} type="button" onclick={() => (side = 'asset')}>asset</button>
-        <button class="choice" class:on={side === 'liability'} type="button" onclick={() => (side = 'liability')}>liability</button>
+        <button class="choice" class:on={side === 'asset'} type="button" onclick={() => chooseSide('asset')}>asset</button>
+        <button class="choice" class:on={side === 'liability'} type="button" onclick={() => chooseSide('liability')}>liability</button>
       </div>
       {#if fields.side}<em>{fields.side}</em>{/if}
     </div>
@@ -206,6 +225,12 @@
     </span>
     {#if fields.balanceMinor}<em>{fields.balanceMinor}</em>{/if}
   </label>
+  {#if showBudget}
+    <label class="flex items-center gap-2">
+      <input class="w-auto" type="checkbox" name="inBudget" bind:checked={inBudget} onchange={() => (budgetTouched = true)} />
+      <span>Include in Budget</span>
+    </label>
+  {/if}
   <label class="field">
     <span>Annual interest percent</span>
     <input name="interest" inputmode="decimal" placeholder="19.99" bind:value={interest} />

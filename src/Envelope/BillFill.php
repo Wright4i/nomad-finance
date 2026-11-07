@@ -10,6 +10,8 @@ use App\Category\SystemBuckets;
 use App\Money\CurrencyCatalog;
 use App\PayCycle\Period;
 use App\Support\Dates;
+use App\Trip\Drive;
+use App\Trip\TripService;
 use PDO;
 
 /**
@@ -22,6 +24,7 @@ final class BillFill
         private readonly PDO $pdo,
         private readonly CurrencyCatalog $currencies,
         private readonly Actor $actor,
+        private readonly ?Drive $drive = null,
     ) {
     }
 
@@ -41,9 +44,9 @@ final class BillFill
             $nextId = $this->storePeriod($home, $next['start'], $next['end']);
         }
         $picture = $this->picture($today, true);
-        $this->write($openId, $picture['open']);
-        if ($nextId !== null) {
-            $this->write($nextId, $picture['next']);
+        $this->write($openId, $this->withFuel($picture['open'], $open['start'], $today));
+        if ($nextId !== null && $next !== null) {
+            $this->write($nextId, $this->withFuel($picture['next'], $next['start'], $today));
         }
         $this->syncAmounts($today);
     }
@@ -173,6 +176,25 @@ final class BillFill
         return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
     }
 
+    /**
+     * Trip fuel joins the fuel bucket's auto-assigned amount.
+     * The bill list stays bills only; the screen adds the same stays beside them.
+     *
+     * @param array<int, int> $filled
+     * @return array<int, int>
+     */
+    private function withFuel(array $filled, string $day, string $today): array
+    {
+        $month = Dates::parse($day);
+        $fuelId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'fuel');
+        $trips = new TripService($this->pdo, $this->actor, $this->currencies, $this->drive ?? new Drive(false));
+        foreach ($trips->fuelEstimates($month->format('Y-m-01'), $month->format('Y-m-t'), $today) as $stay) {
+            $filled[$fuelId] = ($filled[$fuelId] ?? 0) + $stay['costMinor'];
+        }
+
+        return $filled;
+    }
+
     /** @param array<int, int> $filled */
     private function write(int $periodId, array $filled): void
     {
@@ -204,8 +226,12 @@ final class BillFill
             $categoryId = (int) $id;
             $portion = $filled[$categoryId] ?? 0;
             $row = $rows[$categoryId] ?? null;
-            $hand = $row === null ? 0 : ((int) $row['amount_minor'] - (int) $row['filled_minor']);
-            $amount = $portion + $hand;
+            $oldAmount = $row === null ? 0 : (int) $row['amount_minor'];
+            $oldFilled = $row === null ? 0 : (int) $row['filled_minor'];
+            $envelope = max(0, $oldAmount - $oldFilled);
+            $increase = max(0, $portion - $oldFilled);
+            $envelope = max(0, $envelope - $increase);
+            $amount = $portion + $envelope;
             if ($amount === 0 && $portion === 0) {
                 if ($row !== null) {
                     $delete->execute([$periodId, $categoryId]);

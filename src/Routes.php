@@ -147,6 +147,12 @@ final class Routes
                 $secure->patch('/trips/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($trips) {
                     return Json::write($response, ['trip' => $trips->update((int) $args['id'], self::body($request))]);
                 });
+                $secure->post('/trips/{id:[0-9]+}/route', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($trips) {
+                    $direction = self::body($request)['direction'] ?? '';
+                    $trips->move((int) $args['id'], is_string($direction) ? $direction : '');
+
+                    return Json::write($response, ['ok' => true]);
+                });
                 $secure->post('/trips/{id:[0-9]+}/locate', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($trips, $places) {
                     $today = self::body($request)['today'] ?? '';
                     $today = is_string($today) ? $today : '';

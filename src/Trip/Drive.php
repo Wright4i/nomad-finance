@@ -68,7 +68,7 @@ final class Drive
 
     /**
      * @param list<array{id:int,latitude:string,longitude:string,travel?:string}> $stops
-     *     Arrival order. The destination's travel chooses the leg.
+     *     Route order. The destination's travel chooses the leg.
      * @return list<array{fromId:int,toId:int,miles:int,driving:bool,travel:string,coordinates:list<array{0:float,1:float}>}>
      */
     public function legs(array $stops): array
