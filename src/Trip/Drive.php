@@ -149,8 +149,15 @@ final class Drive
         if ($first !== null) {
             return $first;
         }
+        if ($this->missIsFresh($url)) {
+            return null;
+        }
+        $second = $this->fetchRoad($url);
+        if ($second === null) {
+            $this->noteMiss($url);
+        }
 
-        return $this->fetchRoad($url);
+        return $second;
     }
 
     /** @return array{meters:float,coordinates:list<array{0:float,1:float}>}|null */
@@ -159,6 +166,9 @@ final class Drive
         $remembered = $this->rememberedRoad($url);
         if ($remembered !== null) {
             return $remembered;
+        }
+        if ($this->missIsFresh($url)) {
+            return null;
         }
         $context = stream_context_create([
             'http' => [
@@ -230,5 +240,19 @@ final class Drive
     private static function roadCachePath(string $url): string
     {
         return sys_get_temp_dir() . '/nomad-road-' . hash('sha256', $url) . '.json';
+    }
+
+    /** A leg that did not answer is left alone for 15 minutes instead of asked on every open. */
+    private function missIsFresh(string $url): bool
+    {
+        $path = self::roadCachePath($url) . '.miss';
+
+        return is_file($path) && filemtime($path) >= time() - 900;
+    }
+
+    private function noteMiss(string $url): void
+    {
+        $path = self::roadCachePath($url) . '.miss';
+        @file_put_contents($path, '1');
     }
 }

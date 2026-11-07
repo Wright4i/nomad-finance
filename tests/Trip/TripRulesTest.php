@@ -214,6 +214,29 @@ final class TripRulesTest extends TestCase
         self::assertNull($again['fuel']['priceMinor']);
     }
 
+    public function testARoadThatDidNotAnswerIsNotAskedAgainRightAway(): void
+    {
+        $from = ['id' => 1, 'latitude' => '36.1699', 'longitude' => '-115.1398'];
+        $to = ['id' => 2, 'latitude' => '34.0522', 'longitude' => '-118.2437'];
+        $url = 'https://router.project-osrm.org/route/v1/driving/'
+            . rawurlencode($from['longitude']) . ',' . rawurlencode($from['latitude']) . ';'
+            . rawurlencode($to['longitude']) . ',' . rawurlencode($to['latitude'])
+            . '?overview=simplified&geometries=geojson';
+        $path = sys_get_temp_dir() . '/nomad-road-' . hash('sha256', $url) . '.json.miss';
+        file_put_contents($path, '1');
+        try {
+            $started = hrtime(true);
+            $legs = (new Drive(true))->legs([$from, $to]);
+            $elapsed = (hrtime(true) - $started) / 1e6;
+        } finally {
+            @unlink($path);
+        }
+
+        self::assertLessThan(200, $elapsed);
+        self::assertFalse($legs[0]['driving']);
+        self::assertSame(0, $legs[0]['miles']);
+    }
+
     public function testAHandoffDayIsAllowedAndASharedNightIsKept(): void
     {
         $first = $this->stay(0, 0, '2026-11-01', '2026-11-05', 'Stay 1');
