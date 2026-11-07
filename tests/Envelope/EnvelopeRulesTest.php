@@ -13,6 +13,7 @@ use App\Category\CategoryService;
 use App\Database\Database;
 use App\Dashboard\DashboardService;
 use App\Demo\DemoLibrary;
+use App\Envelope\BillFill;
 use App\Envelope\EnvelopeService;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
@@ -1287,6 +1288,142 @@ final class EnvelopeRulesTest extends TestCase
             self::assertLessThanOrEqual('2026-11-30', $row['on']);
             self::assertGreaterThan(0, $row['amountMinor']);
         }
+    }
+
+    public function testALaterPeriodsBillsDoNotRaiseThisPeriodsEnvelope(): void
+    {
+        $this->pdo->prepare(
+            "UPDATE pay_cycles SET archived_at = ? WHERE user_id = ? AND payor != 'Remote salary'"
+        )->execute([gmdate('c'), $_SESSION['user_id']]);
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-16', '1 month', $_SESSION['user_id']]);
+        (new BillFill($this->pdo, new CurrencyCatalog(), new Actor($this->pdo), new Drive(false)))->apply('2026-11-07');
+
+        $earlier = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame('2026-10-16', $earlier['acctPeriod']['start']);
+        self::assertSame('2026-11-15', $earlier['acctPeriod']['end']);
+        self::assertSame(0, $this->billMinor($earlier, 'Healthcare'));
+        self::assertSame($this->billMinor($earlier, 'Healthcare'), $this->amount($earlier, 'Healthcare'));
+        self::assertSame(11500, $this->amount($earlier, 'Road cushion') - $this->billMinor($earlier, 'Road cushion'));
+        self::assertSame(11500, $this->group($earlier, 'needs')['envelopeMinor']);
+        foreach ($earlier['categories'] as $category) {
+            if (($category['role'] ?? '') !== 'locked') {
+                continue;
+            }
+            $bills = (int) ($category['billMinor'] ?? 0);
+            self::assertSame($bills, (int) $category['amountMinor'], (string) $category['name']);
+        }
+
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
+            ->execute(['2026-11-16', $_SESSION['user_id']]);
+        $later = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame('2026-11-16', $later['acctPeriod']['start']);
+        self::assertGreaterThan(0, $this->billMinor($later, 'Healthcare'));
+        self::assertSame($this->billMinor($later, 'Healthcare'), $this->amount($later, 'Healthcare'));
+        self::assertSame(0, $this->group($later, 'needs')['envelopeMinor']);
+
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
+            ->execute(['2026-10-16', $_SESSION['user_id']]);
+        $amounts = [];
+        foreach ($later['categories'] as $category) {
+            if ($category['archivedAt'] !== null) {
+                continue;
+            }
+            $bills = (int) ($category['billMinor'] ?? 0);
+            $envelope = max(0, (int) $category['amountMinor'] - $bills);
+            $amounts[] = ['categoryId' => (int) $category['id'], 'amountMinor' => $bills + $envelope];
+        }
+        $this->envelopes->save([
+            'today' => '2026-11-07',
+            'payCycleId' => $later['payCycleId'],
+            'amounts' => $amounts,
+            'upcoming' => true,
+            'acctPeriod' => '1',
+            'acctPeriodStart' => '2026-11-16',
+        ]);
+        $back = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame(0, $this->billMinor($back, 'Healthcare'));
+        self::assertSame(0, $this->amount($back, 'Healthcare'));
+        self::assertSame(11500, $this->group($back, 'needs')['envelopeMinor']);
+    }
+
+    public function testRecalculateNamesAndUsesTheAccountingPeriod(): void
+    {
+        $userId = (int) $_SESSION['user_id'];
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-16', '1 month', $userId]);
+        $pets = (int) $this->pdo->query(
+            "SELECT id FROM categories WHERE user_id = {$userId} AND name = 'Pets'"
+        )->fetchColumn();
+        $fun = (int) $this->pdo->query(
+            "SELECT id FROM categories WHERE user_id = {$userId} AND name = 'Fun money'"
+        )->fetchColumn();
+        $checking = $this->accountId('Everyday checking');
+        foreach ([
+            ['Before the period', '2026-10-01', 2222],
+            ['Inside October', '2026-10-20', 1111],
+            ['Inside November', '2026-11-10', 4444],
+            ['After the period', '2026-11-20', 3333],
+        ] as [$name, $due, $amount]) {
+            $this->bills->create([
+                'name' => $name,
+                'type' => 'pets',
+                'accountId' => $checking,
+                'categoryId' => $pets,
+                'amountMinor' => $amount,
+                'currency' => 'USD',
+                'recurrence' => 'once',
+                'nextDueDate' => $due,
+                'today' => '2026-11-07',
+            ]);
+        }
+
+        $camp = $this->pdo->prepare('SELECT id FROM pay_cycles WHERE user_id = ? AND payor = ?');
+        $camp->execute([$userId, 'Camp host']);
+        $campId = (int) $camp->fetchColumn();
+        $insertPeriod = $this->pdo->prepare(
+            'INSERT INTO pay_periods (user_id, pay_cycle_id, period_start, period_end, created_at) VALUES (?, ?, ?, ?, ?)'
+        );
+        $insertPeriod->execute([$userId, $campId, '2026-10-26', '2026-11-01', gmdate('c')]);
+        $insertPeriod->execute([$userId, $campId, '2026-11-22', '2026-11-28', gmdate('c')]);
+        $assign = $this->pdo->prepare(
+            'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
+             SELECT id, ?, ?, 0 FROM pay_periods WHERE pay_cycle_id = ? AND period_start = ?'
+        );
+        $assign->execute([$fun, 7777, $campId, '2026-10-26']);
+        $assign->execute([$fun, 8888, $campId, '2026-11-22']);
+
+        $remote = $this->pdo->prepare('SELECT id FROM pay_cycles WHERE user_id = ? AND payor = ?');
+        $remote->execute([$userId, 'Remote salary']);
+        $again = $this->envelopes->recalculate([
+            'today' => '2026-11-07',
+            'payCycleId' => (int) $remote->fetchColumn(),
+            'acctPeriod' => '1',
+            'acctPeriodStart' => '2026-10-16',
+        ]);
+        $stored = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(a.amount_minor), 0)
+             FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             JOIN pay_cycles y ON y.id = p.pay_cycle_id
+             WHERE y.payor = ? AND p.period_start = ? AND a.category_id = ?'
+        );
+        $stored->execute(['Remote salary', '2026-11-01', $pets]);
+        $petsAmount = (int) $stored->fetchColumn();
+        $goal = $this->pdo->prepare(
+            'SELECT a.amount_minor FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             WHERE p.pay_cycle_id = ? AND p.period_start = ? AND a.category_id = ?'
+        );
+        $goal->execute([$campId, '2026-10-26', $fun]);
+        $inside = (int) $goal->fetchColumn();
+        $goal->execute([$campId, '2026-11-22', $fun]);
+        $outside = (int) $goal->fetchColumn();
+
+        self::assertSame(
+            [7777, 0, 8888, 'Oct 16 – Nov 15'],
+            [$petsAmount, $inside, $outside, $again['acctPeriod']['label'] ?? ''],
+        );
     }
 
     private function balance(string $name): int

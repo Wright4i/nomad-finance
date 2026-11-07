@@ -501,7 +501,7 @@ final class EnvelopesTest extends TestCase
         self::clickLink('Budget');
         self::waitForText('Recalculate');
         self::click('Recalculate');
-        self::waitForText('Recalculate this month?');
+        self::waitForText('Recalculate this period?');
         self::waitForText('Amounts you typed are replaced.');
         self::click('Cancel');
         self::wait()->until(function (): bool {
@@ -517,7 +517,7 @@ final class EnvelopesTest extends TestCase
             return $value === '215.00';
         });
         self::click('Recalculate');
-        self::click('Recalculate this month');
+        self::click('Recalculate this period');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -583,6 +583,128 @@ final class EnvelopesTest extends TestCase
 
             return is_string($accounts) && str_contains($accounts, 'Emergency fund');
         });
+    }
+
+    public function testPagingDoesNotAddTheLaterPeriodsAutoAssignToTheEnvelope(): void
+    {
+        self::driver()->get(self::$base . '/');
+        $mode = self::wait()->until(function (): string|false {
+            $mode = self::driver()->executeScript(<<<'JS'
+                if (document.querySelector('input[name="currentOdometer"]')) return 'setup';
+                if ([...document.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Use demo')) return 'login';
+                if (document.querySelector('.nav-account')) return 'app';
+                return '';
+            JS);
+
+            return is_string($mode) && $mode !== '' ? $mode : false;
+        });
+        self::assertIsString($mode);
+        if ($mode === 'setup') {
+            self::type('name', 'Ada');
+            self::type('password', self::PASSWORD);
+            self::type('currentOdometer', '0');
+            self::click('Create my login');
+            self::waitForText('Net worth');
+            self::click('Log out');
+            self::waitForText('Use demo');
+            self::click('Use demo');
+            self::waitForText('Available to assign');
+        } elseif ($mode === 'login') {
+            self::click('Use demo');
+            self::waitForText('Available to assign');
+        }
+
+        $pdo = new \PDO('sqlite:' . self::$database);
+        $pdo->prepare("UPDATE user SET acct_period_start = '2026-10-16', acct_period_length = '1 month' WHERE role = 'demo'")->execute();
+        $pdo->prepare(
+            "INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
+             SELECT p.id, c.id, 14000, 14000
+             FROM pay_periods p
+             JOIN pay_cycles y ON y.id = p.pay_cycle_id
+             JOIN categories c ON c.user_id = p.user_id AND c.name = 'Healthcare'
+             JOIN user u ON u.id = p.user_id AND u.role = 'demo'
+             WHERE y.payor = 'Remote salary' AND p.period_start = '2026-11-01'
+             ON CONFLICT(pay_period_id, category_id) DO UPDATE SET
+                amount_minor = excluded.amount_minor,
+                filled_minor = excluded.filled_minor"
+        )->execute();
+        $planted = (int) $pdo->query('SELECT changes()')->fetchColumn();
+        if ($planted !== 1) {
+            $demo = (int) $pdo->query("SELECT COUNT(*) FROM user WHERE role = 'demo'")->fetchColumn();
+            $cycles = (int) $pdo->query("SELECT COUNT(*) FROM pay_cycles WHERE payor = 'Remote salary'")->fetchColumn();
+            $periods = (int) $pdo->query("SELECT COUNT(*) FROM pay_periods WHERE period_start = '2026-11-01'")->fetchColumn();
+            $healthcare = (int) $pdo->query("SELECT COUNT(*) FROM categories WHERE name = 'Healthcare'")->fetchColumn();
+            self::fail("Healthcare fill was not planted (demo {$demo}, remote cycles {$cycles}, Nov 1 periods {$periods}, healthcare {$healthcare}).");
+        }
+
+        self::driver()->get(self::$base . '/budget');
+        self::waitForText('Oct 16');
+        self::waitForText('Nov 15');
+        self::wait()->until(function (): bool {
+            return self::envelopeValue('Healthcare') === '0.00' && self::envelopeValue('Road cushion') === '115.00';
+        });
+        $needs = self::figure('needs', 'envelope');
+        self::assertSame('ENVELOPE $115.00', $needs);
+        self::click('Recalculate');
+        self::waitForText('Recalculate this period?');
+        $dialog = self::driver()->executeScript(<<<'JS'
+            const dialog = document.getElementById('recalculate-title')?.closest('dialog');
+            return dialog ? dialog.innerText : '';
+        JS);
+        self::assertIsString($dialog);
+        self::assertStringContainsString('Oct 16 – Nov 15', $dialog);
+        self::assertStringNotContainsString('October', $dialog);
+        self::assertStringNotContainsString('Oct 2026', $dialog);
+        self::click('Cancel');
+
+        self::driver()->findElement(WebDriverBy::cssSelector('button[aria-label="Next"]'))->click();
+        self::waitForText('Nov 16');
+        self::waitForText('Dec 15');
+        self::wait()->until(function (): bool {
+            $auto = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Healthcare');
+                const auto = tile ? tile.querySelector('[data-field="auto"]') : null;
+                return auto ? auto.innerText : '';
+            JS);
+
+            return is_string($auto) && $auto !== '' && $auto !== '$0.00';
+        });
+        $started = microtime(true);
+        self::wait()->until(function () use ($started): bool {
+            return microtime(true) - $started >= 1.3 && self::envelopeValue('Healthcare') === '0.00';
+        });
+
+        self::driver()->findElement(WebDriverBy::cssSelector('button[aria-label="Previous"]'))->click();
+        self::waitForText('Oct 16');
+        self::wait()->until(function (): bool {
+            return self::envelopeValue('Healthcare') === '0.00' && self::envelopeValue('Road cushion') === '115.00';
+        });
+        self::assertSame('ENVELOPE $115.00', self::figure('needs', 'envelope'));
+    }
+
+    private static function envelopeValue(string $name): string
+    {
+        $value = self::driver()->executeScript(<<<'JS'
+            const name = arguments[0];
+            const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === name);
+            const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+            return input ? input.value : '';
+        JS, [$name]);
+
+        return is_string($value) ? $value : '';
+    }
+
+    private static function figure(string $group, string $key): string
+    {
+        $text = self::driver()->executeScript(<<<'JS'
+            const group = arguments[0];
+            const key = arguments[1];
+            const heading = document.querySelector(`h2.group-title[data-group="${group}"]`);
+            const node = heading ? heading.querySelector(`[data-figure="${key}"]`) : null;
+            return node ? node.innerText.replace(/\s+/g, ' ').trim() : '';
+        JS, [$group, $key]);
+
+        return is_string($text) ? $text : '';
     }
 
     private static function assertOverageFooter(string $name, string $text): void

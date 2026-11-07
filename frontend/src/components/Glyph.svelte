@@ -63,6 +63,10 @@
       <path d="M6 16.5V9.5h12v7M6 12.5h12M8.5 9.5 10 6.5h4l1.5 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       <circle cx="9" cy="16.5" r="1.3" fill="currentColor" />
       <circle cx="15" cy="16.5" r="1.3" fill="currentColor" />
+    {:else if mark === 'briefcase' || mark === 'trips'}
+      <path d="M9 7.2V5.8A1.3 1.3 0 0 1 10.3 4.5h3.4A1.3 1.3 0 0 1 15 5.8V7.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M5.5 7.2h13a2 2 0 0 1 2 2v8.3a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V9.2a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M3.5 12.2h17M12 12.2v2.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'truck'}
       <path d="M3.5 15.5V8.5h9v7M12.5 11h4.2L19 14v1.5M3.5 15.5h15.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       <circle cx="7" cy="16.5" r="1.3" fill="currentColor" />
@@ -165,6 +169,8 @@
     {:else if mark === 'lock'}
       <rect x="6" y="10.5" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.8" />
       <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    {:else if mark === 'log'}
+      <path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {:else if mark === 'dollar'}
       <path d="M12 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
       <path d="M16.2 8.1c0-1.9-1.8-3-4.2-3s-4.2 1.2-4.2 3.1c0 1.6 1.2 2.2 4.2 2.7s4.2 1.1 4.2 2.9-1.7 3.1-4.2 3.1-4.2-1.3-4.2-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
@@ -202,6 +208,9 @@
       <path d="M14.5 6.5 9 12l5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'expand'}
       <path d="M9.5 6.5 15 12l-5.5 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+    {:else if mark === 'transfers'}
+      <path d="M3 7h3a5 5 0 0 1 5 5 5 5 0 0 0 5 5h5M18 20l3-3-3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M3 17h3a5 5 0 0 0 5-5 5 5 0 0 1 5-5h5M18 4l3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {/if}
   </svg>
 </span>

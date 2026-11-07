@@ -23,7 +23,6 @@
     card: AccountView;
     paymentMinor: number;
     charges: Charge[];
-    unassignedMinor: number;
   };
 
   type AccountView = {
@@ -38,12 +37,6 @@
     source: AccountView;
     destination: AccountView;
     amountMinor: number;
-    leavesPool: boolean;
-    unassignedMinor: number;
-    fromUnassignedMinor: number;
-    buckets: { categoryId: number; name: string; amountMinor: number }[];
-    gapMinor: number;
-    ready: boolean;
   };
 
   let accounts = $state<Account[]>([]);
@@ -59,7 +52,6 @@
   let movePreview = $state<MovePreview | null>(null);
   let selected = $state<number[]>([]);
   let confirming = $state(false);
-  let acceptBuckets = $state(false);
   let saving = $state(false);
   let confirmDialog = $state<HTMLDialogElement | undefined>();
 
@@ -69,16 +61,22 @@
       account.archivedAt === null
       && (account.type === 'credit' || account.type === 'fuel')
       && account.autopayChoice === 'balance'
-      && account.bankAutopay,
+      && account.bankAutopay
+      && account.balanceMinor > 0,
     ),
   );
   let assets = $derived(accounts.filter((account) => account.archivedAt === null && account.side === 'asset'));
+  let fundedAssets = $derived(assets.filter((account) => account.balanceMinor > 0));
   let cardAccount = $derived(accounts.find((account) => String(account.id) === cardId) ?? null);
   let sourceAccount = $derived(accounts.find((account) => String(account.id) === sourceId) ?? null);
   let destinationAccount = $derived(accounts.find((account) => String(account.id) === destinationId) ?? null);
 
   function money(minor: number): string {
     return formatMinor(minor, currency, 2);
+  }
+
+  function optionLabel(account: Account): string {
+    return `${accountLabel(account)} - ${money(account.balanceMinor)}`;
   }
 
   function amountMinor(): number {
@@ -121,31 +119,33 @@
   let selectedCharges = $derived((preview?.charges ?? []).filter((charge) => selected.includes(charge.id)));
   let selectedMinor = $derived(selectedCharges.reduce((sum, charge) => sum + charge.amountMinor, 0));
   let dueMinor = $derived(cardAccount?.balanceMinor ?? preview?.card.balanceMinor ?? 0);
-  let waterLevel = $derived(dueMinor > 0 ? Math.min(1, selectedMinor / dueMinor) : 0);
-  let waterFull = $derived(dueMinor > 0 && selectedMinor >= dueMinor);
-  let waterFill = $derived(dueMinor < 1 ? 'empty' : waterFull ? 'full' : 'short');
+  let paymentMinor = $derived(Math.max(0, amountMinor()));
+  let beyondMinor = $derived(Math.max(0, paymentMinor - selectedMinor));
+  let waterLevel = $derived(paymentMinor > 0 ? Math.min(1, selectedMinor / paymentMinor) : 0);
+  let waterFull = $derived(paymentMinor > 0 && selectedMinor >= paymentMinor);
+  let waterFill = $derived(paymentMinor < 1 ? 'empty' : waterFull ? 'full' : 'short');
   let waterState = $derived(
-    dueMinor < 1 ? 'Nothing is due' : waterFull ? 'The total due is covered' : 'Short of the total due',
+    paymentMinor < 1 ? 'Enter the payment' : waterFull ? 'Buckets cover this payment' : 'Buckets cover part of this payment',
   );
-  let remainderMinor = $derived(Math.max(0, amountMinor() - selectedMinor));
-  let gapMinor = $derived(Math.max(0, remainderMinor - (preview?.unassignedMinor ?? 0)));
-  let overSource = $derived(sourceAccount !== null && amountMinor() > sourceAccount.balanceMinor);
-  let overCard = $derived(dueMinor > 0 && amountMinor() > dueMinor);
+  let overSource = $derived(sourceAccount !== null && paymentMinor > sourceAccount.balanceMinor);
+  let overCard = $derived(dueMinor > 0 && paymentMinor > dueMinor);
+  let cardBlocked = $derived(paymentMinor < 1 || overSource || overCard || selectedMinor > paymentMinor);
   let cardReady = $derived(
     confirming
     && mode === 'card'
-    && gapMinor === 0
-    && amountMinor() >= 1
     && sourceId !== ''
-    && !overSource
-    && !overCard,
+    && !cardBlocked,
+  );
+  let accountShort = $derived(
+    sourceAccount !== null && amountMinor() > sourceAccount.balanceMinor
+      ? amountMinor() - sourceAccount.balanceMinor
+      : 0,
   );
   let moveReady = $derived(
     confirming
     && mode === 'move'
     && movePreview !== null
-    && movePreview.gapMinor === 0
-    && (movePreview.buckets.length === 0 || acceptBuckets),
+    && accountShort === 0,
   );
 
   async function loadAccounts(): Promise<void> {
@@ -159,6 +159,7 @@
     if (requested === '') {
       preview = null;
       selected = [];
+      amountText = '';
       return;
     }
     if (preview && String(preview.card.id) !== requested) {
@@ -169,36 +170,30 @@
     if (cardId !== requested) return;
     preview = data;
     selected = [];
-    amountText = minorToInput(data.paymentMinor, 2);
+    const due = accounts.find((account) => String(account.id) === requested)?.balanceMinor ?? data.card.balanceMinor;
+    amountText = minorToInput(Math.max(0, due), 2);
   }
 
-  function fits(charge: Charge, already: number[]): boolean {
-    const used = (preview?.charges ?? [])
-      .filter((row) => already.includes(row.id))
-      .reduce((sum, row) => sum + row.amountMinor, 0);
-    return used + charge.amountMinor <= amountMinor();
-  }
-
-  function prune(): void {
-    const payment = amountMinor();
+  function fitSelection(): void {
+    const goal = Math.max(0, amountMinor());
     let used = 0;
-    const keep: number[] = [];
+    const kept: number[] = [];
     for (const id of selected) {
-      const charge = (preview?.charges ?? []).find((row) => row.id === id);
-      if (!charge || used + charge.amountMinor > payment) continue;
-      keep.push(id);
+      const charge = (preview?.charges ?? []).find((item) => item.id === id);
+      if (!charge || used + charge.amountMinor > goal) continue;
+      kept.push(id);
       used += charge.amountMinor;
     }
-    selected = keep;
+    if (kept.length !== selected.length) selected = kept;
   }
 
   function toggle(charge: Charge): void {
     if (selected.includes(charge.id)) {
       selected = selected.filter((id) => id !== charge.id);
-      return;
+    } else if (paymentMinor >= 1 && selectedMinor + charge.amountMinor <= paymentMinor) {
+      selected = [...selected, charge.id];
     }
-    if (!fits(charge, selected)) return;
-    selected = [...selected, charge.id];
+    closeConfirm();
   }
 
   function chooseMode(next: 'card' | 'move'): void {
@@ -218,6 +213,13 @@
     message = '';
     modalMessage = '';
     if (mode === 'move') {
+      if (sourceAccount !== null && amountMinor() > sourceAccount.balanceMinor) {
+        movePreview = null;
+        confirming = true;
+        await tick();
+        if (confirmDialog && !confirmDialog.open) confirmDialog.showModal();
+        return;
+      }
       try {
         movePreview = await api<MovePreview>('/api/transfers/preview', {
           method: 'POST',
@@ -228,7 +230,6 @@
             amountMinor: amountMinor(),
           },
         });
-        acceptBuckets = false;
       } catch (err) {
         message = explain(err).message;
         return;
@@ -280,7 +281,6 @@
           sourceId: Number(sourceId),
           destinationId: Number(destinationId),
           amountMinor: amountMinor(),
-          acceptBuckets,
         },
       });
       saving = false;
@@ -402,7 +402,7 @@
         <select name="cardId" bind:value={cardId} onchange={() => void loadCard()}>
           <option value="">Choose a paid-in-full card</option>
           {#each cards as card (card.id)}
-            <option value={String(card.id)}>{accountLabel(card)}</option>
+            <option value={String(card.id)}>{optionLabel(card)}</option>
           {/each}
         </select>
       </label>
@@ -429,15 +429,42 @@
                 Card
               </span>
               <span class="tank-copy tank-figures">
-                <span>Total due</span>
-                <strong class="money">{money(dueMinor)}</strong>
-                <span>Assigned {money(selectedMinor)}</span>
-                {#if amountMinor() !== dueMinor}
-                  <span>Paying {money(amountMinor())}</span>
-                {/if}
+                <span>Payment</span>
+                <strong class="money">{money(paymentMinor)}</strong>
+                <span>Buckets {money(selectedMinor)}</span>
                 <span aria-live="polite">{waterState}</span>
               </span>
             </article>
+          </div>
+        </section>
+        <section class="grid gap-2">
+          <h2 class="m-0 text-2xl">Buckets</h2>
+          {#if preview.charges.length === 0}
+            <p class="muted m-0">No unpaid bill is drawn from this card.</p>
+          {/if}
+          <div class="pull-board">
+            {#each preview.charges as charge (charge.id)}
+              {@const on = selected.includes(charge.id)}
+              <button
+                class="pull-bucket"
+                type="button"
+                data-bill={charge.name}
+                data-bucket={charge.categoryName || charge.name}
+                style={`--tone: var(--tone-${charge.group || 'needs'}); --level: ${on ? 1 : 0}`}
+                aria-pressed={on}
+                disabled={!on && (paymentMinor < 1 || selectedMinor + charge.amountMinor > paymentMinor)}
+                onclick={() => toggle(charge)}
+              >
+                <span class="bucket-water" aria-hidden="true">
+                  {@render waves(on ? 1 : 0)}
+                </span>
+                <strong>{charge.categoryName || charge.name}</strong>
+                {#if charge.categoryName && charge.categoryName !== charge.name}
+                  <span class="tank-copy">{charge.name}</span>
+                {/if}
+                <span class="tank-copy money">{money(charge.amountMinor)}</span>
+              </button>
+            {/each}
           </div>
         </section>
         <label class="field">
@@ -456,52 +483,18 @@
           <span>Amount</span>
           <span class="money-input">
             <span class="money-mark" aria-hidden="true">$</span>
-            <input name="amount" inputmode="decimal" bind:value={amountText} oninput={() => { prune(); closeConfirm(); }} />
+            <input name="amount" inputmode="decimal" bind:value={amountText} oninput={() => { fitSelection(); closeConfirm(); }} />
           </span>
         </label>
-        <section class="grid gap-2">
-          <h2 class="m-0 text-2xl">Buckets</h2>
-          {#if preview.charges.length === 0}
-            <p class="muted m-0">No past unpaid bill is drawn from this card.</p>
-          {/if}
-          <div class="pull-board">
-            {#each preview.charges as charge (charge.id)}
-              {@const on = selected.includes(charge.id)}
-              <button
-                class="pull-bucket"
-                type="button"
-                data-bill={charge.name}
-                data-bucket={charge.categoryName || charge.name}
-                style={`--tone: var(--tone-${charge.group || 'needs'}); --level: ${on ? 1 : 0}`}
-                aria-pressed={on}
-                disabled={!on && !fits(charge, selected)}
-                title={on || fits(charge, selected) ? '' : 'That bill is more than the amount left.'}
-                onclick={() => toggle(charge)}
-              >
-                <span class="bucket-water" aria-hidden="true">
-                  {@render waves(on ? 1 : 0)}
-                </span>
-                <strong>{charge.categoryName || charge.name}</strong>
-                {#if charge.categoryName && charge.categoryName !== charge.name}
-                  <span class="tank-copy">{charge.name}</span>
-                {/if}
-                <span class="tank-copy money">{money(charge.amountMinor)}</span>
-              </button>
-            {/each}
-          </div>
-        </section>
-        {#if gapMinor > 0}
-          <p class="m-0" style="color: var(--coral)">Short {money(gapMinor)}. Unassigned cash cannot cover the rest.</p>
-        {/if}
-        <button class="btn primary" type="button" disabled={sourceId === '' || amountMinor() < 1} onclick={() => void openConfirm()}>Review</button>
+        <button class="btn primary" type="button" disabled={sourceId === '' || paymentMinor < 1} onclick={() => void openConfirm()}>Review</button>
       {/if}
     {:else}
       <label class="field">
         <span>From</span>
         <select name="moveSource" bind:value={sourceId} onchange={() => closeConfirm()}>
           <option value="">Choose an account</option>
-          {#each assets as account (account.id)}
-            <option value={String(account.id)}>{accountLabel(account)}</option>
+          {#each fundedAssets as account (account.id)}
+            <option value={String(account.id)}>{optionLabel(account)}</option>
           {/each}
         </select>
       </label>
@@ -513,7 +506,7 @@
         <select name="moveDestination" bind:value={destinationId} onchange={() => closeConfirm()}>
           <option value="">Choose an account</option>
           {#each assets as account (account.id)}
-            <option value={String(account.id)}>{accountLabel(account)}</option>
+            <option value={String(account.id)}>{optionLabel(account)}</option>
           {/each}
         </select>
       </label>
@@ -547,80 +540,59 @@
   <div class="modal-body">
     <h2 id="transfer-confirm-title" class="m-0 text-2xl">{mode === 'card' ? 'Pay this card?' : 'Move this money?'}</h2>
     {#if mode === 'card' && cardAccount && sourceAccount}
+      <div class="pay-review" style={`--from: var(--tone-${sourceAccount.type}); --to: var(--tone-${cardAccount.type})`}>
       <section
         class="transfer-scene"
         aria-label="Payment"
-        style={`--from: var(--tone-${sourceAccount.type}); --to: var(--tone-${cardAccount.type})`}
       >
-        {@render flowEnd(sourceAccount, overSource ? null : afterMinor(sourceAccount.balanceMinor, -amountMinor()))}
-        {@render flowStream(amountMinor())}
-        <div class="transfer-pole">
-          <div
-            class="transfer-end with-water"
-            data-type={cardAccount.type}
-            data-fill={waterFill}
-            style={`--level: ${waterLevel}`}
-          >
-            <span class="bucket-water" aria-hidden="true">
-              {@render waves(waterLevel)}
-            </span>
-            <span class="tank-copy tank-kicker">
-              <Glyph name={cardAccount.type} mini />
-              {cardAccount.name}
-            </span>
-            <span class="tank-copy money">{money(cardAccount.balanceMinor)}</span>
-            <span class="tank-copy">{waterState}</span>
+        {@render flowEnd(sourceAccount, cardBlocked ? null : afterMinor(sourceAccount.balanceMinor, -paymentMinor))}
+        {@render flowStream(paymentMinor)}
+        {@render flowEnd(cardAccount, cardBlocked ? null : afterMinor(cardAccount.balanceMinor, -paymentMinor))}
+      </section>
+      {#if !cardBlocked}
+        <div class="pay-split" data-buckets={selectedMinor} data-beyond={beyondMinor}>
+          <div class="pay-split-track" aria-hidden="true">
+            {#if selectedMinor > 0}
+              <span class="pay-split-buckets" style={`width: ${(selectedMinor / paymentMinor) * 100}%`}></span>
+            {/if}
+            {#if beyondMinor > 0}
+              <span class="pay-split-beyond" style={`width: ${(beyondMinor / paymentMinor) * 100}%`}></span>
+            {/if}
           </div>
-          {#if !overCard && !overSource}
-            <p class="transfer-after">After {money(afterMinor(cardAccount.balanceMinor, -amountMinor()))}</p>
+          {#if selectedMinor > 0}
+            <p class="pay-note m-0"><span class="pay-swatch buckets" aria-hidden="true"></span>Buckets {money(selectedMinor)}. These bills are marked paid and their buckets drop. That does not move more cash.</p>
+          {/if}
+          {#if beyondMinor > 0}
+            <p class="pay-note m-0"><span class="pay-swatch beyond" aria-hidden="true"></span>Beyond the buckets {money(beyondMinor)}. This is the rest of the same payment.</p>
+          {:else}
+            <p class="pay-note m-0">The buckets cover this payment. Available to assign stays the same.</p>
           {/if}
         </div>
-      </section>
-      <section class="grid gap-2">
-        <h3 class="m-0 text-xl">Marked paid</h3>
-        {#if selectedCharges.length === 0}
-          <p class="m-0">No bill is marked paid.</p>
-        {/if}
-        {#each selectedCharges as charge (charge.id)}
-          <p class="source-row m-0"><span>{charge.categoryName || charge.name} · {charge.name}</span><strong>{money(charge.amountMinor)}</strong></p>
-        {/each}
-      </section>
-      {#if remainderMinor > 0}
-        <p class="m-0">Unassigned cash covers {money(remainderMinor)}.</p>
       {/if}
-      {#if gapMinor > 0}
-        <p class="m-0" style="color: var(--coral)">Short {money(gapMinor)}. Unassigned cash cannot cover the rest.</p>
+      </div>
+      {#if selectedCharges.length > 0}
+        <section class="grid gap-2">
+          <h3 class="m-0 text-xl">Marked paid</h3>
+          {#each selectedCharges as charge (charge.id)}
+            <p class="source-row pay-note m-0"><span>{charge.categoryName || charge.name} · {charge.name}</span><strong>{money(charge.amountMinor)}</strong></p>
+          {/each}
+        </section>
       {/if}
-      {#if overSource || overCard}
+      {#if cardBlocked && paymentMinor >= 1}
         <p class="m-0" style="color: var(--coral)">The payment cannot be more than either balance.</p>
       {/if}
-    {:else if mode === 'move' && movePreview && sourceAccount && destinationAccount}
+    {:else if mode === 'move' && sourceAccount && destinationAccount && (movePreview || accountShort > 0)}
       <section
         class="transfer-scene"
         aria-label="Transfer"
         style={`--from: var(--tone-${sourceAccount.type}); --to: var(--tone-${destinationAccount.type})`}
       >
-        {@render flowEnd(sourceAccount, afterMinor(sourceAccount.balanceMinor, -movePreview.amountMinor))}
-        {@render flowStream(movePreview.amountMinor)}
-        {@render flowEnd(destinationAccount, destinationAccount.balanceMinor + movePreview.amountMinor)}
+        {@render flowEnd(sourceAccount, accountShort > 0 || !movePreview ? null : afterMinor(sourceAccount.balanceMinor, -movePreview.amountMinor))}
+        {@render flowStream(movePreview ? movePreview.amountMinor : amountMinor())}
+        {@render flowEnd(destinationAccount, accountShort > 0 || !movePreview ? null : destinationAccount.balanceMinor + movePreview.amountMinor)}
       </section>
-      {#if movePreview.leavesPool}
-        <p class="m-0">Unassigned cash covers {money(movePreview.fromUnassignedMinor)}.</p>
-      {/if}
-      {#if movePreview.buckets.length > 0}
-        <section class="grid gap-2">
-          <h3 class="m-0 text-xl">Buckets this would reduce</h3>
-          {#each movePreview.buckets as bucket (bucket.categoryId)}
-            <p class="source-row m-0"><span>{bucket.name}</span><strong>{money(bucket.amountMinor)}</strong></p>
-          {/each}
-          <label class="accept-buckets">
-            <input type="checkbox" bind:checked={acceptBuckets} />
-            <span>Accept these buckets</span>
-          </label>
-        </section>
-      {/if}
-      {#if movePreview.gapMinor > 0}
-        <p class="m-0" style="color: var(--coral)">Short {money(movePreview.gapMinor)}.</p>
+      {#if accountShort > 0}
+        <p class="m-0" style="color: var(--coral)">Short {money(accountShort)}. You are asking for more than this account holds.</p>
       {/if}
     {/if}
     {#if modalMessage}
@@ -638,6 +610,87 @@
 </dialog>
 
 <style>
+  .pay-split {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .pay-split-track {
+    display: flex;
+    height: 0.85rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--line) 80%, transparent);
+  }
+
+  .pay-split-buckets,
+  .pay-split-beyond {
+    height: 100%;
+    transform-origin: left center;
+    animation: pay-fill 240ms var(--ease-out) both;
+  }
+
+  .pay-split-buckets {
+    background: #3cbf6e;
+  }
+
+  .pay-split-beyond {
+    background: linear-gradient(90deg, var(--from, var(--teal)), var(--to, var(--coral)));
+    animation-delay: 40ms;
+  }
+
+  .pay-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    animation: pay-note-in 200ms var(--ease-out) both;
+  }
+
+  .pay-note + .pay-note {
+    animation-delay: 40ms;
+  }
+
+  .pay-swatch {
+    flex: none;
+    width: 0.7rem;
+    height: 0.7rem;
+    margin-top: 0.2rem;
+    border-radius: 999px;
+  }
+
+  .pay-swatch.buckets {
+    background: #3cbf6e;
+  }
+
+  .pay-swatch.beyond {
+    background: linear-gradient(90deg, var(--from, var(--teal)), var(--to, var(--coral)));
+  }
+
+  .pay-review {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  @keyframes pay-fill {
+    from { transform: scaleX(0.08); }
+    to { transform: scaleX(1); }
+  }
+
+  @keyframes pay-note-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pay-split-buckets,
+    .pay-split-beyond,
+    .pay-note {
+      animation: none;
+    }
+  }
+
   .transfer-account {
     display: flex;
     flex-direction: column;

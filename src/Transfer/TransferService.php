@@ -14,8 +14,10 @@ use PDO;
 
 /**
  * A transfer is the one way a balance changes without typing it.
- * Paying a paid-in-full card marks the selected bills and moves both balances.
+ * Paying a paid-in-full card moves the full payment off the source and off the card.
+ * Selected bills are marked paid, and that does not move more cash.
  * An in-budget asset moved to another in-budget asset leaves assignments alone.
+ * A between-accounts move is allowed when the source balance covers the amount.
  */
 final class TransferService
 {
@@ -77,21 +79,11 @@ final class TransferService
             if (!isset($byId[$id])) {
                 throw new ApiException(422, 'Choose bills drawn from this card.');
             }
-            $amount = (int) $byId[$id]['amountMinor'];
-            if ($used + $amount > $payment) {
-                continue;
-            }
             $selected[] = $byId[$id];
-            $used += $amount;
+            $used += (int) $byId[$id]['amountMinor'];
         }
-        $remainder = $payment - $used;
-        $unassigned = max(0, $this->available($today));
-        if ($remainder > $unassigned) {
-            throw new ApiException(422, 'Unassigned cash is short.', [
-                'gapMinor' => (string) ($remainder - $unassigned),
-                'unassignedMinor' => (string) $unassigned,
-                'remainderMinor' => (string) $remainder,
-            ]);
+        if ($used > $payment) {
+            throw new ApiException(422, 'The selected bills are more than this payment.');
         }
 
         $this->pdo->beginTransaction();
@@ -114,7 +106,7 @@ final class TransferService
         return [
             'paymentMinor' => $payment,
             'selectedMinor' => $used,
-            'unassignedMinor' => $remainder,
+            'beyondMinor' => $payment - $used,
             'source' => $this->accountView($this->account((int) $source['id'])),
             'card' => $this->accountView($this->account((int) $card['id'])),
         ];
@@ -142,7 +134,7 @@ final class TransferService
             'fromUnassignedMinor' => $plan['fromUnassignedMinor'],
             'buckets' => $plan['buckets'],
             'gapMinor' => $plan['gapMinor'],
-            'ready' => $plan['gapMinor'] === 0,
+            'ready' => true,
         ];
     }
 
@@ -158,19 +150,6 @@ final class TransferService
         $amount = $this->int($input['amountMinor'] ?? null);
         $this->guardMove($source, $destination, $amount);
         $plan = $this->coverPlan($source, $destination, $amount, $today);
-        if ($plan['gapMinor'] > 0) {
-            throw new ApiException(422, 'The buckets cannot cover this transfer.', [
-                'gapMinor' => (string) $plan['gapMinor'],
-            ]);
-        }
-        $accept = ($input['acceptBuckets'] ?? false) === true
-            || ($input['acceptBuckets'] ?? null) === 1
-            || ($input['acceptBuckets'] ?? null) === '1';
-        if ($plan['buckets'] !== [] && !$accept) {
-            throw new ApiException(422, 'Accept the buckets this transfer would reduce.', [
-                'buckets' => 'Accept the buckets this transfer would reduce.',
-            ]);
-        }
 
         $this->pdo->beginTransaction();
         try {
@@ -207,7 +186,8 @@ final class TransferService
             throw new ApiException(422, 'Enter an amount greater than zero.', ['amountMinor' => 'Enter an amount greater than zero.']);
         }
         if ($amount > (int) $source['balance_minor']) {
-            throw new ApiException(422, 'The source does not have that much.');
+            $short = $amount - (int) $source['balance_minor'];
+            throw new ApiException(422, 'Short ' . $this->dollars($short) . '. You are asking for more than this account holds.');
         }
     }
 
@@ -369,7 +349,8 @@ final class TransferService
                     c.name AS category_name, c.category_group
              FROM bills b
              LEFT JOIN categories c ON c.id = b.category_id
-             WHERE b.account_id = ? AND b.status = \'active\' AND b.next_due_date < ?
+             WHERE b.account_id = ? AND b.status = \'active\'
+               AND b.next_due_date <= ?
                AND (b.source_account_id IS NULL OR b.source_account_id != b.account_id)
              ORDER BY b.next_due_date, b.name COLLATE NOCASE, b.id'
         );
@@ -480,6 +461,16 @@ final class TransferService
         }
 
         return 0;
+    }
+
+    private function dollars(int $minor): string
+    {
+        $sign = $minor < 0 ? '-' : '';
+        $abs = abs($minor);
+        $whole = intdiv($abs, 100);
+        $cents = $abs % 100;
+
+        return $sign . '$' . number_format($whole, 0, '.', ',') . '.' . str_pad((string) $cents, 2, '0', STR_PAD_LEFT);
     }
 
     private function day(string $value): string

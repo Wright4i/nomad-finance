@@ -51,12 +51,12 @@
     [
       { href: '/', label: 'Planner', mark: 'needs' },
       { href: '/calendar', label: 'Calendar', mark: 'monthly' },
-      { href: '/trips', label: 'Trips', mark: 'transport' },
+      { href: '/trips', label: 'Trips', mark: 'briefcase' },
     ],
     [
       { href: '/bills', label: 'Bills', mark: 'debt' },
       { href: '/budget', label: 'Budget', mark: 'envelope' },
-      { href: '/transfers', label: 'Transfers', mark: 'cash' },
+      { href: '/transfers', label: 'Transfers', mark: 'transfers' },
     ],
     [
       { href: '/accounts', label: 'Accounts', mark: 'vault' },

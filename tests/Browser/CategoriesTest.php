@@ -273,6 +273,7 @@ final class CategoriesTest extends TestCase
                 });
                 return {
                     top: rect.top,
+                    bottom: rect.bottom,
                     left: rect.left,
                     width: rect.width,
                     height: rect.height,
@@ -290,8 +291,24 @@ final class CategoriesTest extends TestCase
                 if (row) row.tiles.push(tile);
                 else rows.push({ top: tile.top, tiles: [tile] });
             }
+            const board = document.querySelector('.account-board');
+            const rules = board ? [...board.querySelectorAll('.account-star-rule')] : [];
+            const rule = rules[0] || null;
+            const ruleBox = rule ? rule.getBoundingClientRect() : null;
+            const ruleStyle = rule ? getComputedStyle(rule) : null;
+            const boardBox = board ? board.getBoundingClientRect() : null;
+            const firstLink = document.querySelector('a.bucket-tile');
             return {
                 first: tiles.slice(0, 2),
+                boardWidth: boardBox ? boardBox.width : 0,
+                line: firstLink ? getComputedStyle(firstLink).borderTopColor : '',
+                ruleCount: rules.length,
+                rule: ruleBox && ruleStyle ? {
+                    top: ruleBox.top,
+                    width: ruleBox.width,
+                    thickness: parseFloat(ruleStyle.borderTopWidth),
+                    color: ruleStyle.borderTopColor,
+                } : null,
                 rows: rows.map((row) => {
                     const heights = row.tiles.map((tile) => tile.height);
                     return {
@@ -307,8 +324,19 @@ final class CategoriesTest extends TestCase
         $first = $cards['first'];
         self::assertIsArray($first);
         self::assertCount(2, $first);
-        self::assertEqualsWithDelta($first[0]['top'], $first[1]['top'], 2);
-        self::assertGreaterThan($first[0]['left'], $first[1]['left']);
+        self::assertSame('Everyday checking', $first[0]['name']);
+        self::assertSame(1, $cards['rows'][0]['count']);
+        self::assertGreaterThan($first[0]['bottom'], $first[1]['top']);
+        self::assertEqualsWithDelta($first[0]['left'], $first[1]['left'], 2);
+        self::assertEqualsWithDelta($first[0]['width'], $first[1]['width'], 2);
+        self::assertSame(1, $cards['ruleCount']);
+        self::assertIsArray($cards['rule']);
+        self::assertGreaterThan($first[0]['bottom'] - 1, $cards['rule']['top']);
+        self::assertLessThan($first[1]['top'], $cards['rule']['top']);
+        self::assertEqualsWithDelta($cards['boardWidth'], $cards['rule']['width'], 2);
+        self::assertGreaterThan($first[0]['width'] + 8, $cards['rule']['width']);
+        self::assertEqualsWithDelta(1, $cards['rule']['thickness'], 0.2);
+        self::assertSame($cards['line'], $cards['rule']['color']);
         self::assertSame('auto', $first[0]['aspect']);
         self::assertGreaterThanOrEqual($first[0]['expected'] - 4, $first[0]['height']);
         self::assertNotSame('', $first[0]['name']);

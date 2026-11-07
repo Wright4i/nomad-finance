@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
-  import { formatChipDate, formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { formatChipDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
   import type { Category, EnvelopeSheet } from '../lib/types';
@@ -30,6 +30,7 @@
   let sourcesDialog: HTMLDialogElement | undefined = $state();
   let recalculateDialog: HTMLDialogElement | undefined = $state();
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let alive = true;
 
   let editable = $derived(sheet?.period?.editable === true);
 
@@ -116,8 +117,19 @@
 
   function queueSave(): void {
     if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => void save(), 1000);
+    saveTimer = setTimeout(() => {
+      saveTimer = undefined;
+      void save();
+    }, 1000);
   }
+
+  onDestroy(() => {
+    alive = false;
+    if (!saveTimer) return;
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+    void save();
+  });
 
   function saveNow(event: KeyboardEvent): void {
     if (event.key !== 'Enter') return;
@@ -141,12 +153,21 @@
     if (Object.keys(fields).length > 0) return;
 
     saving = true;
+    const periodStart = sheet.acctPeriod?.start ?? '';
+    const planning = sheet.period?.upcoming === true;
     try {
-      const planning = sheet.period?.upcoming === true;
       const data = await api<EnvelopeSheet>('/api/budget', {
         method: 'PUT',
-        body: { today: todayISO(), payCycleId: sheet.payCycleId, amounts, upcoming: planning, acctPeriod: '1' },
+        body: {
+          today: todayISO(),
+          payCycleId: sheet.payCycleId,
+          amounts,
+          upcoming: planning,
+          acctPeriod: '1',
+          acctPeriodStart: periodStart,
+        },
       });
+      if (!alive) return;
       if (data.celebrate && !prefersReducedMotion()) {
         celebrateEase = true;
         await tick();
@@ -181,6 +202,7 @@
           payCycleId: sheet.payCycleId,
           upcoming: sheet.period?.upcoming === true,
           acctPeriod: '1',
+          acctPeriodStart: sheet.acctPeriod?.start ?? '',
         },
       });
       sheet = data;
@@ -291,11 +313,11 @@
       </div>
       <dialog class="modal" bind:this={recalculateDialog} aria-labelledby="recalculate-title">
         <div class="modal-body">
-          <h2 id="recalculate-title" class="m-0 text-2xl">Recalculate this month?</h2>
-          <p class="m-0">This replaces every bucket's assignment for {sheet.period ? formatMonth(sheet.period.start) : 'this month'} with the bills that occur in that month. Fuel also includes the estimate for each stay that is still open and arrives in the month. Amounts you typed are replaced. Account balances stay as you typed them.</p>
+          <h2 id="recalculate-title" class="m-0 text-2xl">Recalculate this period?</h2>
+          <p class="m-0">This replaces every bucket's assignment for {sheet.acctPeriod?.label ?? 'this period'} with the bills that occur in that period. Fuel also includes the estimate for each stay that is still open and arrives in the period. Amounts you typed are replaced. Account balances stay as you typed them.</p>
         </div>
         <div class="modal-actions">
-          <button class="btn danger" type="button" disabled={saving} aria-busy={saving} onclick={() => void confirmRecalculate()}>Recalculate this month</button>
+          <button class="btn danger" type="button" disabled={saving} aria-busy={saving} onclick={() => void confirmRecalculate()}>Recalculate this period</button>
           <button class="btn" type="button" onclick={() => recalculateDialog?.close()}>Cancel</button>
         </div>
       </dialog>

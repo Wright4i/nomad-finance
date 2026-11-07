@@ -104,14 +104,24 @@ final class TransfersTest extends TestCase
         self::clickLink('Transfers');
         self::waitForText('Pay a card');
         self::click('Between accounts');
-        self::choose('moveSource', 'Everyday checking');
+        $fromLabels = self::selectLabels('moveSource');
+        $toLabels = self::selectLabels('moveDestination');
+        self::assertContains('Everyday checking - $3,180.00', $fromLabels);
+        self::assertContains('Everyday checking - $3,180.00', $toLabels);
+        self::assertContains('Emergency fund - $8,600.00', $toLabels);
+        self::assertContains('Empty jar - $0.00', $toLabels);
+        self::assertSame([], array_values(array_filter(
+            $fromLabels,
+            static fn (string $label): bool => str_contains($label, 'Empty jar'),
+        )));
+        self::choose('moveSource', 'Everyday checking - $3,180.00');
         $checking = self::accountCard('Everyday checking');
         self::assertStringContainsString('checking', $checking['text']);
         self::assertStringContainsString('$3,180.00', $checking['text']);
         self::assertSame('yes', $checking['inBudget']);
         self::assertSame('Included in available to assign', $checking['budget']);
 
-        self::choose('moveDestination', 'Emergency fund');
+        self::choose('moveDestination', 'Emergency fund - $8,600.00');
         $emergency = self::accountCard('Emergency fund');
         self::assertStringContainsString('savings', $emergency['text']);
         self::assertStringContainsString('$8,600.00', $emergency['text']);
@@ -121,13 +131,15 @@ final class TransfersTest extends TestCase
 
         $amount = self::moneyField('moveAmount');
         self::assertSame('$', $amount['mark']);
-        self::replace('moveAmount', '1.00');
+        self::replace('moveAmount', '1000.00');
         self::click('Review');
         $leaving = self::dialogText();
         self::assertStringContainsString('Move this money?', $leaving);
         self::assertStringContainsString('Everyday checking', $leaving);
         self::assertStringContainsString('Emergency fund', $leaving);
-        self::assertStringContainsString('$1.00', $leaving);
+        self::assertStringContainsString('$1,000.00', $leaving);
+        self::assertStringNotContainsString('Unassigned cash covers', $leaving);
+        self::assertStringNotContainsString('Marked paid', $leaving);
         self::assertSame(['checking', 'savings'], self::dialogTypes());
         self::assertTrue(self::dialogHasStream());
         $squares = self::dialogSquares();
@@ -138,15 +150,35 @@ final class TransfersTest extends TestCase
         self::assertGreaterThanOrEqual(0, $squares['gap']);
         self::assertLessThanOrEqual(16, $squares['gap']);
         self::assertGreaterThanOrEqual(36, $squares['arrowHeight']);
+        self::assertFalse($squares['overlaps']);
+        self::assertTrue($squares['between']);
+        self::assertTrue($squares['aligned']);
+        self::assertTrue($squares['glyphs']);
         self::assertStringContainsString('--from', $squares['gradient']);
         self::assertStringContainsString('--to', $squares['gradient']);
+        self::assertStringNotContainsString('Short', $leaving);
+        self::assertStringNotContainsString('Accept these buckets', $leaving);
+        self::assertStringNotContainsString('Buckets this would reduce', $leaving);
+        self::assertTrue(self::confirmEnabled());
         self::click('Back');
         self::waitUntilDialogClosed();
         self::assertStringContainsString('$3,180.00', self::accountCard('Everyday checking')['text']);
         self::assertStringContainsString('$8,600.00', self::accountCard('Emergency fund')['text']);
 
-        self::choose('moveSource', 'Wallet');
-        self::choose('moveDestination', 'Camp jar');
+        self::replace('moveAmount', '4000.00');
+        self::click('Review');
+        $over = self::dialogText();
+        self::assertStringContainsString('Short $820.00. You are asking for more than this account holds.', $over);
+        self::assertStringNotContainsString('Accept these buckets', $over);
+        self::assertStringNotContainsString('Buckets this would reduce', $over);
+        self::assertFalse(self::confirmEnabled());
+        self::click('Back');
+        self::waitUntilDialogClosed();
+        self::assertStringContainsString('$3,180.00', self::accountCard('Everyday checking')['text']);
+        self::assertStringContainsString('$8,600.00', self::accountCard('Emergency fund')['text']);
+
+        self::choose('moveSource', 'Wallet - $86.00');
+        self::choose('moveDestination', 'Camp jar - $140.00');
         self::assertSame('Included in available to assign', self::accountCard('Wallet')['budget']);
         self::assertStringContainsString('$86.00', self::accountCard('Wallet')['text']);
         self::assertStringContainsString('cash', self::accountCard('Camp jar')['text']);
@@ -158,6 +190,8 @@ final class TransfersTest extends TestCase
         self::assertStringContainsString('Camp jar', $moving);
         self::assertStringContainsString('$1.00', $moving);
         self::assertStringNotContainsString('Marked paid', $moving);
+        self::assertStringNotContainsString('Unassigned cash covers', $moving);
+        self::assertStringNotContainsString('Short', $moving);
         self::assertTrue(self::confirmEnabled());
         self::click('Confirm');
         self::waitForText('Transferred.');
@@ -166,8 +200,29 @@ final class TransfersTest extends TestCase
         self::assertStringContainsString('$141.00', self::accountCard('Camp jar')['text']);
 
         self::click('Pay a card');
-        self::choose('cardId', 'Camp card - Camp bank (Ada)');
+        $cardLabels = self::selectLabels('cardId');
+        self::assertContains('Camp card - Camp bank (Ada) - $20.00', $cardLabels);
+        self::assertContains('Bare card - $10.00', $cardLabels);
+        self::assertSame([], array_values(array_filter(
+            $cardLabels,
+            static fn (string $label): bool => str_contains($label, 'Zero card'),
+        )));
+        self::choose('cardId', 'Camp card - Camp bank (Ada) - $20.00');
         self::waitForText('Trail snacks');
+        self::waitForText('Wingstop');
+        self::assertStringNotContainsString('Late supper', self::bodyText());
+        $order = self::payOrder();
+        self::assertTrue($order['cardBeforeBuckets']);
+        self::assertTrue($order['bucketsBeforeSource']);
+        self::assertTrue($order['bucketsBeforeAmount']);
+        $payFrom = self::selectLabels('sourceId');
+        self::assertContains('Wallet', $payFrom);
+        self::assertContains('Empty jar', $payFrom);
+        self::assertNotContains('Wallet - $85.00', $payFrom);
+        $wing = self::billBucket('Wingstop');
+        self::assertStringContainsString('Restaurants', $wing['text']);
+        self::assertStringContainsString('$5.00', $wing['text']);
+        self::assertSame('false', $wing['pressed']);
         $card = self::accountCard('Camp card');
         self::assertStringContainsString('Card balance', self::bodyText());
         self::assertStringContainsString('$20.00', $card['text']);
@@ -181,54 +236,109 @@ final class TransfersTest extends TestCase
         $payAmount = self::moneyField('amount');
         self::assertSame('$', $payAmount['mark']);
         self::assertSame('20.00', $payAmount['value']);
+        self::assertNull(self::driver()->executeScript('return document.querySelector(\'input[name="includeCash"]\');'));
 
         $empty = self::tank();
         self::assertSame('short', $empty['fill']);
         self::assertSame('0.00', $empty['level']);
-        self::assertStringContainsString('Short of the total due', $empty['text']);
-        self::assertStringContainsString('Total due', $empty['text']);
+        self::assertStringContainsString('Buckets cover part of this payment', $empty['text']);
+        self::assertStringContainsString('Payment', $empty['text']);
+        self::assertStringNotContainsString('Short of the total due', $empty['text']);
         self::assertSame('false', $empty['snacks']);
 
+        self::choose('sourceId', 'Wallet');
+        self::assertSame('20.00', self::moneyField('amount')['value']);
+        self::click('Review');
+        $unmarked = self::dialogText();
+        self::assertStringContainsString('Pay this card?', $unmarked);
+        self::assertStringNotContainsString('Marked paid', $unmarked);
+        self::assertStringNotContainsString('This cash is included', $unmarked);
+        self::assertStringNotContainsString('Include this cash', $unmarked);
+        self::assertStringNotContainsString('Unassigned cash covers', $unmarked);
+        self::assertStringContainsString('$20.00', $unmarked);
+        self::assertStringContainsString('After $65.00', $unmarked);
+        self::assertStringContainsString('After $0.00', $unmarked);
+        self::assertStringContainsString('Beyond the buckets $20.00', $unmarked);
+        self::assertStringContainsString('This is the rest of the same payment.', $unmarked);
+        self::assertSame(['cash', 'credit'], self::dialogTypes());
+        self::assertTrue(self::dialogHasStream());
+        self::click('Back');
+        self::waitUntilDialogClosed();
+
+        self::clickCss('button[data-bill="Wingstop"]');
+        self::assertSame('20.00', self::moneyField('amount')['value']);
+        $wingOnly = self::waitForTank('short', '0.25');
+        self::assertSame('true', self::billBucket('Wingstop')['pressed']);
+        self::assertSame('0.25', $wingOnly['level']);
+
         self::clickCss('button[data-bill="Trail snacks"]');
-        $partial = self::tank();
-        self::assertSame('short', $partial['fill']);
-        self::assertSame('0.60', $partial['level']);
+        self::assertSame('20.00', self::moneyField('amount')['value']);
+        $partial = self::waitForTank('short', '0.85');
         self::assertSame('true', $partial['snacks']);
         self::assertSame('false', $partial['rinse']);
+        self::assertTrue(self::billDisabled('Rinse'));
         self::assertStringContainsString('Restaurants', self::bodyText());
         self::assertStringContainsString('$12.00', self::bodyText());
 
+        self::click('Review');
+        $held = self::dialogText();
+        self::assertStringContainsString('Marked paid', $held);
+        self::assertStringContainsString('Wingstop', $held);
+        self::assertStringContainsString('Trail snacks', $held);
+        self::assertStringNotContainsString('Rinse', $held);
+        self::assertStringContainsString('$20.00', $held);
+        self::assertStringContainsString('After $65.00', $held);
+        self::assertStringContainsString('After $0.00', $held);
+        self::assertStringContainsString('Beyond the buckets $3.00', $held);
+        self::assertStringContainsString('This is the rest of the same payment.', $held);
+        self::assertStringContainsString('That does not move more cash.', $held);
+        self::assertTrue(self::dialogHasStream());
+        self::assertTrue(self::confirmEnabled());
+        self::click('Back');
+        self::waitUntilDialogClosed();
+        self::assertStringContainsString('$20.00', self::accountCard('Camp card')['text']);
+        self::assertStringContainsString('$85.00', self::accountCard('Wallet')['text']);
+
+        self::clickCss('button[data-bill="Wingstop"]');
+        self::clickCss('button[data-bill="Trail snacks"]');
+        self::waitForTank('short', '0.00');
+        self::clickCss('button[data-bill="Trail snacks"]');
         self::clickCss('button[data-bill="Rinse"]');
-        $full = self::tank();
-        self::assertSame('full', $full['fill']);
-        self::assertSame('1.00', $full['level']);
-        self::assertStringContainsString('The total due is covered', $full['text']);
+        $full = self::waitForTank('full', '1.00');
+        self::assertStringContainsString('Buckets cover this payment', $full['text']);
         self::assertSame('true', $full['snacks']);
         self::assertSame('true', $full['rinse']);
+        self::assertTrue(self::billDisabled('Wingstop'));
+        self::assertSame('20.00', self::moneyField('amount')['value']);
 
-        self::clickCss('button[data-bill="Trail snacks"]');
-        $dropped = self::tank();
-        self::assertSame('short', $dropped['fill']);
-        self::assertSame('0.40', $dropped['level']);
-        self::clickCss('button[data-bill="Trail snacks"]');
-        self::assertSame('full', self::tank()['fill']);
-
-        self::choose('sourceId', 'Wallet');
-        self::assertStringContainsString('$85.00', self::accountCard('Wallet')['text']);
         self::click('Review');
         $paying = self::dialogText();
         self::assertStringContainsString('Pay this card?', $paying);
         self::assertStringContainsString('Marked paid', $paying);
         self::assertStringContainsString('Trail snacks', $paying);
         self::assertStringContainsString('Rinse', $paying);
+        self::assertStringNotContainsString('Wingstop', $paying);
         self::assertStringContainsString('Wallet', $paying);
         self::assertStringContainsString('Camp card', $paying);
+        self::assertStringContainsString('Camp bank', $paying);
         self::assertStringContainsString('$20.00', $paying);
         self::assertStringContainsString('After $65.00', $paying);
         self::assertStringContainsString('After $0.00', $paying);
+        self::assertStringContainsString('Available to assign stays the same.', $paying);
+        self::assertStringNotContainsString('This is the rest of the same payment.', $paying);
+        self::assertStringNotContainsString('Unassigned cash covers', $paying);
+        self::assertStringNotContainsString('This cash is included', $paying);
         self::assertSame(['cash', 'credit'], self::dialogTypes());
-        self::assertSame('full', self::dialogFill());
         self::assertTrue(self::dialogHasStream());
+        $paidSquares = self::dialogSquares();
+        self::assertSame($paidSquares['heights'][0], $paidSquares['heights'][1]);
+        self::assertSame($paidSquares['tops'][0], $paidSquares['tops'][1]);
+        self::assertGreaterThanOrEqual(0, $paidSquares['gap']);
+        self::assertLessThanOrEqual(16, $paidSquares['gap']);
+        self::assertFalse($paidSquares['overlaps']);
+        self::assertTrue($paidSquares['between']);
+        self::assertTrue($paidSquares['aligned']);
+        self::assertTrue($paidSquares['glyphs']);
         self::assertTrue(self::confirmEnabled());
         self::click('Back');
         self::waitUntilDialogClosed();
@@ -241,11 +351,16 @@ final class TransfersTest extends TestCase
         self::click('Confirm');
         self::waitForText('Paid.');
         self::waitUntilDialogClosed();
-        self::waitForText('Nothing is due');
         self::assertStringContainsString('$0.00', self::accountCard('Camp card')['text']);
         self::assertStringContainsString('$65.00', self::accountCard('Wallet')['text']);
         self::waitForTextGone('Trail snacks');
         self::waitForTextGone('Rinse');
+        self::assertStringContainsString('Wingstop', self::bodyText());
+        self::assertStringNotContainsString('Late supper', self::bodyText());
+
+        self::choose('cardId', 'Bare card - $10.00');
+        self::waitForText('No unpaid bill is drawn from this card.');
+        self::assertStringNotContainsString('No past unpaid bill is drawn from this card.', self::bodyText());
     }
 
     private static function seedCard(): void
@@ -281,6 +396,8 @@ final class TransfersTest extends TestCase
                     }).then(async (card) => {
                         if (!card.ok) return { ok: false, step: 'card', card };
                         const accountId = card.body.account.id;
+                        const now = new Date();
+                        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                         const snacks = await post('/api/bills', {
                             name: 'Trail snacks',
                             type: 'restaurants',
@@ -299,7 +416,46 @@ final class TransfersTest extends TestCase
                             nextDueDate: '2020-01-16',
                             autopay: false,
                         });
-                        return { ok: snacks.ok && rinse.ok, snacks, rinse };
+                        const supper = await post('/api/bills', {
+                            name: 'Late supper',
+                            type: 'restaurants',
+                            accountId,
+                            amountMinor: 5000,
+                            recurrence: 'once',
+                            nextDueDate: '2027-06-15',
+                            autopay: false,
+                        });
+                        const wing = await post('/api/bills', {
+                            name: 'Wingstop',
+                            type: 'restaurants',
+                            accountId,
+                            amountMinor: 500,
+                            recurrence: 'once',
+                            nextDueDate: today,
+                            autopay: false,
+                        });
+                        const bare = await post('/api/accounts', {
+                            name: 'Bare card',
+                            type: 'credit',
+                            balanceMinor: 1000,
+                            autopayChoice: 'balance',
+                            bankAutopay: true,
+                            dueDay: 3,
+                        });
+                        const zero = await post('/api/accounts', {
+                            name: 'Zero card',
+                            type: 'credit',
+                            balanceMinor: 0,
+                            autopayChoice: 'balance',
+                            bankAutopay: true,
+                            dueDay: 4,
+                        });
+                        const empty = await post('/api/accounts', {
+                            name: 'Empty jar',
+                            type: 'cash',
+                            balanceMinor: 0,
+                        });
+                        return { ok: snacks.ok && rinse.ok && supper.ok && wing.ok && bare.ok && zero.ok && empty.ok, snacks, rinse, supper, wing, bare, zero, empty };
                     });
                 })
                 .then((result) => done(result))
@@ -326,6 +482,22 @@ final class TransfersTest extends TestCase
 
             return is_array($found) ? $found : false;
         });
+        self::assertIsArray($facts);
+
+        return $facts;
+    }
+
+    /** @return array{text:string,pressed:string} */
+    private static function billBucket(string $name): array
+    {
+        $facts = self::driver()->executeScript(<<<'JS'
+            const button = document.querySelector(`button[data-bill="${arguments[0]}"]`);
+            if (!button) return null;
+            return {
+                text: button.innerText,
+                pressed: button.getAttribute('aria-pressed') || '',
+            };
+        JS, [$name]);
         self::assertIsArray($facts);
 
         return $facts;
@@ -367,6 +539,98 @@ final class TransfersTest extends TestCase
         return $facts;
     }
 
+    /** @return list<string> */
+    private static function selectLabels(string $name): array
+    {
+        self::wait()->until(function () use ($name): bool {
+            $ready = self::driver()->executeScript(
+                'return !!document.querySelector(arguments[0]);',
+                ['select[name="' . $name . '"]'],
+            );
+
+            return $ready === true;
+        });
+        $labels = self::driver()->executeScript(
+            'const select = document.querySelector(arguments[0]); return [...select.options].map((option) => option.textContent.trim());',
+            ['select[name="' . $name . '"]'],
+        );
+        self::assertIsArray($labels);
+
+        return array_values($labels);
+    }
+
+    /** @return array{cardBeforeBuckets:bool,bucketsBeforeSource:bool,bucketsBeforeAmount:bool} */
+    private static function payOrder(): array
+    {
+        $order = self::driver()->executeScript(<<<'JS'
+            const card = document.querySelector('[data-account="Camp card"]');
+            const board = document.querySelector('.pull-board');
+            const source = document.querySelector('select[name="sourceId"]');
+            const amount = document.querySelector('input[name="amount"]');
+            const follows = (first, second) => !!(first && second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING));
+            return {
+                cardBeforeBuckets: follows(card, board),
+                bucketsBeforeSource: follows(board, source),
+                bucketsBeforeAmount: follows(board, amount),
+            };
+        JS);
+        self::assertIsArray($order);
+
+        return $order;
+    }
+
+    private static function billDisabled(string $name): bool
+    {
+        $disabled = self::driver()->executeScript(
+            'const button = document.querySelector(arguments[0]); return button ? button.disabled : null;',
+            ['button[data-bill="' . $name . '"]'],
+        );
+
+        return $disabled === true;
+    }
+
+    private static function waitForAmount(string $name, string $value): void
+    {
+        self::wait()->until(function () use ($name, $value): bool {
+            $current = self::driver()->executeScript(
+                'const input = document.querySelector(arguments[0]); return input ? input.value : null;',
+                ['input[name="' . $name . '"]'],
+            );
+
+            return $current === $value;
+        });
+    }
+
+    /** @return array{fill:string,level:string,text:string,snacks:string,rinse:string} */
+    private static function waitForTank(string $fill, string $level): array
+    {
+        $facts = self::wait()->until(function () use ($fill, $level): array|false {
+            $tank = self::driver()->executeScript(<<<'JS'
+                const tank = document.querySelector('.card-tank');
+                const pressed = (name) => {
+                    const button = document.querySelector(`button[data-bill="${name}"]`);
+                    return button ? button.getAttribute('aria-pressed') : '';
+                };
+                if (!tank) return null;
+                return {
+                    fill: tank.dataset.fill || '',
+                    level: tank.dataset.level || '',
+                    text: tank.innerText,
+                    snacks: pressed('Trail snacks'),
+                    rinse: pressed('Rinse'),
+                };
+            JS);
+            if (!is_array($tank)) {
+                return false;
+            }
+
+            return $tank['fill'] === $fill && $tank['level'] === $level ? $tank : false;
+        });
+        self::assertIsArray($facts);
+
+        return $facts;
+    }
+
     private static function dialogText(): string
     {
         self::wait()->until(function (): bool {
@@ -393,7 +657,7 @@ final class TransfersTest extends TestCase
         return array_values($types);
     }
 
-    /** @return array{heights: list<int>, tops: list<int>, round: string, join: string, gap: int, arrowHeight: int, gradient: string} */
+    /** @return array{heights: list<int>, tops: list<int>, round: string, join: string, gap: int, arrowHeight: int, gradient: string, overlaps: bool, between: bool, aligned: bool, glyphs: bool} */
     private static function dialogSquares(): array
     {
         $facts = self::driver()->executeScript(<<<'JS'
@@ -404,29 +668,33 @@ final class TransfersTest extends TestCase
             const amount = dialog.querySelector('.transfer-amount');
             const arrowBox = arrow.getBoundingClientRect();
             const amountBox = amount.getBoundingClientRect();
+            const boxes = ends.map((node) => node.getBoundingClientRect());
+            const hits = (box) => amountBox.left < box.right - 1
+                && amountBox.right > box.left + 1
+                && amountBox.top < box.bottom - 1
+                && amountBox.bottom > box.top + 1;
+            const left = boxes[0];
+            const right = boxes[1];
             return {
-                heights: ends.map((node) => Math.round(node.getBoundingClientRect().height)),
-                tops: ends.map((node) => Math.round(node.getBoundingClientRect().top)),
+                heights: boxes.map((box) => Math.round(box.height)),
+                tops: boxes.map((box) => Math.round(box.top)),
                 round: head ? head.getAttribute('stroke-linecap') : '',
                 join: head ? head.getAttribute('stroke-linejoin') : '',
                 gap: Math.round(amountBox.top - arrowBox.bottom),
                 arrowHeight: Math.round(arrowBox.height),
                 gradient: arrow ? arrow.innerHTML : '',
+                overlaps: boxes.some(hits),
+                between: !!left && !!right && amountBox.left >= left.right - 1 && amountBox.right <= right.left + 1,
+                aligned: Math.abs(((arrowBox.left + arrowBox.right) / 2) - ((amountBox.left + amountBox.right) / 2)) <= 2,
+                glyphs: ends.length === 2 && ends.every((node) => {
+                    const glyph = node.querySelector('.glyph');
+                    return !!glyph && !glyph.classList.contains('mini');
+                }),
             };
         JS);
         self::assertIsArray($facts);
 
         return $facts;
-    }
-
-    private static function dialogFill(): string
-    {
-        $fill = self::driver()->executeScript(
-            'const node = document.querySelector("dialog.modal .transfer-end.with-water"); return node ? node.dataset.fill : "";',
-        );
-        self::assertIsString($fill);
-
-        return $fill;
     }
 
     private static function dialogHasStream(): bool

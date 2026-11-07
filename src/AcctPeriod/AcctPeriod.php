@@ -68,7 +68,7 @@ final class AcctPeriod
     }
 
     /**
-     * @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool}
+     * @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool,label:string}
      */
     public static function describe(string $start, string $length, string $today): array
     {
@@ -84,7 +84,22 @@ final class AcctPeriod
             'phase' => $phase,
             'editable' => $phase !== 'closed',
             'upcoming' => $phase === 'future',
+            'label' => self::label($start, $end),
         ];
+    }
+
+    /** The pager's dates, such as Oct 16 – Nov 15. */
+    public static function label(string $start, string $end): string
+    {
+        return self::chip($start) . ' – ' . self::chip($end);
+    }
+
+    private static function chip(string $iso): string
+    {
+        $months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        $date = Dates::parse($iso);
+
+        return $months[(int) $date->format('n') - 1] . ' ' . (int) $date->format('j');
     }
 
     private static function weeks(string $length): ?int

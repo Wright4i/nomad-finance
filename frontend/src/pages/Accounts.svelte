@@ -13,6 +13,8 @@
   let message = $state('');
   let ready = $state(false);
   let hasStar = $derived(accounts.some((account) => account.starred));
+  let starredAccount = $derived(accounts.find((account) => account.starred && account.archivedAt === null) ?? null);
+  let boardAccounts = $derived(accounts.filter((account) => account !== starredAccount));
 
   async function load(): Promise<void> {
     const data = await api<{ accounts: Account[] }>(`/api/accounts?includeArchived=${includeArchived ? '1' : '0'}`);
@@ -107,49 +109,58 @@
   {:else if accounts.length === 0}
     <p class="muted">No accounts yet. A balance is a number you type.</p>
   {:else}
-  <div class="bucket-board account-board">
-    {#each accounts as account, index (account.id)}
-      {@const chips = chipsFor(account)}
-      <div class="account-tile" style={`--stagger: ${index}`}>
-        <a
-          class="bucket-tile"
-          style={`--tone: var(--tone-${account.type})`}
-          href={`/accounts/${account.id}`}
-          onclick={(event) => { event.preventDefault(); go(`/accounts/${account.id}`); }}
-        >
-          <span class="account-id">
-            <Glyph name={account.type} mini />
-            <span class="account-id-text">
-              <strong>{account.name}</strong>
-              {#if account.institution}
-                <span class="account-institution">{account.institution}</span>
-              {/if}
-            </span>
-            {#if account.side === 'asset' && account.inBudget}
-              <span class="account-budget" role="img" title={budgetLabel(account)} aria-label={budgetLabel(account)}>
-                <Glyph name="dollar" mini />
-              </span>
+  {#snippet accountTile(account: Account, index: number)}
+    {@const chips = chipsFor(account)}
+    <div class="account-tile" style={`--stagger: ${index}`}>
+      <a
+        class="bucket-tile"
+        style={`--tone: var(--tone-${account.type})`}
+        href={`/accounts/${account.id}`}
+        onclick={(event) => { event.preventDefault(); go(`/accounts/${account.id}`); }}
+      >
+        <span class="account-id">
+          <Glyph name={account.type} mini />
+          <span class="account-id-text">
+            <strong>{account.name}</strong>
+            {#if account.institution}
+              <span class="account-institution">{account.institution}</span>
             {/if}
           </span>
-          <span class="muted text-sm">
-            <span class="type-label">{account.type}</span>
-            {#if account.archivedAt} · archived{/if}
-          </span>
-          {#if chips.length > 0}
-            <span class="bill-detail-chips">
-              {#each chips as chip (chip.key)}
-                <span class="bill-detail-chip" data-chip={chip.key}>{chip.label}</span>
-              {/each}
+          {#if account.side === 'asset' && account.inBudget}
+            <span class="account-budget" role="img" title={budgetLabel(account)} aria-label={budgetLabel(account)}>
+              <Glyph name="dollar" mini />
             </span>
           {/if}
-          <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
-        </a>
-        {#if !account.archivedAt && (account.starred || !hasStar)}
-          <button class="btn account-star" type="button" aria-pressed={account.starred} aria-label={account.starred ? `${account.name} is the default` : `Star ${account.name}`} onclick={() => star(account)}>
-            {account.starred ? '★' : '☆'}
-          </button>
+        </span>
+        <span class="muted text-sm">
+          <span class="type-label">{account.type}</span>
+          {#if account.archivedAt} · archived{/if}
+        </span>
+        {#if chips.length > 0}
+          <span class="bill-detail-chips">
+            {#each chips as chip (chip.key)}
+              <span class="bill-detail-chip" data-chip={chip.key}>{chip.label}</span>
+            {/each}
+          </span>
         {/if}
+        <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
+      </a>
+      {#if !account.archivedAt && (account.starred || !hasStar)}
+        <button class="btn account-star" type="button" aria-pressed={account.starred} aria-label={account.starred ? `${account.name} is the default` : `Star ${account.name}`} onclick={() => star(account)}>
+          {account.starred ? '★' : '☆'}
+        </button>
+      {/if}
+    </div>
+  {/snippet}
+  <div class="bucket-board account-board">
+    {#if starredAccount}
+      <div class="account-starred-row">
+        {@render accountTile(starredAccount, 0)}
+        <hr class="account-star-rule" />
       </div>
+    {/if}
+    {#each boardAccounts as account, index (account.id)}
+      {@render accountTile(account, starredAccount ? index + 1 : index)}
     {/each}
   </div>
   {/if}
@@ -234,5 +245,27 @@
 
   .money {
     margin-top: auto;
+  }
+
+  .account-starred-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    row-gap: 0.55rem;
+  }
+
+  .account-starred-row > .account-tile {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .account-star-rule {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+    height: 0;
+    margin: 0;
+    border: 0;
+    border-top: 1px solid var(--line);
   }
 </style>

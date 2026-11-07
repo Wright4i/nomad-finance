@@ -4180,7 +4180,7 @@ a.planner-stay {
 }
 
 .transfer-scene {
-  grid-template-columns: minmax(0, 1fr) 6.75rem minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
   align-items: stretch;
 }
 
@@ -4196,9 +4196,10 @@ a.planner-stay {
 
 .transfer-end {
   position: relative;
-  display: grid;
-  justify-items: center;
-  align-content: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
   gap: 0.35rem;
   height: 100%;
   min-width: 0;
@@ -4210,14 +4211,7 @@ a.planner-stay {
   overflow: hidden;
 }
 
-.transfer-end:not(.with-water) {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-
-.transfer-end:not(.with-water) strong {
+.transfer-end strong {
   display: grid;
   align-content: center;
   min-height: 2.5rem;
@@ -4231,34 +4225,26 @@ a.planner-stay {
   text-align: center;
 }
 
-.transfer-end.with-water {
-  min-height: 12rem;
-  align-content: end;
-  justify-items: stretch;
-}
-
-.transfer-end.with-water > :not(.bucket-water) {
-  position: relative;
-  z-index: 1;
-}
-
 .transfer-stream {
   justify-items: center;
+  min-width: max-content;
 }
 
 .transfer-stream-body {
   align-self: center;
   display: grid;
   grid-row: 1;
-  justify-items: center;
+  justify-items: stretch;
   align-content: center;
   gap: 0.28rem;
-  width: 100%;
+  width: max-content;
+  min-width: 6.75rem;
 }
 
 .transfer-arrow-slot {
   display: block;
-  width: 100%;
+  width: 0;
+  min-width: 100%;
 }
 
 .transfer-arrow {
@@ -4281,6 +4267,7 @@ a.planner-stay {
   margin: 0;
   min-height: 0;
   white-space: nowrap;
+  text-align: center;
 }
 
 .card-tank {
@@ -4300,22 +4287,17 @@ a.planner-stay {
   border-color: #3cbf6e;
 }
 
-.card-tank .bucket-water,
-.transfer-end[data-fill='short'] .bucket-water,
-.transfer-end[data-fill='empty'] .bucket-water {
+.card-tank .bucket-water {
   --tone: #e23b4a;
 }
 
-.card-tank[data-fill='full'] .bucket-water,
-.transfer-end[data-fill='full'] .bucket-water {
+.card-tank[data-fill='full'] .bucket-water {
   --tone: #3cbf6e;
 }
 
 .card-tank > :not(.bucket-water),
 .card-tank .tank-copy,
 .card-tank .money,
-.transfer-end.with-water .tank-copy,
-.transfer-end.with-water .money,
 button.pull-bucket .tank-copy,
 button.pull-bucket strong {
   position: relative;
@@ -4328,8 +4310,6 @@ button.pull-bucket strong {
 :root.light .card-tank > :not(.bucket-water),
 :root.light .card-tank .tank-copy,
 :root.light .card-tank .money,
-:root.light .transfer-end.with-water .tank-copy,
-:root.light .transfer-end.with-water .money,
 :root.light button.pull-bucket .tank-copy,
 :root.light button.pull-bucket strong {
   color: #14211c;
@@ -4398,12 +4378,6 @@ button.pull-bucket > :not(.bucket-water) {
   z-index: 1;
 }
 
-.accept-buckets {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 @media (max-width: 720px) {
   .pay-stage,
   .transfer-scene {
@@ -4413,6 +4387,7 @@ button.pull-bucket > :not(.bucket-water) {
   .transfer-arrow-slot {
     position: relative;
     width: 2.75rem;
+    min-width: 0;
     height: 6.4rem;
   }
 

@@ -103,6 +103,13 @@ final class LifeTest extends TestCase
         self::waitForText('Available to assign');
         self::clickLink('Trips');
         self::waitForText('Usery Mountain');
+        self::wait()->until(function (): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                return document.querySelector('[aria-label="Rating"]') !== null;
+            JS);
+
+            return $ready === true;
+        });
         self::assertStayRating();
         self::assertStayColors();
         self::wait()->until(function (): bool {
@@ -230,7 +237,7 @@ final class LifeTest extends TestCase
         $labels = self::driver()->executeScript(<<<'JS'
             return [...document.querySelectorAll('nav[aria-label="Primary"] a')].map((node) => node.textContent.trim());
         JS);
-        self::assertSame(['New log', 'Planner', 'Calendar', 'Trips', 'Income', 'Bills', 'Budget', 'Accounts', 'Vehicles'], $labels);
+        self::assertSame(['New log', 'Planner', 'Calendar', 'Trips', 'Bills', 'Budget', 'Transfers', 'Accounts', 'Income', 'Vehicles'], $labels);
         $rules = self::driver()->executeScript(<<<'JS'
             const nav = document.querySelector('nav[aria-label="Primary"]');
             const betweenLinks = (left, right) => {
@@ -241,14 +248,13 @@ final class LifeTest extends TestCase
             };
             const foot = nav.querySelector('.nav-foot');
             const kids = [...foot.children];
-            const demo = kids.findIndex((node) => node.textContent.trim() === 'Demo');
             const pill = kids.findIndex((node) => node.classList.contains('theme-pill'));
-            const demoRule = kids.slice(demo + 1, pill).some((node) => node.tagName === 'HR' && node.classList.contains('nav-rule'));
+            const logout = kids.findIndex((node) => node.textContent.trim() === 'Log out');
             return {
                 logPlanner: betweenLinks('New log', 'Planner'),
                 tripsIncome: betweenLinks('Trips', 'Income'),
                 envelopesAccounts: betweenLinks('Budget', 'Accounts'),
-                demoPill: demoRule,
+                demoPill: pill >= 0 && logout === pill + 1,
             };
         JS);
         self::assertIsArray($rules);
@@ -266,10 +272,10 @@ final class LifeTest extends TestCase
             ]);
         JS);
         self::assertSame([
+            ['DIV', 'Nov 1 – Nov 30', false, null],
             ['HR', '', false, null],
-            ['P', 'Demo', false, null],
+            ['BUTTON', 'Demo', true, null],
             ['BUTTON', 'Reset demo data', true, null],
-            ['HR', '', false, null],
             ['DIV', '', false, null],
             ['BUTTON', 'Log out', true, null],
         ], $footer);
@@ -277,6 +283,7 @@ final class LifeTest extends TestCase
             const nav = document.querySelector('nav[aria-label="Primary"]');
             const log = nav.querySelector('a.nav-log');
             const above = log.previousElementSibling;
+            const transfers = [...nav.querySelectorAll('a')].find((node) => node.textContent.trim() === 'Transfers');
             return {
                 ruleAboveLog: above?.tagName === 'HR' && above.classList.contains('nav-rule'),
                 icons: [...nav.querySelectorAll('a')].map((node) => [
@@ -284,6 +291,9 @@ final class LifeTest extends TestCase
                     node.querySelector('[aria-hidden="true"]') !== null,
                     node.classList.contains('linkish'),
                 ]),
+                transfers: transfers
+                    ? [...transfers.querySelectorAll('.glyph path')].map((path) => path.getAttribute('d') || '')
+                    : [],
             };
         JS);
         self::assertTrue($marks['ruleAboveLog']);
@@ -292,12 +302,17 @@ final class LifeTest extends TestCase
             ['Planner', true, false],
             ['Calendar', true, false],
             ['Trips', true, false],
-            ['Income', true, false],
             ['Bills', true, false],
             ['Budget', true, false],
+            ['Transfers', true, false],
             ['Accounts', true, false],
+            ['Income', true, false],
             ['Vehicles', true, false],
         ], $marks['icons']);
+        self::assertSame([
+            'M3 7h3a5 5 0 0 1 5 5 5 5 0 0 0 5 5h5M18 20l3-3-3-3',
+            'M3 17h3a5 5 0 0 0 5-5 5 5 0 0 1 5-5h5M18 4l3 3-3 3',
+        ], $marks['transfers']);
         self::assertCollapsedSidebar();
         self::clickLink('Planner');
         self::waitForText('Current Month');
@@ -353,6 +368,67 @@ final class LifeTest extends TestCase
             return $open === false;
         });
         self::assertANestedNightShowsAndCanMoveEarlier();
+    }
+
+    public function testTheTransfersNavUsesAShuffleMark(): void
+    {
+        self::driver()->get(self::$base . '/');
+        self::wait()->until(function (): bool {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const setup = document.querySelector('input[name="name"]');
+                const demo = [...document.querySelectorAll('button')].some((node) => node.textContent.trim() === 'Use demo');
+                const nav = document.querySelector('nav[aria-label="Primary"] a[href="/transfers"]');
+                return Boolean(setup || demo || nav);
+            JS);
+
+            return $ready === true;
+        });
+        $mode = self::driver()->executeScript(<<<'JS'
+            if (document.querySelector('nav[aria-label="Primary"] a[href="/transfers"]')) return 'nav';
+            if ([...document.querySelectorAll('button')].some((node) => node.textContent.trim() === 'Use demo')) return 'demo';
+            return 'setup';
+        JS);
+        if ($mode === 'setup') {
+            self::type('name', 'Ada');
+            self::type('password', self::PASSWORD);
+            self::type('currentOdometer', '0');
+            self::click('Create my login');
+            self::waitForText('Net worth');
+            self::click('Log out');
+            self::waitForText('Use demo');
+            $mode = 'demo';
+        }
+        if ($mode === 'demo') {
+            self::click('Use demo');
+            self::waitForText('Available to assign');
+        }
+        $paths = self::driver()->executeScript(<<<'JS'
+            const link = [...document.querySelectorAll('nav[aria-label="Primary"] a')].find((node) => node.getAttribute('href') === '/transfers');
+            const log = document.querySelector('nav[aria-label="Primary"] a.nav-log');
+            const trips = [...document.querySelectorAll('nav[aria-label="Primary"] a')].find((node) => node.getAttribute('href') === '/trips');
+            const vehicles = [...document.querySelectorAll('nav[aria-label="Primary"] a')].find((node) => node.getAttribute('href') === '/vehicles');
+            const drawn = (node) => node ? [...node.querySelectorAll('.glyph path')].map((path) => path.getAttribute('d') || '') : [];
+            return {
+                transfers: drawn(link),
+                log: drawn(log),
+                trips: drawn(trips),
+                vehicles: drawn(vehicles),
+            };
+        JS);
+        self::assertIsArray($paths);
+        self::assertSame([
+            'M3 7h3a5 5 0 0 1 5 5 5 5 0 0 0 5 5h5M18 20l3-3-3-3',
+            'M3 17h3a5 5 0 0 0 5-5 5 5 0 0 1 5-5h5M18 4l3 3-3 3',
+        ], $paths['transfers']);
+        self::assertSame(['M12 6v12M6 12h12'], $paths['log']);
+        self::assertSame([
+            'M9 7.2V5.8A1.3 1.3 0 0 1 10.3 4.5h3.4A1.3 1.3 0 0 1 15 5.8V7.2',
+            'M5.5 7.2h13a2 2 0 0 1 2 2v8.3a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V9.2a2 2 0 0 1 2-2z',
+            'M3.5 12.2h17M12 12.2v2.2',
+        ], $paths['trips']);
+        self::assertSame([
+            'M6 16.5V9.5h12v7M6 12.5h12M8.5 9.5 10 6.5h4l1.5 3',
+        ], $paths['vehicles']);
     }
 
     private static function assertANestedNightShowsAndCanMoveEarlier(): void

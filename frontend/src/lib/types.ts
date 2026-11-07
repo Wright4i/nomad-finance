@@ -129,7 +129,7 @@ export type EnvelopeSheet = {
     accounts: { id: number; name: string; type: string; institution: string | null; holder: string | null; amountMinor: number }[];
     floats?: { id: number; name: string; type: string; institution: string | null; holder: string | null; balanceMinor: number; coveredMinor: number; uncoveredMinor: number }[];
   };
-  acctPeriod?: { start: string; end: string; length: string; phase: string; editable: boolean; upcoming: boolean };
+  acctPeriod?: { start: string; end: string; length: string; phase: string; editable: boolean; upcoming: boolean; label: string };
   categories: EnvelopeCategory[];
   groups: EnvelopeGroup[];
   celebrate: boolean;

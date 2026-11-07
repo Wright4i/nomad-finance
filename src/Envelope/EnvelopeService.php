@@ -68,7 +68,7 @@ final class EnvelopeService
     {
         $today = $this->day(is_string($input['today'] ?? null) ? $input['today'] : '');
         if ($this->usesAcctPeriod($input)) {
-            $span = $this->storedAcctPeriod($today);
+            $span = $this->acctSpanFor($input, $today);
             if ($span['phase'] === 'closed') {
                 throw new ApiException(409, 'A closed period can be read.');
             }
@@ -147,6 +147,10 @@ final class EnvelopeService
                     $amount = 0;
                 }
                 $portion = $keptRow['filled'];
+                if (isset($lockedIds[$categoryId]) && $portion > $amount) {
+                    $typed = max(0, $amount - ($floors[$categoryId] ?? 0));
+                    $amount = $portion + $typed;
+                }
                 if ($amount === 0 && $portion === 0) {
                     continue;
                 }
@@ -174,8 +178,8 @@ final class EnvelopeService
     }
 
     /**
-     * Replace this month's assignments with the bills that occur in the month.
-     * Fuel also includes each stay that arrives in the month and has not ended.
+     * Replace the assignments on screen with the bills in that accounting period.
+     * Fuel also includes each stay that arrives in the period and has not ended.
      * Maximums stay. A typed amount is replaced.
      *
      * @param array<string, mixed> $input
@@ -208,7 +212,18 @@ final class EnvelopeService
             $spanStart = (string) $period['period_start'];
         }
 
-        $sums = $this->monthBillSums($spanStart, !$upcoming, $today);
+        $releaseEnd = null;
+        if ($this->usesAcctPeriod($input)) {
+            $acct = $this->acctSpanFor($input, $today);
+            if ($acct['phase'] !== 'current') {
+                throw new ApiException(409, 'A closed period can be read.');
+            }
+            $sums = $this->windowBillSums($acct['start'], $acct['end'], true, $today);
+            $spanStart = $acct['start'];
+            $releaseEnd = $acct['end'];
+        } else {
+            $sums = $this->monthBillSums($spanStart, !$upcoming, $today);
+        }
         $lockedIds = $this->lockedIds();
         $goalAmounts = [];
         $goals = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role != 'locked'");
@@ -230,7 +245,7 @@ final class EnvelopeService
                 }
                 $insert->execute([$periodId, $categoryId, $amount, $amount]);
             }
-            $this->releaseOtherGoals($periodId, $spanStart, $goalAmounts, $lockedIds);
+            $this->releaseOtherGoals($periodId, $spanStart, $goalAmounts, $lockedIds, $releaseEnd);
             $this->syncAmounts($today);
             $this->pdo->commit();
         } catch (Throwable $e) {
@@ -827,15 +842,20 @@ final class EnvelopeService
     }
 
     /**
-     * The saved amount is the month total for that goal.
-     * Other payors' rows in the same month drop out so the sum stays that total.
+     * The saved amount is the total for that goal in the window.
+     * Other payors' rows in the same window drop out so the sum stays that total.
+     * Recalculate passes the accounting period. A save still uses the calendar month.
      *
      * @param array<int, int> $amounts
      * @param array<int, true> $lockedIds
      */
-    private function releaseOtherGoals(int $periodId, string $start, array $amounts, array $lockedIds): void
+    private function releaseOtherGoals(int $periodId, string $start, array $amounts, array $lockedIds, ?string $end = null): void
     {
-        $month = $this->calendarMonth($start);
+        if ($end === null) {
+            $month = $this->calendarMonth($start);
+            $start = $month['start'];
+            $end = $month['end'];
+        }
         $clear = $this->pdo->prepare(
             'UPDATE assignments SET amount_minor = 0
              WHERE category_id = ? AND pay_period_id IN (
@@ -847,7 +867,7 @@ final class EnvelopeService
             if (isset($lockedIds[$categoryId])) {
                 continue;
             }
-            $clear->execute([$categoryId, $this->actor->id(), $periodId, $month['start'], $month['end']]);
+            $clear->execute([$categoryId, $this->actor->id(), $periodId, $start, $end]);
         }
     }
 
@@ -1012,7 +1032,7 @@ final class EnvelopeService
     }
 
     /**
-     * Bills due in the calendar month, per bucket.
+     * Bills due in one window, per bucket. The open accounting period replaces a calendar month.
      *
      * @return array<int, int>
      */
@@ -1021,15 +1041,26 @@ final class EnvelopeService
         $window = $overdue
             ? $this->openWindow($this->calendarMonth($day)['start'], $this->calendarMonth($day)['end'], $today)
             : $this->calendarMonth($day);
+
+        return $this->windowBillSums($window['start'], $window['end'], $overdue, $today);
+    }
+
+    /**
+     * Bills and trip fuel in one window, per bucket.
+     *
+     * @return array<int, int>
+     */
+    private function windowBillSums(string $start, string $end, bool $overdue, string $today): array
+    {
         $picture = $this->withStayFuel(
             (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
                 $today,
-                $window['start'],
-                $window['end'],
+                $start,
+                $end,
                 $overdue,
             ),
-            $window['start'],
-            $window['end'],
+            $start,
+            $end,
             $today,
         );
         $sums = [];
@@ -1537,7 +1568,11 @@ final class EnvelopeService
             }
             $categories[$index]['billMinor'] = $bills;
             if (($category['role'] ?? '') === 'locked') {
-                $shown = max((int) ($category['amountMinor'] ?? 0), $bills);
+                $shown = $this->shownTarget(
+                    (int) ($category['amountMinor'] ?? 0),
+                    (int) ($category['filledMinor'] ?? 0),
+                    $bills,
+                );
                 $categories[$index]['amountMinor'] = $shown;
                 $categories[$index]['remainingMinor'] = $shown;
             }
@@ -1663,9 +1698,44 @@ final class EnvelopeService
                 : $planned;
         }
         $sheet['categories'] = $categories;
+        $pool = (int) ($sheet['poolMinor'] ?? 0);
+        $sheet['groups'] = $this->headings($this->groups($categories), $categories, $pool);
         unset($today);
 
         return $sheet;
+    }
+
+    /**
+     * The target on screen is this period's bills plus what was typed above them.
+     * A fill stored for a wider pay period stays out of the envelope.
+     */
+    private function shownTarget(int $stored, int $filled, int $bills): int
+    {
+        $typed = max(0, $stored - max($filled, $bills));
+
+        return $bills + $typed;
+    }
+
+    /**
+     * A save belongs to the period that was on screen. Paging moves the stored
+     * period before a debounced save arrives.
+     *
+     * @param array<string, mixed> $input
+     * @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool}
+     */
+    private function acctSpanFor(array $input, string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        $requested = $input['acctPeriodStart'] ?? null;
+        if (!is_string($requested) || $requested === '') {
+            return $span;
+        }
+        $requested = $this->day($requested);
+        if ($requested === $span['start']) {
+            return $span;
+        }
+
+        return AcctPeriod::describe($requested, $span['length'], $today);
     }
 
     /** @return array<int, int> */
