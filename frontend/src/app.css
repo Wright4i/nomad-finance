@@ -2604,6 +2604,7 @@ button.entry-chip {
   height: max(300cqw, 300cqh);
   border-radius: 45%;
   animation: bucket-wave ease-in-out infinite;
+  transition: top 500ms var(--ease-out);
 }
 
 .bucket-wave:nth-child(1) {
@@ -2615,7 +2616,7 @@ button.entry-chip {
 }
 
 .bucket-wave:nth-child(2) {
-  top: calc((1 - var(--level, 0)) * 100% - 1%);
+  top: calc((1 - var(--level, 0)) * 100% - (var(--level, 0) * 1%));
   left: calc(50cqw - max(300cqw, 300cqh) / 2);
   background: var(--tone, var(--teal));
   opacity: 0.5;
@@ -2759,6 +2760,28 @@ a.bucket-tile .money {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.bucket-tile.envelope-tile .bucket-field > span.goal-chip {
+  justify-self: start;
+  margin-top: 0.15rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: #6d3cc4;
+  color: #fff6ea;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  text-transform: none;
+  -webkit-text-stroke: 0;
+  paint-order: normal;
+}
+
+:root.light .bucket-tile.envelope-tile .bucket-field > span.goal-chip {
+  background: #7a3ee0;
+  color: #fff8ef;
+  -webkit-text-stroke: 0;
 }
 
 .bucket-tile.envelope-tile .bucket-field > span,
@@ -3239,10 +3262,6 @@ a.bucket-tile .money {
 
 .celebrate {
   animation: celebrate-in 160ms var(--ease-out);
-}
-
-.bucket-wave {
-  transition: top 280ms var(--ease-in-out);
 }
 
 .scrim {

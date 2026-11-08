@@ -68,6 +68,9 @@ final class BillService
             if ($shown === null) {
                 continue;
             }
+            if (!$this->shownInPeriod($shown, $section, $start, $end, $today)) {
+                continue;
+            }
             $rows[] = [
                 'id' => (int) $bill['id'],
                 'name' => (string) $bill['name'],
@@ -76,12 +79,36 @@ final class BillService
                 'bill' => $bill,
             ];
         }
-        // The period is the screen's window elsewhere. This list still opens on a few days
-        // and grows when the person scrolls, including dates outside that period.
-        unset($start, $end, $today);
         $minimum = $section === 'active' ? BillWindow::ACTIVE_MINIMUM : 2;
         $window = BillWindow::window($rows, $chunks, $section === 'paid', $minimum);
         return ['bills' => $this->billsFrom($window['rows']), 'hasMore' => $window['hasMore']];
+    }
+
+    /**
+     * The list keeps the accounting period. An unpaid bill due before a period
+     * that contains today stays, because it is already overdue. Dates after the
+     * period stay out. With no window, the list scrolls as before.
+     */
+    private function shownInPeriod(string $shownOn, string $section, ?string $start, ?string $end, ?string $today): bool
+    {
+        if (
+            $start === null || $end === null
+            || preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) !== 1
+            || preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) !== 1
+            || $end < $start
+        ) {
+            return true;
+        }
+        if ($shownOn >= $start && $shownOn <= $end) {
+            return true;
+        }
+
+        return $section === 'active'
+            && is_string($today)
+            && preg_match('/^\d{4}-\d{2}-\d{2}$/', $today) === 1
+            && $today >= $start
+            && $today <= $end
+            && $shownOn < $start;
     }
 
     /**
@@ -458,6 +485,11 @@ final class BillService
     /** @param array<string, mixed> $input */
     public function pause(int $id, array $input = []): array
     {
+        $existing = $this->row($id);
+        if ((string) $existing['recurrence'] === 'once') {
+            throw new ApiException(409, 'A one-off bill is archived.');
+        }
+
         return $this->setStatus($id, ['active'], 'paused', 'Only an active bill can be paused.', $input);
     }
 
@@ -809,7 +841,8 @@ final class BillService
     }
 
     /**
-     * A fuel, need, want, or saving log is an unpaid one-time bill. It does not move a balance.
+     * A fuel, need, want, or saving log is an unpaid one-time bill.
+     * Drawn from a liability, it adds the amount to the amount owed. An asset balance stays as typed.
      * It raises that bucket's auto-assigned amount, and the envelope shrinks by the same
      * amount when it has room, so the target stays. An unpaid fuel log still advances the odometer.
      * A need log does not accept Fuel.
@@ -837,7 +870,11 @@ final class BillService
         if ($existing['source_account_id'] !== null) {
             throw new ApiException(409, 'This bill is kept by the account.');
         }
-        if ($existing['status'] !== 'paused') {
+        $once = (string) $existing['recurrence'] === 'once';
+        if ($once && !in_array($existing['status'], ['active', 'paused'], true)) {
+            throw new ApiException(409, 'Only an active one-off can be archived.');
+        }
+        if (!$once && $existing['status'] !== 'paused') {
             throw new ApiException(409, 'Only a paused bill can be archived.');
         }
         $this->pdo->prepare("UPDATE bills SET status = 'archived', updated_at = ? WHERE id = ?")
@@ -854,11 +891,33 @@ final class BillService
         if ($existing['status'] !== 'archived') {
             throw new ApiException(409, 'Only an archived bill can be restored.');
         }
-        $this->pdo->prepare("UPDATE bills SET status = 'paused', updated_at = ? WHERE id = ?")
-            ->execute([gmdate('c'), $id]);
+        $back = (string) $existing['recurrence'] === 'once' ? 'active' : 'paused';
+        $this->pdo->prepare('UPDATE bills SET status = ?, updated_at = ? WHERE id = ?')
+            ->execute([$back, gmdate('c'), $id]);
         $this->fill->apply($this->today($input));
 
         return $this->get($id);
+    }
+
+    /**
+     * Remove an archived bill. The row is gone, and the buckets are filled again.
+     *
+     * @param array<string, mixed> $input
+     */
+    public function deleteBill(int $id, bool $confirm, array $input = []): void
+    {
+        $existing = $this->row($id);
+        if ($existing['source_account_id'] !== null) {
+            throw new ApiException(409, 'This bill is kept by the account.');
+        }
+        if ($existing['status'] !== 'archived') {
+            throw new ApiException(409, 'Only an archived bill can be deleted.');
+        }
+        if (!$confirm) {
+            throw new ApiException(409, 'Confirm before deleting this bill.');
+        }
+        $this->pdo->prepare('DELETE FROM bills WHERE id = ?')->execute([$id]);
+        $this->fill->apply($this->today($input));
     }
 
     /** @param array<string, mixed> $existing */
@@ -958,6 +1017,7 @@ final class BillService
                 $vehicleId, $odometer, $price,
             ]);
             $id = (int) $this->pdo->lastInsertId();
+            $this->chargeLiability($accountId, $amount);
             $this->pdo->commit();
         } catch (\Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -1010,16 +1070,26 @@ final class BillService
         }
         $categoryId = SystemBuckets::idForType($this->pdo, $this->actor->id(), $type);
         $now = gmdate('c');
-        $this->pdo->prepare(
-            'INSERT INTO bills (
-                name, type, other_label, account_id, category_id, amount_minor, currency,
-                recurrence, anchor_date, next_due_date, last_paid_on, autopay, notes, status,
-                created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, \'USD\', \'once\', ?, ?, NULL, 0, ?, \'active\', ?, ?)'
-        )->execute([
-            $name, $type, $other, $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
-        ]);
-        $id = (int) $this->pdo->lastInsertId();
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare(
+                'INSERT INTO bills (
+                    name, type, other_label, account_id, category_id, amount_minor, currency,
+                    recurrence, anchor_date, next_due_date, last_paid_on, autopay, notes, status,
+                    created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, \'USD\', \'once\', ?, ?, NULL, 0, ?, \'active\', ?, ?)'
+            )->execute([
+                $name, $type, $other, $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
+            ]);
+            $id = (int) $this->pdo->lastInsertId();
+            $this->chargeLiability($accountId, $amount);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
         $this->fill->apply($today);
 
         return $this->get($id);
@@ -1078,6 +1148,18 @@ final class BillService
         $text = trim($notes);
 
         return $text === '' ? null : $text;
+    }
+
+    private function chargeLiability(int $accountId, int $amount): void
+    {
+        $stmt = $this->pdo->prepare('SELECT side, balance_minor FROM accounts WHERE id = ? AND user_id = ?');
+        $stmt->execute([$accountId, $this->actor->id()]);
+        $row = $stmt->fetch();
+        if (!is_array($row) || (string) $row['side'] !== 'liability') {
+            return;
+        }
+        $this->pdo->prepare('UPDATE accounts SET balance_minor = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+            ->execute([(int) $row['balance_minor'] + $amount, gmdate('c'), $accountId, $this->actor->id()]);
     }
 
     private function advanceOdometer(int $vehicleId, int $reading): void

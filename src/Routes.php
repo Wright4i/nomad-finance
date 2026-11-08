@@ -307,6 +307,13 @@ final class Routes
                 $secure->post('/bills/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
                     return Json::write($response, ['bill' => $bills->unarchiveBill((int) $args['id'], self::body($request))]);
                 });
+                $secure->post('/bills/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($bills) {
+                    $body = self::body($request);
+                    $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
+                    $bills->deleteBill((int) $args['id'], $confirm, $body);
+
+                    return Json::write($response, ['ok' => true]);
+                });
                 $secure->post('/logs', function (ServerRequestInterface $request, ResponseInterface $response) use ($bills) {
                     return Json::write($response, ['bill' => $bills->log(self::body($request))], 201);
                 });
@@ -361,9 +368,11 @@ final class Routes
                 $secure->get('/pay-cycles', function (ServerRequestInterface $request, ResponseInterface $response) use ($payCycle) {
                     $query = $request->getQueryParams();
                     $include = ($query['includeArchived'] ?? '') === '1';
+                    $start = is_string($query['start'] ?? null) && $query['start'] !== '' ? $query['start'] : null;
+                    $end = is_string($query['end'] ?? null) && $query['end'] !== '' ? $query['end'] : null;
 
                     return Json::write($response, [
-                        'payCycles' => $payCycle->list((string) ($query['today'] ?? ''), $include),
+                        'payCycles' => $payCycle->list((string) ($query['today'] ?? ''), $include, $start, $end),
                     ]);
                 });
                 $secure->post('/pay-cycles', function (ServerRequestInterface $request, ResponseInterface $response) use ($payCycle) {
@@ -393,9 +402,13 @@ final class Routes
                     ]);
                 });
                 $secure->get('/pay-cycles/{id:[0-9]+}/payroll', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($payCycle) {
-                    $today = (string) ($request->getQueryParams()['today'] ?? '');
+                    $query = $request->getQueryParams();
+                    $start = is_string($query['start'] ?? null) && $query['start'] !== '' ? $query['start'] : null;
+                    $end = is_string($query['end'] ?? null) && $query['end'] !== '' ? $query['end'] : null;
 
-                    return Json::write($response, ['payroll' => $payCycle->payroll((int) $args['id'], $today)]);
+                    return Json::write($response, [
+                        'payroll' => $payCycle->payroll((int) $args['id'], (string) ($query['today'] ?? ''), $start, $end),
+                    ]);
                 });
                 $secure->put('/pay-cycles/{id:[0-9]+}/payroll', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($payCycle) {
                     $body = self::body($request);

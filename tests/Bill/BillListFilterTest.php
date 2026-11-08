@@ -128,4 +128,44 @@ final class BillListFilterTest extends TestCase
         );
         self::assertSame([], $this->bills->section('active', 1, ['accountId' => $wallet['id']])['bills']);
     }
+
+    public function testTheListKeepsTheAccountingPeriod(): void
+    {
+        $checking = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 25000,
+        ]);
+        foreach ([
+            ['Overdue dinner', '2026-10-20'],
+            ['November rent', '2026-11-12'],
+            ['December power', '2026-12-04'],
+        ] as [$name, $due]) {
+            $this->bills->create([
+                'name' => $name,
+                'type' => 'other',
+                'otherLabel' => $name,
+                'accountId' => $checking['id'],
+                'amountMinor' => 1000,
+                'recurrence' => 'once',
+                'nextDueDate' => $due,
+                'today' => '2026-11-07',
+            ]);
+        }
+
+        $names = array_column(
+            $this->bills->section('active', 4, [], '2026-11-01', '2026-11-30', '2026-11-07')['bills'],
+            'name',
+        );
+        self::assertContains('Overdue dinner', $names);
+        self::assertContains('November rent', $names);
+        self::assertNotContains('December power', $names);
+
+        $closed = array_column(
+            $this->bills->section('active', 4, [], '2026-10-01', '2026-10-31', '2026-11-07')['bills'],
+            'name',
+        );
+        self::assertSame(['Overdue dinner'], $closed);
+    }
 }

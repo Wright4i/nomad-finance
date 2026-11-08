@@ -225,7 +225,7 @@ final class TransferRulesTest extends TestCase
             'nextDueDate' => '2026-10-03',
             'today' => '2026-11-06',
         ]);
-        $this->bills->pause((int) $paused['id'], ['today' => '2026-11-06']);
+        $this->bills->archiveBill((int) $paused['id'], ['today' => '2026-11-06']);
         $paid = $this->bills->create([
             'name' => 'Paid meal',
             'type' => 'restaurants',

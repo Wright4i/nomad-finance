@@ -177,6 +177,7 @@
     const next = index + direction;
     if (next < 0 || next >= trips.length) return;
     index = next;
+    stepToken += 1;
     const arrival = trips[index]?.arriveOn.slice(0, 7);
     if (arrival && arrival !== month) month = arrival;
   }
@@ -226,6 +227,7 @@
   }
 
   let locateToken = $state(0);
+  let stepToken = $state(0);
   let moving = $state(false);
   let monthStays = $derived(
     trips
@@ -524,6 +526,7 @@
       legs={drawnLegs}
       selectedId={selected?.id ?? null}
       locateToken={locateToken}
+      stepToken={stepToken}
       onSelect={choose}
     />
   </div>

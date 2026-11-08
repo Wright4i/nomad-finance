@@ -147,14 +147,14 @@ final class DashboardService
             'interestGainedMinor' => $interest['interestGainedMinor'],
             'unconverted' => [],
             'timeline' => $timeline,
-            'envelopes' => $this->envelopes->show($today, $payCycleId, $periodId, $upcoming),
+            'envelopes' => $this->envelopes->show($today, $payCycleId, $periodId, $upcoming, true),
             'income' => $income,
             'incomeMinor' => $incomeMinor,
-            'duePies' => $this->duePies($today),
+            'duePies' => $this->duePie($windowStart, $windowEnd),
             'heading' => $heading['text'],
             'headingItalic' => $heading['italic'],
             'payday' => PlannerWidgets::payday($timeline, $today),
-            'incomeComing' => $this->incomeComing($today),
+            'incomeComing' => $this->incomeComing($today, $windowStart, $windowEnd),
             'payorCount' => count($income),
             'stay' => PlannerWidgets::stay($listed, $today),
             'accountTotals' => PlannerWidgets::accountTotals($accounts),
@@ -164,27 +164,16 @@ final class DashboardService
     }
 
     /**
-     * Still coming in for the current month and the next one.
-     * Income uses the current month. The bills widget chooses between the two.
-     *
-     * @return array<string, int>
+     * Paychecks in the accounting period dated today or later.
      */
-    private function incomeComing(string $today): array
+    private function incomeComing(string $today, string $start, string $end): int
     {
-        $months = [
-            substr($today, 0, 7),
-            Dates::parse($today)->modify('first day of next month')->format('Y-m'),
-        ];
-        $coming = [];
-        foreach ($months as $month) {
-            $coming[$month] = PlannerWidgets::stillComing(
-                $this->payCycles->monthPay($month, $today),
-                $month,
-                $today,
-            );
-        }
-
-        return $coming;
+        return PlannerWidgets::stillComingBetween(
+            $this->payCycles->between($start, $end, $today),
+            $start,
+            $end,
+            $today,
+        );
     }
 
     /** @return list<string> */
@@ -207,12 +196,9 @@ final class DashboardService
         return PlannerWidgets::spans($stored === false ? null : $stored);
     }
 
-    /** @return array<string, list<array{currency:string,exponent:int,slices:list<array{type:string,amountMinor:int}>}>> */
-    private function duePies(string $today): array
+    /** @return list<array{currency:string,exponent:int,slices:list<array{type:string,amountMinor:int}>,leftOut:list<string>}> */
+    private function duePie(string $start, string $end): array
     {
-        $month = substr($today, 0, 7);
-        $start = \DateTimeImmutable::createFromFormat('!Y-m-d', $month . '-01');
-        $nextMonth = $start instanceof \DateTimeImmutable ? $start->modify('+1 month')->format('Y-m') : $month;
         $stmt = $this->pdo->prepare(
             'SELECT b.id, b.type, b.name, b.other_label, b.status, b.recurrence, b.every_count,
                     b.anchor_date AS anchorDate, b.last_paid_on AS lastPaidOn,
@@ -251,10 +237,7 @@ final class DashboardService
         $base = $this->actor->baseCurrency();
         $exponent = $this->currencies->exponent($base);
 
-        return [
-            $month => DuePie::month($bills, $month, $base, $exponent),
-            $nextMonth => DuePie::month($bills, $nextMonth, $base, $exponent),
-        ];
+        return DuePie::span($bills, $start, $end, $base, $exponent);
     }
 
     /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} */

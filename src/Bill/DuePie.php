@@ -15,6 +15,23 @@ final class DuePie
      */
     public static function month(array $bills, string $month, string $base, int $baseExponent): array
     {
+        if (preg_match('/^\d{4}-\d{2}$/', $month) !== 1) {
+            return [];
+        }
+        $start = $month . '-01';
+        $end = (new \DateTimeImmutable($start))->modify('last day of this month')->format('Y-m-d');
+
+        return self::span($bills, $start, $end, $base, $baseExponent);
+    }
+
+    /**
+     * One pie for an accounting period. The dates are that window, not a calendar month.
+     *
+     * @param list<array{type:string,status:string,nextDueDate:string,amountMinor:int,name?:string,recurrence?:string,anchorDate?:string,lastPaidOn?:?string,id?:int,currency?:string,exponent?:int}> $bills
+     * @return list<array{currency:string,exponent:int,slices:list<array{type:string,amountMinor:int}>,leftOut:list<string>}>
+     */
+    public static function span(array $bills, string $start, string $end, string $base, int $baseExponent): array
+    {
         /** @var array<string, int> $sums */
         $sums = [];
         $prepared = [];
@@ -38,8 +55,8 @@ final class DuePie
                 'lastPaidOn' => $bill['lastPaidOn'] ?? null,
             ];
         }
-        if (preg_match('/^\d{4}-\d{2}$/', $month) === 1) {
-            foreach (Occurrences::inMonth($prepared, $month) as $mark) {
+        if ($start !== '' && $end !== '' && $start <= $end) {
+            foreach (Occurrences::between($prepared, $start, $end) as $mark) {
                 if ($mark['paid'] || $mark['amountMinor'] <= 0) {
                     continue;
                 }

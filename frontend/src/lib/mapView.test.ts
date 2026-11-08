@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { basemapId } from './basemap.ts';
 import { paintLeg } from './legPaint.ts';
 import { PAST_MONTHS_DEFAULT, pastMonthChoices, stayDrawn } from './pastMonths.ts';
+import { locateZoom, stayZoom, tripFrame, worldZoom } from './tripFrame.ts';
 
 test('the globe past-month control defaults to 0 and includes a stay only when the choice reaches it', () => {
   assert.equal(PAST_MONTHS_DEFAULT, 0);
@@ -78,6 +79,36 @@ test('a no-road leg across the date line is the short path, split so it does not
     segment.some((point) => Math.abs(point[0] - middle[0]) < 0.001 && Math.abs(point[1] - middle[1]) < 0.001),
   );
   assert.equal(onSegment, true);
+});
+
+test('the trips globe centers on the stays, and a step sits halfway to the locate zoom', () => {
+  assert.equal(worldZoom, 3.4);
+  assert.equal(locateZoom, 15);
+  assert.equal(stayZoom(), (worldZoom + locateZoom) / 2);
+  assert.equal(stayZoom(), 9.2);
+
+  const drawn = [
+    { longitude: -111.6135, latitude: 33.4805 },
+    { longitude: -111.707, latitude: 33.689 },
+    { longitude: -111.4778, latitude: 33.4812 },
+    { longitude: -114.163, latitude: 34.361 },
+    { longitude: -115.81, latitude: 33.741 },
+    { longitude: -114.803, latitude: 33.748 },
+    { longitude: -114.215, latitude: 33.63 },
+  ];
+  const frame = tripFrame(drawn);
+  assert.ok(frame);
+  assert.ok(Math.abs(frame.longitude + 113.3985) < 0.02);
+  assert.ok(Math.abs(frame.latitude - 33.733) < 0.02);
+
+  const across = tripFrame([
+    { longitude: 170, latitude: 10 },
+    { longitude: -170, latitude: 20 },
+  ]);
+  assert.ok(across);
+  assert.ok(Math.abs(Math.abs(across.longitude) - 180) < 1);
+  assert.equal(across.latitude, 15);
+  assert.equal(tripFrame([]), null);
 });
 
 test('night selects positron and day selects voyager', () => {

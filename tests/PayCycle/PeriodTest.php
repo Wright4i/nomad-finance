@@ -9,6 +9,31 @@ use PHPUnit\Framework\TestCase;
 
 final class PeriodTest extends TestCase
 {
+    public function testTheShownRangeIsThePeriodThatStartsInsideTheWindow(): void
+    {
+        $inside = Period::startingIn('2026-11-01', 'monthly', null, null, '2026-10-16', '2026-11-15', '2026-11-07');
+        self::assertNotNull($inside);
+        self::assertSame('2026-11-01', $inside['start']);
+        self::assertSame('2026-11-30', $inside['end']);
+
+        $next = Period::startingIn('2026-11-01', 'monthly', null, null, '2026-11-16', '2026-12-15', '2026-11-07');
+        self::assertNotNull($next);
+        self::assertSame('2026-12-01', $next['start']);
+        self::assertSame('2026-12-31', $next['end']);
+
+        $weekly = Period::startingIn('2026-11-01', 'weekly', null, null, '2026-11-01', '2026-11-30', '2026-11-07');
+        self::assertNotNull($weekly);
+        self::assertSame('2026-11-01', $weekly['start']);
+        self::assertSame('2026-11-07', $weekly['end']);
+
+        $laterWeek = Period::startingIn('2026-11-01', 'weekly', null, null, '2026-12-01', '2026-12-31', '2026-11-07');
+        self::assertNotNull($laterWeek);
+        self::assertSame('2026-12-06', $laterWeek['start']);
+        self::assertSame('2026-12-12', $laterWeek['end']);
+
+        self::assertNull(Period::startingIn('2026-11-01', 'monthly', null, null, '2026-09-01', '2026-09-30', '2026-11-07'));
+    }
+
     public function testWeeklyAndBiweeklyStepFromThePayday(): void
     {
         $weekly = Period::open('2026-11-01', 'weekly', null, null, '2026-11-03');

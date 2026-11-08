@@ -32,8 +32,10 @@
   let payrollDialog: HTMLDialogElement | undefined = $state();
 
   async function load(): Promise<void> {
+    const start = session.user?.acctPeriodStart ?? '';
+    const end = session.user?.acctPeriodEnd ?? '';
     const data = await api<{ payCycles: PayCycle[] }>(
-      `/api/pay-cycles?today=${todayISO()}&includeArchived=${includeArchived ? '1' : '0'}`,
+      `/api/pay-cycles?today=${todayISO()}&includeArchived=${includeArchived ? '1' : '0'}&start=${start}&end=${end}`,
     );
     cycles = data.payCycles;
     ready = true;
@@ -53,8 +55,10 @@
 
   async function openPayroll(cycle: PayCycle): Promise<void> {
     payrollCycle = cycle;
+    const start = session.user?.acctPeriodStart ?? '';
+    const end = session.user?.acctPeriodEnd ?? '';
     const data = await api<{ payroll: { rows: PayrollRow[] } }>(
-      `/api/pay-cycles/${cycle.id}/payroll?today=${todayISO()}`,
+      `/api/pay-cycles/${cycle.id}/payroll?today=${todayISO()}&start=${start}&end=${end}`,
     );
     payrollRows = data.payroll.rows;
     const drafts: Record<string, string> = {};

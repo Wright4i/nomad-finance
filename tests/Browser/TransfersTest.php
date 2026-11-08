@@ -212,9 +212,11 @@ final class TransfersTest extends TestCase
         self::waitForText('Wingstop');
         self::assertStringNotContainsString('Late supper', self::bodyText());
         $order = self::payOrder();
-        self::assertTrue($order['cardBeforeBuckets']);
-        self::assertTrue($order['bucketsBeforeSource']);
+        self::assertTrue($order['cardBeforeSource']);
+        self::assertTrue($order['sourceBeforeBuckets']);
         self::assertTrue($order['bucketsBeforeAmount']);
+        self::assertStringContainsString('Bills Buckets', self::bodyText());
+        self::assertStringContainsString('Total payment', self::bodyText());
         $payFrom = self::selectLabels('sourceId');
         self::assertContains('Wallet', $payFrom);
         self::assertContains('Empty jar', $payFrom);
@@ -248,9 +250,27 @@ final class TransfersTest extends TestCase
 
         self::choose('sourceId', 'Wallet');
         self::assertSame('20.00', self::moneyField('amount')['value']);
+        self::assertStringNotContainsString(
+            'You may now post a payment of $20.00 to Camp card from Wallet after hitting Confirm.',
+            self::bodyText(),
+        );
+        self::assertSame('false', self::uncovered()['pressed']);
+        self::assertStringContainsString('$20.00', self::uncovered()['text']);
+        self::assertNull(self::driver()->executeScript('return document.querySelector(\'[data-uncovered] input\');'));
+        self::assertFalse(self::reviewEnabled());
+        self::clickCss('button[data-uncovered]');
+        $covered = self::waitForTank('full', '1.00');
+        self::assertStringContainsString('This payment is covered', $covered['text']);
+        self::assertSame('20.00', self::moneyField('amount')['value']);
+        self::assertSame('true', self::uncovered()['pressed']);
+        self::assertTrue(self::reviewEnabled());
         self::click('Review');
         $unmarked = self::dialogText();
         self::assertStringContainsString('Pay this card?', $unmarked);
+        self::assertStringContainsString(
+            'You may now post a payment of $20.00 to Camp card from Wallet after hitting Confirm.',
+            $unmarked,
+        );
         self::assertStringNotContainsString('Marked paid', $unmarked);
         self::assertStringNotContainsString('This cash is included', $unmarked);
         self::assertStringNotContainsString('Include this cash', $unmarked);
@@ -264,12 +284,21 @@ final class TransfersTest extends TestCase
         self::assertTrue(self::dialogHasStream());
         self::click('Back');
         self::waitUntilDialogClosed();
+        self::clickCss('button[data-uncovered]');
+        self::waitForTank('short', '0.00');
+        self::assertFalse(self::reviewEnabled());
 
         self::clickCss('button[data-bill="Wingstop"]');
         self::assertSame('20.00', self::moneyField('amount')['value']);
         $wingOnly = self::waitForTank('short', '0.25');
         self::assertSame('true', self::billBucket('Wingstop')['pressed']);
         self::assertSame('0.25', $wingOnly['level']);
+        self::assertStringContainsString('$15.00', self::uncovered()['text']);
+        self::clickCss('button[data-uncovered]');
+        self::waitForTank('full', '1.00');
+        self::assertSame('20.00', self::moneyField('amount')['value']);
+        self::clickCss('button[data-uncovered]');
+        self::waitForTank('short', '0.25');
 
         self::clickCss('button[data-bill="Trail snacks"]');
         self::assertSame('20.00', self::moneyField('amount')['value']);
@@ -353,6 +382,9 @@ final class TransfersTest extends TestCase
         self::waitUntilDialogClosed();
         self::assertStringContainsString('$0.00', self::accountCard('Camp card')['text']);
         self::assertStringContainsString('$65.00', self::accountCard('Wallet')['text']);
+        self::waitForText('You may now post a payment of $20.00 to Camp card from Wallet after hitting Confirm.');
+        self::click('Ok');
+        self::waitUntilDialogClosed();
         self::waitForTextGone('Trail snacks');
         self::waitForTextGone('Rinse');
         self::assertStringContainsString('Wingstop', self::bodyText());
@@ -559,7 +591,7 @@ final class TransfersTest extends TestCase
         return array_values($labels);
     }
 
-    /** @return array{cardBeforeBuckets:bool,bucketsBeforeSource:bool,bucketsBeforeAmount:bool} */
+    /** @return array{cardBeforeSource:bool,sourceBeforeBuckets:bool,bucketsBeforeAmount:bool} */
     private static function payOrder(): array
     {
         $order = self::driver()->executeScript(<<<'JS'
@@ -569,14 +601,27 @@ final class TransfersTest extends TestCase
             const amount = document.querySelector('input[name="amount"]');
             const follows = (first, second) => !!(first && second && (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING));
             return {
-                cardBeforeBuckets: follows(card, board),
-                bucketsBeforeSource: follows(board, source),
+                cardBeforeSource: follows(card, source),
+                sourceBeforeBuckets: follows(source, board),
                 bucketsBeforeAmount: follows(board, amount),
             };
         JS);
         self::assertIsArray($order);
 
         return $order;
+    }
+
+    /** @return array{pressed:?string,text:string} */
+    private static function uncovered(): array
+    {
+        $card = self::driver()->executeScript(<<<'JS'
+            const button = document.querySelector('button[data-uncovered]');
+            if (!button) return null;
+            return { pressed: button.getAttribute('aria-pressed'), text: button.innerText };
+        JS);
+        self::assertIsArray($card);
+
+        return $card;
     }
 
     private static function billDisabled(string $name): bool
@@ -706,6 +751,16 @@ final class TransfersTest extends TestCase
         return $found === true;
     }
 
+    private static function reviewEnabled(): bool
+    {
+        $enabled = self::driver()->executeScript(<<<'JS'
+            const button = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Review');
+            return !!(button && !button.disabled);
+        JS);
+
+        return $enabled === true;
+    }
+
     private static function confirmEnabled(): bool
     {
         $enabled = self::driver()->executeScript(<<<'JS'
@@ -720,7 +775,7 @@ final class TransfersTest extends TestCase
     {
         self::wait()->until(function (): bool {
             $open = self::driver()->executeScript(
-                'const dialog = document.querySelector("dialog.modal"); return dialog ? dialog.open : false;',
+                'return [...document.querySelectorAll("dialog.modal")].some((dialog) => dialog.open);',
             );
 
             return $open === false;

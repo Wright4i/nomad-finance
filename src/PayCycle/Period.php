@@ -56,6 +56,49 @@ final class Period
         throw new \InvalidArgumentException('Choose a pay cycle length.');
     }
 
+    /**
+     * The pay period whose start falls inside the window.
+     * When today sits in one of those periods, that period is the one shown.
+     * Otherwise it is the earliest start in the window.
+     *
+     * @return ?array{start:string,end:?string}
+     */
+    public static function startingIn(
+        string $payday,
+        string $length,
+        ?int $secondDay,
+        ?string $nextPayday,
+        string $windowStart,
+        string $windowEnd,
+        string $today,
+    ): ?array {
+        $cursor = $windowStart;
+        $earliest = null;
+        for ($guard = 0; $guard < 500; $guard++) {
+            $open = self::open($payday, $length, $secondDay, $nextPayday, $cursor);
+            $start = $open['start'];
+            if ($start > $windowEnd) {
+                break;
+            }
+            $end = $open['next'] === null
+                ? null
+                : Dates::parse($open['next'])->modify('-1 day')->format('Y-m-d');
+            if ($start >= $windowStart) {
+                $span = ['start' => $start, 'end' => $end];
+                if ($today >= $start && ($end === null || $today <= $end)) {
+                    return $span;
+                }
+                $earliest ??= $span;
+            }
+            if ($open['next'] === null || $open['next'] <= $cursor) {
+                break;
+            }
+            $cursor = $open['next'];
+        }
+
+        return $earliest;
+    }
+
     /** @return array{start:string, next:?string, rolled:bool} */
     private static function step(\DateTimeImmutable $payday, \DateTimeImmutable $today, int $days): array
     {

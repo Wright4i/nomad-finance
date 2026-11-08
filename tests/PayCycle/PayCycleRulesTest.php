@@ -362,4 +362,66 @@ final class PayCycleRulesTest extends TestCase
         self::assertTrue($row['posted']);
         self::assertSame(25000, $row['amountMinor']);
     }
+
+    public function testIncomeUsesThePayPeriodThatStartsInTheAccountingPeriod(): void
+    {
+        $this->cycles->create([
+            'payor' => 'Camp host',
+            'payday' => '2026-11-01',
+            'length' => 'weekly',
+            'payKind' => 'fixed',
+            'rateMinor' => 19200,
+        ], '2026-11-07');
+        $this->cycles->create([
+            'payor' => 'Remote salary',
+            'payday' => '2026-11-01',
+            'length' => 'monthly',
+            'payKind' => 'salary',
+            'rateMinor' => 6720000,
+        ], '2026-11-07');
+        $this->cycles->create([
+            'payor' => 'Photo gigs',
+            'payday' => '2026-11-01',
+            'length' => 'irregular',
+            'nextPayday' => '2026-12-15',
+            'payKind' => 'fixed',
+            'rateMinor' => 45000,
+        ], '2026-11-07');
+
+        $october = $this->cycles->list('2026-11-07', false, '2026-10-01', '2026-10-31');
+        self::assertSame([], $october);
+
+        $byPayor = [];
+        foreach ($this->cycles->list('2026-11-07', false, '2026-11-01', '2026-11-30') as $cycle) {
+            $byPayor[$cycle['payor']] = $cycle;
+        }
+        self::assertSame('2026-11-01', $byPayor['Remote salary']['periodStart']);
+        self::assertSame('2026-11-30', $byPayor['Remote salary']['periodEnd']);
+        self::assertSame('2026-11-01', $byPayor['Camp host']['periodStart']);
+        self::assertSame('2026-11-07', $byPayor['Camp host']['periodEnd']);
+        self::assertSame('2026-11-01', $byPayor['Photo gigs']['periodStart']);
+
+        $later = [];
+        foreach ($this->cycles->list('2026-11-07', false, '2026-12-01', '2026-12-31') as $cycle) {
+            $later[$cycle['payor']] = $cycle;
+            self::assertGreaterThanOrEqual('2026-12-01', $cycle['periodStart']);
+            self::assertLessThanOrEqual('2026-12-31', $cycle['periodStart']);
+        }
+        self::assertSame('2026-12-01', $later['Remote salary']['periodStart']);
+        self::assertSame('2026-12-31', $later['Remote salary']['periodEnd']);
+        self::assertSame('2026-12-06', $later['Camp host']['periodStart']);
+        self::assertSame('2026-12-15', $later['Photo gigs']['periodStart']);
+
+        $salary = (int) $byPayor['Remote salary']['id'];
+        $november = array_column($this->cycles->payroll($salary, '2026-11-07', '2026-11-01', '2026-11-30')['rows'], 'payday');
+        $december = array_column($this->cycles->payroll($salary, '2026-11-07', '2026-12-01', '2026-12-31')['rows'], 'payday');
+        self::assertSame(['2026-11-01'], $november);
+        self::assertSame(['2026-12-01'], $december);
+
+        $camp = (int) $byPayor['Camp host']['id'];
+        self::assertSame(
+            ['2026-11-01', '2026-11-08', '2026-11-15', '2026-11-22', '2026-11-29'],
+            array_column($this->cycles->payroll($camp, '2026-11-07', '2026-11-01', '2026-11-30')['rows'], 'payday'),
+        );
+    }
 }

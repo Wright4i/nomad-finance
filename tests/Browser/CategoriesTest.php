@@ -414,9 +414,9 @@ final class CategoriesTest extends TestCase
     {
         self::driver()->get(self::$base . '/bills');
         self::waitForText('Active');
-        Reveal::bill(self::driver(), 'Urgent care', 'paid');
-        self::waitForText('Urgent care');
-        Reveal::bill(self::driver(), 'Estimated tax', 'active');
+        Reveal::bill(self::driver(), 'Streaming', 'active');
+        Reveal::bill(self::driver(), 'Health share', 'active');
+        Reveal::bill(self::driver(), 'Travel card', 'active');
         self::waitForTextGone('Stop reminding');
         $billColors = self::driver()->executeScript(<<<'JS'
             const heading = (label) => {
@@ -428,11 +428,13 @@ final class CategoriesTest extends TestCase
                 const glyph = link ? link.querySelector('.glyph') : null;
                 return glyph ? getComputedStyle(glyph).color : '';
             };
-            return [heading('Active'), heading('Paused'), heading('Paid'), mark('Estimated tax'), mark('Streaming'), mark('Health share')];
+            return [heading('Active'), heading('Paused'), heading('Paid'), mark('Travel card'), mark('Streaming'), mark('Health share')];
         JS);
         self::assertIsArray($billColors);
         self::assertCount(6, $billColors);
         self::assertSame(6, count(array_unique($billColors)));
+        self::driver()->findElement(WebDriverBy::cssSelector('button[aria-label="Previous"]'))->click();
+        self::waitForText('Oct 1');
         Reveal::bill(self::driver(), 'Urgent care', 'paid');
         self::openBill('Urgent care');
         self::wait()->until(
@@ -456,18 +458,21 @@ final class CategoriesTest extends TestCase
         self::openBill('Urgent care');
         self::wait()->until(
             WebDriverExpectedCondition::elementToBeClickable(
-                WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Pause"]'),
+                WebDriverBy::xpath('//article[contains(., "Urgent care")]//button[normalize-space()="Archive"]'),
             ),
         )->click();
-        $paused = self::wait()->until(function (): bool {
+        $archived = self::wait()->until(function (): bool {
             $placed = self::driver()->executeScript(<<<'JS'
-                const section = document.querySelector('section[data-section="paused"]');
-                return section ? section.textContent.includes('Urgent care') : false;
+                const section = document.querySelector('section[data-section="archived"]');
+                const paused = document.querySelector('section[data-section="paused"]');
+                return section
+                    ? section.textContent.includes('Urgent care') && !(paused && paused.textContent.includes('Urgent care'))
+                    : false;
             JS);
 
             return $placed === true;
         });
-        self::assertTrue($paused);
+        self::assertTrue($archived);
     }
 
     #[Depends('testUnpayRestoresAOneOffAndPauseRemains')]

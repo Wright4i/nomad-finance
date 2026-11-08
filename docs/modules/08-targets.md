@@ -2,7 +2,7 @@
 
 Status: now
 
-A target sits on a bucket. It compares itself to the bucket amount, which is the sum of open assignments. It cannot see a purchase. That waits for postings. A bucket can have one target, or none. The bucket form offers none or a target balance. Tiles do not show a date or a still-to-hold line.
+A target sits on a bucket. It compares itself to the bucket amount, which is the sum of open assignments. It cannot see a purchase. That waits for postings. A bucket can have one target, or none. The bucket form offers none or a target balance. A target balance tile hides Auto-assigned and shows a Goal based chip. Its Target is the amount to hold, and the water is the envelope divided by that amount. A needed-by-date tile does not show the date.
 
 | Kind | Rule |
 | --- | --- |

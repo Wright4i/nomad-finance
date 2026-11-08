@@ -23,6 +23,12 @@
   import VehicleForm from './pages/VehicleForm.svelte';
 
   const view = $derived(match(route.path));
+  const periodPages = new Set(['dashboard', 'bills', 'envelopes', 'pay-cycles']);
+  const pageKey = $derived(
+    session.user
+      ? `${route.path}:${session.books}:${periodPages.has(view.name) ? `${session.user.acctPeriodStart}:${session.user.acctPeriodLength}` : ''}`
+      : route.path,
+  );
 
   $effect(() => {
     const path = route.path;
@@ -63,7 +69,7 @@
   <Login />
 {:else}
   <Shell>
-    {#key `${route.path}:${session.books}:${session.user.acctPeriodStart}:${session.user.acctPeriodLength}`}
+    {#key pageKey}
       {#if view.name === 'dashboard'}
         <Dashboard />
       {:else if view.name === 'accounts'}

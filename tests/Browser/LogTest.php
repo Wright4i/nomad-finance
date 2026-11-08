@@ -224,7 +224,7 @@ final class LogTest extends TestCase
         JS, [(int) $seeded['vehicle1']]);
         self::assertIsArray($after);
         self::assertSame($seeded['readings'], $after['readings']);
-        self::assertSame($seeded['balance'], $after['balance']);
+        self::assertSame($seeded['balance'] + 1000, $after['balance']);
 
         self::driver()->navigate()->refresh();
         self::waitForField('odometer', '10500');
@@ -293,7 +293,7 @@ final class LogTest extends TestCase
         self::assertSame('Active', $places['fuel']['heading']);
 
         $after = self::fuelAccount();
-        self::assertSame($before['balance'], $after['balance']);
+        self::assertSame($before['balance'] + 2000, $after['balance']);
     }
 
     #[Depends('testASavedFuelLogAndWantLogStayUnpaid')]

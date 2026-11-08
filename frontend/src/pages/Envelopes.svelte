@@ -5,7 +5,8 @@
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
   import { periodShift, type PeriodLength } from '../lib/acctPeriod';
-  import { formatChipDate, formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { balanceGoalMinor, fillFor, type FillBucket } from '../lib/bucketFill';
+  import { formatChipDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { adoptUser, session } from '../lib/session.svelte.ts';
@@ -35,6 +36,7 @@
   let alive = true;
 
   let editable = $derived(sheet?.period?.editable === true);
+  let closed = $derived(sheet?.acctPeriod?.phase === 'closed');
 
   async function nudgePeriod(steps: number): Promise<void> {
     if (!session.user || saving) return;
@@ -115,24 +117,17 @@
     return autoOf(category) + (envelope ?? 0);
   }
 
-  function holdOf(category: EnvelopeSheet['categories'][number]): number | null {
-    const cap = category.target?.amountMinor ?? 0;
-    if (cap > 0) return cap;
-    if (category.role === 'locked') {
-      const bills = category.billMinor ?? 0;
-      return bills > 0 ? bills : null;
-    }
-    return null;
+  function asFill(category: EnvelopeSheet['categories'][number]): FillBucket {
+    return {
+      role: category.role,
+      amountMinor: targetOf(category),
+      envelopeMinor: typedEnvelope(category) ?? 0,
+      target: category.target ? { kind: category.target.kind, amountMinor: category.target.amountMinor } : null,
+    };
   }
 
-  function levelOf(category: EnvelopeSheet['categories'][number], rows: EnvelopeSheet['categories']): number {
-    const amount = category.amountMinor;
-    if (amount <= 0) return 0;
-    const hold = holdOf(category);
-    if (hold !== null) return Math.min(1, amount / hold);
-    const largest = Math.max(...rows.map((row) => row.amountMinor), 0);
-    if (largest <= 0) return 0;
-    return Math.min(1, amount / largest);
+  function shownTarget(category: EnvelopeSheet['categories'][number]): number {
+    return balanceGoalMinor(asFill(category)) ?? targetOf(category);
   }
 
   function queueSave(): void {
@@ -159,7 +154,7 @@
   }
 
   async function save(): Promise<void> {
-    if (!sheet || !editable || sheet.payCycleId === null) return;
+    if (!sheet || !editable || closed || sheet.payCycleId === null) return;
     fields = {};
     message = '';
     const open = sheet.categories.filter((category) => category.archivedAt === null);
@@ -210,7 +205,7 @@
   }
 
   async function confirmRecalculate(): Promise<void> {
-    if (!sheet || !editable) return;
+    if (!sheet || !editable || closed) return;
     saving = true;
     message = '';
     fields = {};
@@ -246,7 +241,9 @@
     <h1 class="text-3xl m-0">Budget</h1>
     <a class="btn primary" href="/buckets/new" onclick={(event) => { event.preventDefault(); go('/buckets/new'); }}>Add bucket</a>
   </div>
-  <p class="muted m-0">Available to assign is income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full card. An assignment does not change an account balance.</p>
+  {#if !closed}
+    <p class="muted m-0">Available to assign is income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full card. An assignment does not change an account balance.</p>
+  {/if}
   <Note bind:message />
   {#if !ready}
     <Spinner />
@@ -254,6 +251,11 @@
     {#if sheet.payors.length === 0}
       <p class="m-0">Add a pay cycle before assigning. <a href="/pay-cycles/new" onclick={(event) => { event.preventDefault(); go('/pay-cycles/new'); }}>New pay cycle</a></p>
     {/if}
+      {#if closed}
+        <section class="hero">
+          <p class="m-0 text-3xl">This period has closed.</p>
+        </section>
+      {:else}
       <section class="hero">
         <button class="available-open" type="button" data-action="available" onclick={() => sourcesDialog?.showModal()}>
           <p class="kicker m-0">Available to assign</p>
@@ -263,7 +265,9 @@
           {formatMinor(sheet.assignedMinor, sheet.baseCurrency, sheet.exponent)} assigned of {formatMinor(sheet.poolMinor, sheet.baseCurrency, sheet.exponent)}
         </p>
       </section>
+      {/if}
 
+      {#if !closed}
       <dialog class="modal available-modal" bind:this={sourcesDialog} aria-labelledby="available-title">
         <div class="modal-body">
           <h2 id="available-title" class="m-0 text-2xl">Available to assign</h2>
@@ -315,9 +319,10 @@
           <button class="btn" type="button" onclick={() => sourcesDialog?.close()}>Close</button>
         </div>
       </dialog>
+      {/if}
 
       {#if sheet.celebrate}
-        <p class="celebrate m-0" aria-live="polite">Every dollar for this month is assigned.</p>
+        <p class="celebrate m-0" aria-live="polite">Every dollar for this period is assigned.</p>
       {/if}
 
       {#if sheet.billLeftOut && sheet.billLeftOut.length > 0}
@@ -326,10 +331,9 @@
 
       <div class="flex flex-wrap items-center gap-2">
         {#if sheet.acctPeriod}
-          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(-1)}>Previous month</button>
-          <p class="m-0" data-month={sheet.acctPeriod.start.slice(0, 7)}>{formatMonth(sheet.acctPeriod.start)}</p>
+          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(-1)}>Previous period</button>
           <p class="m-0" data-period={sheet.acctPeriod.start}>{formatChipDate(sheet.acctPeriod.start)} – {formatChipDate(sheet.acctPeriod.end)}</p>
-          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(1)}>Next month</button>
+          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(1)}>Next period</button>
         {/if}
         <button class="btn" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
         <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving || sheet.acctPeriod?.phase === 'future' || sheet.acctPeriod?.phase === 'closed'} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>
@@ -346,8 +350,6 @@
       </dialog>
       {#if sheet.acctPeriod?.phase === 'future'}
         <p class="muted m-0">These amounts are a plan for this period. Available to assign still follows the period that contains today.</p>
-      {:else if sheet.acctPeriod?.phase === 'closed'}
-        <p class="muted m-0">A closed period can be read. A correction belongs in the period that contains today.</p>
       {/if}
 
       {#each groups as group (group.id)}
@@ -370,32 +372,36 @@
             </h2>
             <div class="bucket-board" class:celebrate-ease={celebrateEase}>
             {#each rows as category, index (category.id)}
-              {@const hold = holdOf(category)}
-              {@const level = levelOf(category, rows)}
-              {@const over = hold !== null && category.amountMinor > hold}
+              {@const goal = balanceGoalMinor(asFill(category))}
+              {@const fill = fillFor(asFill(category), {
+                goalMinor: heading?.targetMinor ?? 0,
+                buckets: rows.map((row) => asFill(row)),
+              })}
               {@const href = category.role === 'locked' && category.billType
                 ? `/bills?type=${encodeURIComponent(category.billType)}`
                 : `/buckets/${category.id}`}
               <div class="bucket-cell">
               <article
                 class="bucket-tile envelope-tile"
-                class:over
-                style={`--tone: var(--tone-${group.id}); --level: ${level}; --stagger: ${index}`}
+                class:over={fill.over}
+                style={`--tone: var(--tone-${group.id}); --level: ${fill.level}; --stagger: ${index}`}
               >
                 <span class="bucket-water" aria-hidden="true">
-                  {#if level > 0}
-                    <span class="bucket-wave"></span>
-                    <span class="bucket-wave"></span>
-                    <span class="bucket-wave"></span>
-                  {/if}
+                  <span class="bucket-wave"></span>
+                  <span class="bucket-wave"></span>
+                  <span class="bucket-wave"></span>
                 </span>
                 <a class="bucket-name" href={href} onclick={(event) => follow(event, href)}>
                   <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
                   <strong>{category.name}</strong>
                 </a>
                 <div class="bucket-field">
-                  <span>Auto-assigned</span>
-                  <strong class="bucket-locked" data-field="auto">{formatMinor(autoOf(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                  {#if goal !== null}
+                    <span class="goal-chip">Goal based</span>
+                  {:else}
+                    <span>Auto-assigned</span>
+                    <strong class="bucket-locked" data-field="auto">{formatMinor(autoOf(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                  {/if}
                 </div>
                 <label class="bucket-field">
                   <span>Envelope</span>
@@ -405,7 +411,7 @@
                       name={`amount-${category.id}`}
                       aria-label={`Envelope ${category.name}`}
                       inputmode="decimal"
-                      disabled={!editable || category.archivedAt !== null}
+                      disabled={closed || !editable || category.archivedAt !== null}
                       value={drafts[category.id] ?? ''}
                       oninput={(event) => {
                         drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
@@ -417,12 +423,12 @@
                 </label>
                 <div class="bucket-field">
                   <span>Target</span>
-                  <strong class="bucket-locked" data-field="target">{formatMinor(targetOf(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                  <strong class="bucket-locked" data-field="target">{formatMinor(shownTarget(category), sheet.baseCurrency, sheet.exponent)}</strong>
                 </div>
                 {#if fields[`amount-${category.id}`]}<em>{fields[`amount-${category.id}`]}</em>{/if}
               </article>
-              {#if over}
-                <p class="bucket-overage">Over by {formatMinor(category.amountMinor - hold, sheet.baseCurrency, sheet.exponent)}</p>
+              {#if fill.over && fill.overBy > 0}
+                <p class="bucket-overage">Over by {formatMinor(fill.overBy, sheet.baseCurrency, sheet.exponent)}</p>
               {/if}
               </div>
             {/each}

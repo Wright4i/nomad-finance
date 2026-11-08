@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import Celebrate from '../components/Celebrate.svelte';
   import Glyph from '../components/Glyph.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
@@ -51,9 +52,12 @@
   let preview = $state<CardPreview | null>(null);
   let movePreview = $state<MovePreview | null>(null);
   let selected = $state<number[]>([]);
+  let coverGap = $state(false);
   let confirming = $state(false);
   let saving = $state(false);
   let confirmDialog = $state<HTMLDialogElement | undefined>();
+  let posted = $state<{ amount: number; card: string; from: string } | null>(null);
+  let postedDialog = $state<HTMLDialogElement | undefined>();
 
   let currency = $derived(session.user?.baseCurrency ?? 'USD');
   let cards = $derived(
@@ -121,19 +125,28 @@
   let dueMinor = $derived(cardAccount?.balanceMinor ?? preview?.card.balanceMinor ?? 0);
   let paymentMinor = $derived(Math.max(0, amountMinor()));
   let beyondMinor = $derived(Math.max(0, paymentMinor - selectedMinor));
-  let waterLevel = $derived(paymentMinor > 0 ? Math.min(1, selectedMinor / paymentMinor) : 0);
-  let waterFull = $derived(paymentMinor > 0 && selectedMinor >= paymentMinor);
+  let coveredMinor = $derived(selectedMinor + (coverGap ? beyondMinor : 0));
+  let waterLevel = $derived(paymentMinor > 0 ? Math.min(1, coveredMinor / paymentMinor) : 0);
+  let waterFull = $derived(paymentMinor > 0 && coveredMinor >= paymentMinor);
   let waterFill = $derived(paymentMinor < 1 ? 'empty' : waterFull ? 'full' : 'short');
   let waterState = $derived(
-    paymentMinor < 1 ? 'Enter the payment' : waterFull ? 'Buckets cover this payment' : 'Buckets cover part of this payment',
+    paymentMinor < 1
+      ? 'Enter the payment'
+      : waterFull && selectedMinor >= paymentMinor
+        ? 'Buckets cover this payment'
+        : waterFull
+          ? 'This payment is covered'
+          : 'Buckets cover part of this payment',
   );
   let overSource = $derived(sourceAccount !== null && paymentMinor > sourceAccount.balanceMinor);
   let overCard = $derived(dueMinor > 0 && paymentMinor > dueMinor);
   let cardBlocked = $derived(paymentMinor < 1 || overSource || overCard || selectedMinor > paymentMinor);
+  let cardChosen = $derived(selected.length > 0 || (coverGap && beyondMinor >= 1));
   let cardReady = $derived(
     confirming
     && mode === 'card'
     && sourceId !== ''
+    && cardChosen
     && !cardBlocked,
   );
   let accountShort = $derived(
@@ -155,11 +168,13 @@
 
   async function loadCard(): Promise<void> {
     const requested = cardId;
+    if (message !== 'Paid.' && message !== 'Transferred.') message = '';
     closeConfirm();
     if (requested === '') {
       preview = null;
       selected = [];
       amountText = '';
+      coverGap = false;
       return;
     }
     if (preview && String(preview.card.id) !== requested) {
@@ -170,6 +185,7 @@
     if (cardId !== requested) return;
     preview = data;
     selected = [];
+    coverGap = false;
     const due = accounts.find((account) => String(account.id) === requested)?.balanceMinor ?? data.card.balanceMinor;
     amountText = minorToInput(Math.max(0, due), 2);
   }
@@ -198,6 +214,7 @@
 
   function chooseMode(next: 'card' | 'move'): void {
     mode = next;
+    message = '';
     closeConfirm();
     movePreview = null;
   }
@@ -235,6 +252,7 @@
         return;
       }
     }
+    if (mode === 'card' && !cardChosen) return;
     confirming = true;
     await tick();
     if (confirmDialog && !confirmDialog.open) confirmDialog.showModal();
@@ -256,9 +274,13 @@
         },
       });
       saving = false;
+      const receipt = cardAccount && sourceAccount
+        ? { amount: amountMinor(), card: cardAccount.name, from: sourceAccount.name }
+        : null;
       closeConfirm();
       await loadAccounts();
       await loadCard();
+      posted = receipt;
       message = 'Paid.';
     } catch (err) {
       const text = explain(err).message;
@@ -297,6 +319,11 @@
     }
   }
 
+  function celebrateDone(): void {
+    if (!posted || confirmDialog?.open || !postedDialog || postedDialog.open) return;
+    postedDialog.showModal();
+  }
+
   function afterMinor(balance: number, delta: number): number {
     return Math.max(0, balance + delta);
   }
@@ -312,12 +339,10 @@
   });
 </script>
 
-{#snippet waves(level: number)}
-  {#if level > 0}
-    <span class="bucket-wave"></span>
-    <span class="bucket-wave"></span>
-    <span class="bucket-wave"></span>
-  {/if}
+{#snippet waves()}
+  <span class="bucket-wave"></span>
+  <span class="bucket-wave"></span>
+  <span class="bucket-wave"></span>
 {/snippet}
 
 {#snippet accountCard(account: Account)}
@@ -387,7 +412,10 @@
 
 <div class="grid gap-4">
   <h1 class="m-0 text-4xl">Transfers</h1>
-  <Note bind:message />
+  <Celebrate bind:message ondone={celebrateDone} />
+  {#if message !== 'Paid.' && message !== 'Transferred.'}
+    <Note bind:message />
+  {/if}
   {#if loading}
     <Spinner />
   {:else}
@@ -422,7 +450,7 @@
               aria-label="Card bucket"
             >
               <span class="bucket-water" aria-hidden="true">
-                {@render waves(waterLevel)}
+                {@render waves()}
               </span>
               <span class="tank-copy tank-kicker">
                 <Glyph name={cardAccount.type} mini />
@@ -437,8 +465,34 @@
             </article>
           </div>
         </section>
+        <label class="field">
+          <span>Pay from</span>
+          <select name="sourceId" bind:value={sourceId} onchange={() => { message = ''; closeConfirm(); }}>
+            <option value="">Choose an account</option>
+            {#each assets as account (account.id)}
+              <option value={String(account.id)}>{accountLabel(account)}</option>
+            {/each}
+          </select>
+        </label>
+        {#if sourceAccount}
+          <div class="pay-stage">
+            {@render accountCard(sourceAccount)}
+            <button
+              class="transfer-account uncovered-card"
+              type="button"
+              data-uncovered
+              aria-pressed={coverGap}
+              disabled={beyondMinor < 1}
+              onclick={() => { coverGap = !coverGap; closeConfirm(); }}
+            >
+              <strong>Not covered by buckets</strong>
+              <span class="muted text-sm">Calculated from Total payment</span>
+              <strong class="money">{money(beyondMinor)}</strong>
+            </button>
+          </div>
+        {/if}
         <section class="grid gap-2">
-          <h2 class="m-0 text-2xl">Buckets</h2>
+          <h2 class="m-0 text-2xl">Bills Buckets</h2>
           {#if preview.charges.length === 0}
             <p class="muted m-0">No unpaid bill is drawn from this card.</p>
           {/if}
@@ -456,7 +510,7 @@
                 onclick={() => toggle(charge)}
               >
                 <span class="bucket-water" aria-hidden="true">
-                  {@render waves(on ? 1 : 0)}
+                  {@render waves()}
                 </span>
                 <strong>{charge.categoryName || charge.name}</strong>
                 {#if charge.categoryName && charge.categoryName !== charge.name}
@@ -468,25 +522,13 @@
           </div>
         </section>
         <label class="field">
-          <span>Pay from</span>
-          <select name="sourceId" bind:value={sourceId} onchange={() => closeConfirm()}>
-            <option value="">Choose an account</option>
-            {#each assets as account (account.id)}
-              <option value={String(account.id)}>{accountLabel(account)}</option>
-            {/each}
-          </select>
-        </label>
-        {#if sourceAccount}
-          {@render accountCard(sourceAccount)}
-        {/if}
-        <label class="field">
-          <span>Amount</span>
+          <span>Total payment</span>
           <span class="money-input">
             <span class="money-mark" aria-hidden="true">$</span>
             <input name="amount" inputmode="decimal" bind:value={amountText} oninput={() => { fitSelection(); closeConfirm(); }} />
           </span>
         </label>
-        <button class="btn primary" type="button" disabled={sourceId === '' || paymentMinor < 1} onclick={() => void openConfirm()}>Review</button>
+        <button class="btn primary" type="button" disabled={sourceId === '' || paymentMinor < 1 || !cardChosen} onclick={() => void openConfirm()}>Review</button>
       {/if}
     {:else}
       <label class="field">
@@ -540,6 +582,7 @@
   <div class="modal-body">
     <h2 id="transfer-confirm-title" class="m-0 text-2xl">{mode === 'card' ? 'Pay this card?' : 'Move this money?'}</h2>
     {#if mode === 'card' && cardAccount && sourceAccount}
+      <p class="m-0">You may now post a payment of {money(paymentMinor)} to {cardAccount.name} from {sourceAccount.name} after hitting Confirm.</p>
       <div class="pay-review" style={`--from: var(--tone-${sourceAccount.type}); --to: var(--tone-${cardAccount.type})`}>
       <section
         class="transfer-scene"
@@ -609,7 +652,46 @@
   </div>
 </dialog>
 
+<dialog class="modal" bind:this={postedDialog} data-posted aria-label="Payment posted" onclose={() => { posted = null; }}>
+  <div class="modal-body">
+    {#if posted}
+      <p class="m-0">You may now post a payment of {money(posted.amount)} to {posted.card} from {posted.from} after hitting Confirm.</p>
+    {/if}
+  </div>
+  <div class="modal-actions">
+    <button class="btn primary" type="button" onclick={() => postedDialog?.close()}>Ok</button>
+  </div>
+</dialog>
+
 <style>
+  .uncovered-card {
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+  }
+
+  .uncovered-card[aria-pressed='true'] {
+    box-shadow: inset 0 0 0 2px var(--teal);
+  }
+
+  .uncovered-card:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  .uncovered-card:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .uncovered-card:active:not(:disabled) {
+      transform: none;
+    }
+  }
+
   .pay-split {
     display: grid;
     gap: 0.45rem;

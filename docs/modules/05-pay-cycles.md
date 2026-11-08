@@ -4,7 +4,7 @@ Status: now
 
 Each payor has one pay cycle. A payor is a named source of pay. A second paycheck from the same payor is an edit to a cash balance inside that payor's period. Another payor gets another cycle. Archiving hides the payor and keeps the cycle. The list shows those payor cards two across on a wide screen and one per row on a phone. A card alone on the last row stays in the first column.
 
-The open period on a card is month and day only, in roman type, with the check on the same line, such as Nov 1 - Nov 30 | $7,000.00. Log Payroll sits at the top right of the card, beside the payor name, and opens payroll. Chips show the roll date, the pay kind, and the monthly amount labeled Monthly. The monthly amount is the check scaled to twelve months, half up to the cent. An irregular cycle has no monthly amount. The payday the cycle is based on stays on the pay cycle screen.
+The range on a card is the pay period that starts inside the selected accounting period, month and day only, in roman type, with the check on the same line, such as Nov 1 - Nov 30 | $7,000.00. When today sits in one of those periods, that period is the one shown. Otherwise it is the earliest start in the window. A payor with no start in the window is left off the list. Log Payroll lists the paydays inside the accounting period. Log Payroll sits at the top right of the card, beside the payor name, and opens payroll. Chips show the roll date, the pay kind, and the monthly amount labeled Monthly. The monthly amount is the check scaled to twelve months, half up to the cent. An irregular cycle has no monthly amount. The payday the cycle is based on stays on the pay cycle screen.
 
 | Field | Rule |
 | --- | --- |

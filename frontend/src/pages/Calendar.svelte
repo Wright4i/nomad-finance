@@ -7,11 +7,11 @@
   import { api } from '../lib/api';
   import { calendarBillColor, calendarBillShown, calendarBillSide } from '../lib/calendarBill';
   import { fitThree } from '../lib/fitThree';
-  import { exponentOf, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
-  import { periodCells, periodEnd, periodShift, type PeriodLength } from '../lib/acctPeriod';
+  import { monthCells, shiftYearMonth } from '../lib/dates';
+  import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
-  import { adoptUser, session } from '../lib/session.svelte.ts';
-  import type { CalendarEntry, Trip, User } from '../lib/types';
+  import { session } from '../lib/session.svelte.ts';
+  import type { CalendarEntry, Trip } from '../lib/types';
 
   type Payday = { id: number; payor: string; on: string; paycheckMinor: number; length: string };
 
@@ -46,28 +46,28 @@
   let showPaidBills = $state(true);
   let showUnpaidBills = $state(true);
 
-  let acctPeriodStart = $derived(session.user?.acctPeriodStart ?? `${todayISO().slice(0, 7)}-01`);
-  let spanFinish = $derived(session.user?.acctPeriodEnd ?? periodEnd(acctPeriodStart, '1 month'));
-  let days = $derived(periodCells(acctPeriodStart, spanFinish));
-  let savingPeriod = $state(false);
+  let month = $state(todayISO().slice(0, 7));
 
-  async function nudgePeriod(steps: number): Promise<void> {
-    if (!session.user || savingPeriod) return;
-    const length = session.user.acctPeriodLength;
-    savingPeriod = true;
-    try {
-      const data = await api<{ user: User }>('/api/settings', {
-        method: 'PATCH',
-        body: {
-          acctPeriodStart: periodShift(session.user.acctPeriodStart, length as PeriodLength, steps),
-          acctPeriodLength: length,
-        },
-      });
-      adoptUser(data.user);
-    } finally {
-      savingPeriod = false;
-    }
+  function monthParts(value: string): { year: number; month: number } {
+    return { year: Number(value.slice(0, 4)), month: Number(value.slice(5, 7)) };
   }
+
+  function moveMonth(by: number): void {
+    const current = monthParts(month);
+    const next = shiftYearMonth(current.year, current.month, by);
+    month = `${next.year}-${String(next.month).padStart(2, '0')}`;
+  }
+
+  let days = $derived.by(() => {
+    const current = monthParts(month);
+    return monthCells(current.year, current.month);
+  });
+  let monthStart = $derived(`${month}-01`);
+  let monthEnd = $derived.by(() => {
+    const current = monthParts(month);
+    const last = new Date(current.year, current.month, 0).getDate();
+    return `${month}-${String(last).padStart(2, '0')}`;
+  });
 
   function weekdayName(date: string): string {
     const [year, monthNumber, dayNumber] = date.split('-').map(Number);
@@ -103,7 +103,7 @@
   }
 
   async function reloadEntries(): Promise<void> {
-    const data = await api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?start=${acctPeriodStart}&end=${spanFinish}`);
+    const data = await api<{ entries: CalendarEntry[] }>(`/api/calendar-entries?start=${monthStart}&end=${monthEnd}`);
     entries = data.entries;
   }
 
@@ -219,8 +219,8 @@
   });
 
   $effect(() => {
-    const start = acctPeriodStart;
-    const end = spanFinish;
+    const start = monthStart;
+    const end = monthEnd;
     let stale = false;
     loading = true;
     Promise.all([
@@ -256,9 +256,9 @@
     <Spinner />
   {:else}
   <div class="flex items-center justify-between gap-3">
-    <button class="btn" type="button" disabled={savingPeriod} onclick={() => void nudgePeriod(-1)}>Previous month</button>
-    <p class="m-0" data-month={acctPeriodStart.slice(0, 7)} data-period={acctPeriodStart}>{formatChipDate(acctPeriodStart)} – {formatChipDate(spanFinish)}</p>
-    <button class="btn" type="button" disabled={savingPeriod} onclick={() => void nudgePeriod(1)}>Next month</button>
+    <button class="btn" type="button" onclick={() => moveMonth(-1)}>Previous month</button>
+    <p class="m-0" data-month={month}>{formatMonth(month)}</p>
+    <button class="btn" type="button" onclick={() => moveMonth(1)}>Next month</button>
   </div>
   <div class="calendar-board">
     <div class="calendar-filters" role="group" aria-label="Show on the calendar">
@@ -294,11 +294,11 @@
       </label>
     </div>
     <div class="month-scroll">
-      <div class="month" aria-label="Period">
+      <div class="month" aria-label="Month">
         {#each weekdays as name}
           <p class="kicker m-0 month-head">{name}</p>
         {/each}
-        {#each days as date, index (`${acctPeriodStart}-${index}`)}
+        {#each days as date, index (`${month}-${index}`)}
           {#if date}
             {@const count = dayItemCount(date)}
             <div

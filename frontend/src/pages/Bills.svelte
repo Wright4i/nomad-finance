@@ -166,6 +166,11 @@ import type { Account, Bill } from '../lib/types';
       });
   });
 
+  function remove(id: number): void {
+    if (!confirm('Delete this bill?')) return;
+    void act(id, 'delete', { confirm: true, today: todayISO() });
+  }
+
   async function act(id: number, action: string, body: unknown = {}): Promise<void> {
     message = '';
     try {
@@ -313,7 +318,9 @@ import type { Account, Bill } from '../lib/types';
                   <div class="flex flex-wrap gap-2">
                     {#if !unpay && bill.status === 'active'}
                       <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
-                      {#if !bill.locked}
+                      {#if !bill.locked && bill.recurrence === 'once'}
+                        <button class="btn" type="button" onclick={() => act(bill.id, 'archive')}>Archive</button>
+                      {:else if !bill.locked}
                         <button class="btn" type="button" onclick={() => act(bill.id, 'pause')}>Pause</button>
                       {/if}
                     {/if}
@@ -323,6 +330,7 @@ import type { Account, Bill } from '../lib/types';
                     {/if}
                     {#if bill.status === 'archived'}
                       <button class="btn" type="button" onclick={() => act(bill.id, 'unarchive')}>Unarchive</button>
+                      <button class="btn" type="button" onclick={() => remove(bill.id)}>Delete</button>
                     {/if}
                     {#if unpay}
                       <button class="btn" type="button" onclick={() => act(bill.id, 'unpay')}>Unpay</button>

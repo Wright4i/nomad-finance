@@ -222,20 +222,8 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('3 payors', $seen['income']);
         self::assertStringContainsString('Still coming in', $seen['income']);
         self::assertStringContainsString('$768.00', $seen['income']);
-        self::click('Next Month');
-        self::wait()->until(function (): bool {
-            $split = self::driver()->executeScript(<<<'JS'
-                return {
-                    income: document.querySelector('[data-section="income"]')?.innerText || '',
-                    bills: document.querySelector('[data-section="bills"]')?.innerText || '',
-                };
-            JS);
-
-            return is_array($split)
-                && str_contains((string) $split['income'], '$768.00')
-                && str_contains((string) $split['bills'], 'Dec 2026');
-        });
-        self::click('Current Month');
+        self::assertStringContainsString('Nov 1', (string) $seen['bills']);
+        self::assertStringNotContainsString('Dec 2026', (string) $seen['bills']);
         self::assertGreaterThanOrEqual($seen['today'], $seen['paydayOn']);
         self::assertSame($seen['localToday'], $seen['today']);
         self::assertSame($seen['expectedDay'], $seen['day']);

@@ -177,33 +177,15 @@ final class EnvelopesTest extends TestCase
         self::assertStringNotContainsString('entertainment', $planner['billText']);
         self::assertStringNotContainsString('Site week', $planner['billText']);
         self::assertStringNotContainsString('Paid', $planner['billText']);
-        self::assertStringNotContainsString('No bills due this month.', $planner['billText']);
+        self::assertStringNotContainsString('No bills due this period.', $planner['billText']);
         self::assertStringNotContainsString('No bills this month.', $planner['billText']);
         self::assertSame($planner['teal'], $planner['rentFill']);
         self::assertSame($planner['teal'], $planner['swatch']);
         self::assertFalse($planner['assign']);
-        self::assertSame(2, $planner['squares']);
-        self::assertSame('Current Month', $planner['monthButtons'][0]['text']);
-        self::assertSame('Next Month', $planner['monthButtons'][1]['text']);
-        foreach ($planner['monthButtons'] as $button) {
-            self::assertGreaterThan($button['height'], $button['width']);
-            self::assertLessThan(72, $button['height']);
-        }
-        self::click('Next Month');
-        self::wait()->until(function (): bool {
-            $legend = self::driver()->executeScript(<<<'JS'
-                const list = document.querySelector('[data-section="bills"] .bill-legend');
-                return list ? list.innerText : '';
-            JS);
-
-            return is_string($legend)
-                && str_contains($legend, 'debt')
-                && str_contains($legend, 'entertainment')
-                && str_contains($legend, '$80.00')
-                && str_contains($legend, 'rent');
-        });
-        self::click('Current Month');
-        self::waitForText('$805.00');
+        self::assertSame(0, $planner['squares']);
+        self::assertSame([], $planner['monthButtons']);
+        self::assertStringContainsString('Nov 1', $planner['billText']);
+        self::assertStringNotContainsString('Dec 2026', $planner['billText']);
         self::clickLink('Budget');
         self::waitForText('Available to assign');
         self::waitForText($availableText);
@@ -339,6 +321,10 @@ final class EnvelopesTest extends TestCase
                     maximumDisabled: maximum ? maximum.disabled : false,
                     maximumValue: maximum ? maximum.value : '',
                     water: row ? row.style.getPropertyValue('--level') : '',
+                    chip: row ? (row.querySelector('.goal-chip') ? row.querySelector('.goal-chip').textContent : '') : '',
+                    autoText: row ? (row.querySelector('[data-field="auto"]') ? row.querySelector('[data-field="auto"]').textContent : '') : '',
+                    targetText: maximum ? maximum.textContent : '',
+                    over: row ? row.classList.contains('over') : false,
                     positioned: water ? getComputedStyle(water).position : '',
                     height: box ? box.height : 0,
                     waves: water ? water.querySelectorAll('.bucket-wave').length : 0,
@@ -348,7 +334,13 @@ final class EnvelopesTest extends TestCase
                     radius: wave ? getComputedStyle(wave).borderTopLeftRadius : '',
                 };
             };
-            return { needs: read('Road cushion'), wants: read('Fun money'), rent: read('Rent') };
+            return {
+                needs: read('Road cushion'),
+                wants: read('Fun money'),
+                rent: read('Rent'),
+                repair: read('Repair reserve'),
+                needsOver: document.querySelector('h2[data-group="needs"] [data-figure="goal"]')?.classList.contains('over') === true,
+            };
         JS);
         self::assertIsArray($bars);
         self::assertTrue($bars['needs']['found']);
@@ -368,19 +360,41 @@ final class EnvelopesTest extends TestCase
         self::assertFieldInkStaysWhiteInDay();
         self::assertFalse($bars['rent']['assignedDisabled']);
         self::assertSame('0.00', $bars['rent']['assignedValue']);
-        self::assertSame('1', $bars['rent']['water']);
+        self::assertGreaterThan(0, (float) $bars['rent']['water']);
+        self::assertLessThanOrEqual(1, (float) $bars['rent']['water']);
+        self::assertSame('', $bars['rent']['chip']);
+        self::assertNotSame('', $bars['rent']['autoText']);
+        if ($bars['needsOver'] === true) {
+            self::assertTrue($bars['rent']['over']);
+            self::assertSame(1.0, (float) $bars['rent']['water']);
+        } else {
+            self::assertFalse($bars['rent']['over']);
+        }
+        self::assertSame('Goal based', $bars['repair']['chip']);
+        self::assertSame('', $bars['repair']['autoText']);
+        self::assertSame('$500.00', $bars['repair']['targetText']);
+        self::assertSame('0', $bars['repair']['water']);
+        self::assertFalse($bars['repair']['over']);
+        self::assertSame('', $bars['needs']['chip']);
+        $cushionAuto = (int) round((float) str_replace(['$', ','], '', (string) $bars['needs']['autoText']) * 100);
+        $cushionEnvelope = (int) round((float) $bars['needs']['assignedValue'] * 100);
+        self::assertEqualsWithDelta(
+            min(1, ($cushionAuto + $cushionEnvelope) / 100000),
+            (float) $bars['needs']['water'],
+            0.000001,
+        );
         self::assertSame('absolute', $bars['needs']['positioned']);
         self::assertGreaterThan(0, (float) $bars['needs']['water']);
         self::assertGreaterThan(8, (float) $bars['needs']['height']);
         self::assertSame(3, $bars['needs']['waves']);
-        self::assertSame(0, $bars['wants']['waves']);
+        self::assertSame(3, $bars['wants']['waves']);
         self::assertSame(3, $bars['rent']['waves']);
         self::assertEqualBucketRows();
         self::assertSame('bucket-wave', $bars['needs']['wave']);
         self::assertSame('5s', $bars['needs']['duration']);
         self::assertSame('ease-in-out', $bars['needs']['timing']);
         self::assertNotSame('0px', $bars['needs']['radius']);
-        self::waitForText('Nov 2026');
+        self::waitForText('Nov 1 – Nov 30');
         self::driver()->executeScript(<<<'JS'
             const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Rent');
             const input = tile ? tile.querySelector('input') : null;
@@ -402,8 +416,8 @@ final class EnvelopesTest extends TestCase
             input.value = '0.00';
             input.dispatchEvent(new Event('input', { bubbles: true }));
         JS);
-        self::click('Next month');
-        self::waitForText('Dec 2026');
+        self::click('Next period');
+        self::waitForText('Dec 1 – Dec 31');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -428,8 +442,8 @@ final class EnvelopesTest extends TestCase
 
             return $value === '700.00';
         });
-        self::click('Previous month');
-        self::waitForText('Nov 2026');
+        self::click('Previous period');
+        self::waitForText('Nov 1 – Nov 30');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -439,8 +453,18 @@ final class EnvelopesTest extends TestCase
 
             return $value === '115.00';
         });
-        self::click('Previous month');
-        self::waitForText('A closed period can be read.');
+        self::click('Previous period');
+        self::waitForText('This period has closed.');
+        self::assertNull(self::driver()->executeScript('return document.querySelector(\'[data-action="available"]\');'));
+        self::assertStringNotContainsString(
+            'Available to assign',
+            self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText(),
+        );
+        $inputsDisabled = self::driver()->executeScript(<<<'JS'
+            const inputs = [...document.querySelectorAll('input[name^="amount-"]')];
+            return inputs.length > 0 && inputs.every((input) => input.disabled);
+        JS);
+        self::assertTrue($inputsDisabled);
         $closed = self::driver()->executeScript(<<<'JS'
             const value = (name) => {
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes(name));
@@ -457,7 +481,7 @@ final class EnvelopesTest extends TestCase
             return input ? input.disabled : false;
         JS);
         self::assertTrue($disabled);
-        self::click('Next month');
+        self::click('Next period');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -527,7 +551,7 @@ final class EnvelopesTest extends TestCase
 
             return $value === '0.00';
         });
-        self::click('Previous month');
+        self::click('Previous period');
         self::wait()->until(function (): bool {
             $disabled = self::driver()->executeScript(
                 'const button = document.querySelector(\'[data-action="recalculate"]\'); return button instanceof HTMLButtonElement && button.disabled;',
@@ -535,7 +559,7 @@ final class EnvelopesTest extends TestCase
 
             return $disabled === true;
         });
-        self::click('Next month');
+        self::click('Next period');
         self::clickLink('Lodging');
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'

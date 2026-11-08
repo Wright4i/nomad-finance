@@ -195,7 +195,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">New log</h1>
-  <p class="muted m-0">A log is a one-time bill left unpaid. It does not change a bucket. Recalculate on Budget counts that bill. Mark it paid later. The account balance stays as you typed it.</p>
+  <p class="muted m-0">A log is a one-time bill left unpaid. It does not change a bucket. Recalculate on Budget counts that bill. Mark it paid later. Logged to a liability, the amount owed rises by that amount. An asset balance stays as you typed it.</p>
   <Note bind:message />
   <div class="field">
     <span>Kind</span>

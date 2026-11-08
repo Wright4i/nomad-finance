@@ -8,7 +8,7 @@
   import { api } from '../lib/api';
   import { dayChips, plannerDayDates, type DayBill, type DayPayday, type DayStay } from '../lib/daySquare';
   import { fitThree } from '../lib/fitThree';
-  import { formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import { wantGaugeLevels } from '../lib/wantGauge';
@@ -196,13 +196,6 @@
   let dragId = $state<string | null>(null);
   let drag: { id: string; pointerId: number; dx: number; dy: number } | null = null;
   let pieFocus = $state<{ currency: string; type: string; pull: boolean } | null>(null);
-  let monthOffset = $state(0);
-
-  function shiftMonth(month: string, by: number): string {
-    const [year, mon] = month.split('-').map(Number);
-    const date = new Date(year, (mon - 1) + by, 1);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  }
 
   function fineHover(): boolean {
     return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
@@ -230,8 +223,7 @@
     return stroked ? `${tone}; stroke: var(--bg); stroke-width: 0.6` : tone;
   }
 
-  let billMonth = $derived(shiftMonth(todayISO().slice(0, 7), monthOffset));
-  let pies = $derived(data?.duePies[billMonth] ?? []);
+  let pies = $derived(data?.duePies ?? []);
   let isPayday = $derived(Boolean(data?.payday && data.payday.on === data.today));
   let gaugeRows = $derived(
     data && gauge
@@ -247,7 +239,7 @@
   let editing = $state<CalendarEntry | null>(null);
   let calendarSquares = $derived(
     data
-      ? plannerDayDates(data.today, spans.calendar).map((date) => ({
+      ? plannerDayDates(data.today, spans.calendar, data.windowStart, data.windowEnd).map((date) => ({
           date,
           chips: dayChips(date, stays, paydays, dayBills, data.baseCurrency, data.exponent, entries),
         }))
@@ -573,7 +565,7 @@
                   {:else}
                     <p class="muted m-0">No payday yet</p>
                   {/if}
-                  <p class="muted m-0">Still coming in <span class="money">{money(data.incomeComing[data.today.slice(0, 7)] ?? 0)}</span></p>
+                  <p class="muted m-0">Still coming in <span class="money">{money(data.incomeComing)}</span></p>
                 </a>
               </div>
             {:else if id === 'calendar'}
@@ -726,6 +718,9 @@
                     </button>
                   {/each}
                 </div>
+                {#if data.windowEnd < data.today}
+                  <p class="m-0">This period has closed.</p>
+                {:else}
                 <p class="envelope-available">
                   <span>Available to assign</span>
                   <span class="money">{money(data.envelopes.availableMinor)}</span>
@@ -733,22 +728,19 @@
                     {money(data.envelopes.assignedMinor)} assigned of {money(data.envelopes.poolMinor)}
                   </span>
                 </p>
+                {/if}
                 {#if data.envelopes.celebrate}
-                  <p class="celebrate m-0" aria-live="polite">Every dollar for this month is assigned.</p>
+                  <p class="celebrate m-0" aria-live="polite">Every dollar for this period is assigned.</p>
                 {/if}
               {/if}
             {:else}
               <div class="planner-bills">
                 <div class="planner-bills-head">
                   <a class="planner-widget-title" href={widgetPage.bills} onclick={(event) => follow(event, widgetPage.bills)}>Bills</a>
-                  <div class="month-squares" role="group" aria-label="Month">
-                    <button class="choice month-square" class:on={monthOffset === 0} type="button" aria-pressed={monthOffset === 0} onclick={() => (monthOffset = 0)}>Current Month</button>
-                    <button class="choice month-square" class:on={monthOffset === 1} type="button" aria-pressed={monthOffset === 1} onclick={() => (monthOffset = 1)}>Next Month</button>
-                  </div>
                 </div>
-                <p class="muted m-0">{formatMonth(billMonth)}</p>
+                <p class="muted m-0" data-period={data.windowStart}>{formatChipDate(data.windowStart)} – {formatChipDate(data.windowEnd)}</p>
                 {#if pies.length === 0}
-                  <p class="muted m-0">No bills due this month.</p>
+                  <p class="muted m-0">No bills due this period.</p>
                 {:else}
                   <div class="bill-charts">
                     {#each pies as pie (pie.currency)}
@@ -817,7 +809,7 @@
   {#if gauge && data}
     <div class="modal-body">
       <h2 id="gauge-title" class="m-0 text-2xl">{groupLabel[gauge]}</h2>
-      <p class="muted">Amounts assigned in the month on screen.</p>
+      <p class="muted">Amounts assigned in the period on screen.</p>
       <table class="w-full">
         <thead>
           <tr>

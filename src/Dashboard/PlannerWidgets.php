@@ -248,6 +248,26 @@ final class PlannerWidgets
     }
 
     /**
+     * Paychecks inside a window that have not been received.
+     * A payday before today has already come in. Today and later in the window are still coming in.
+     *
+     * @param list<array<string, mixed>> $paychecks
+     */
+    public static function stillComingBetween(array $paychecks, string $start, string $end, string $today): int
+    {
+        $sum = 0;
+        foreach ($paychecks as $row) {
+            $on = (string) ($row['on'] ?? '');
+            if ($on === '' || $on < $start || $on > $end || $on < $today) {
+                continue;
+            }
+            $sum += (int) ($row['paycheckMinor'] ?? 0);
+        }
+
+        return $sum;
+    }
+
+    /**
      * One total per account type and side that has an account. Empty types are skipped.
      * Color follows the account side: an asset is teal and a liability is coral.
      * Other is coral when that account is a liability. The order is most money first

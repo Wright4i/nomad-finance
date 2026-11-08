@@ -100,12 +100,40 @@ final class BillsTest extends TestCase
         self::waitForText('Available to assign');
         self::clickLink('Planner');
         self::clickLink('Bills');
-        foreach (['Phone', 'Clinic visit', 'DEF fluid', 'Park pass', 'Camp store', 'Shower tokens'] as $name) {
+        foreach (['Phone', 'Clinic visit', 'DEF fluid', 'Camp store', 'Shower tokens'] as $name) {
             Reveal::bill(self::driver(), $name, 'active');
             self::waitForText($name);
         }
+        $once = self::driver()->executeScript(<<<'JS'
+            const article = [...document.querySelectorAll('article')].find((node) => {
+                const link = node.querySelector('a');
+                return link ? link.innerText.trim().startsWith('Shower tokens') : false;
+            });
+            const has = (label) => article ? [...article.querySelectorAll('button')].some((button) => button.textContent.trim() === label) : false;
+            return { archive: has('Archive'), pause: has('Pause') };
+        JS);
+        self::assertIsArray($once);
+        self::assertTrue($once['archive']);
+        self::assertFalse($once['pause']);
+        self::driver()->findElement(WebDriverBy::cssSelector('button[aria-label="Previous"]'))->click();
+        self::waitForText('Oct 1');
         Reveal::bill(self::driver(), 'Old meal kit', 'archived');
         self::waitForText('Old meal kit');
+        $archived = self::driver()->executeScript(<<<'JS'
+            const article = [...document.querySelectorAll('article')].find((node) => {
+                const link = node.querySelector('a');
+                return link ? link.innerText.trim().startsWith('Old meal kit') : false;
+            });
+            const has = (label) => article ? [...article.querySelectorAll('button')].some((button) => button.textContent.trim() === label) : false;
+            return { restore: has('Unarchive'), delete: has('Delete') };
+        JS);
+        self::assertIsArray($archived);
+        self::assertTrue($archived['restore']);
+        self::assertTrue($archived['delete']);
+        self::driver()->findElement(WebDriverBy::cssSelector('button[aria-label="Next"]'))->click();
+        self::waitForText('Nov 1');
+        Reveal::bill(self::driver(), 'Pedestal', 'paused');
+        Reveal::bill(self::driver(), 'Travel card', 'active');
         $actions = self::driver()->executeScript(<<<'JS'
             const article = (name) => [...document.querySelectorAll('article')].find((node) => {
                 const link = node.querySelector('a');
@@ -115,12 +143,10 @@ final class BillsTest extends TestCase
             return {
                 pausedArchive: has(article('Pedestal'), 'Archive'),
                 cardPause: has(article('Travel card'), 'Pause'),
-                archivedRestore: has(article('Old meal kit'), 'Unarchive'),
             };
         JS);
         self::assertTrue($actions['pausedArchive']);
         self::assertFalse($actions['cardPause']);
-        self::assertTrue($actions['archivedRestore']);
         Reveal::bill(self::driver(), 'Health share', 'active');
         $day = self::driver()->executeScript(<<<'JS'
             const group = [...document.querySelectorAll('.bill-day')].find((node) => {

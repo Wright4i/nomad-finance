@@ -485,11 +485,11 @@ export type Dashboard = {
   envelopes: EnvelopeSheet;
   income: IncomeRow[];
   incomeMinor: number;
-  duePies: Record<string, DuePie[]>;
+  duePies: DuePie[];
   heading: string;
   headingItalic: boolean;
   payday: PlannerPayday | null;
-  incomeComing: Record<string, number>;
+  incomeComing: number;
   payorCount: number;
   stay: PlannerStay | null;
   accountTotals: AccountTotal[];

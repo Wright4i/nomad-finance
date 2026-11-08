@@ -68,38 +68,40 @@ final class FloatTest extends TestCase
         }
     }
 
-    public function testUncoveredFloatIsBalanceMinusPastChargesCappedAtTheBalance(): void
+    public function testUncoveredFloatIsTheBalanceMinusBillsAlreadyInBuckets(): void
     {
-        self::assertSame(['covered' => 4000, 'uncovered' => 6000], FloatCover::split(10000, 4000));
-        self::assertSame(['covered' => 10000, 'uncovered' => 0], FloatCover::split(10000, 15000));
-        self::assertSame(['covered' => 0, 'uncovered' => 0], FloatCover::split(0, 4000));
+        self::assertSame(['covered' => 200000, 'uncovered' => 20000], FloatCover::split(220000, 200000));
+        self::assertSame(['covered' => 220000, 'uncovered' => 0], FloatCover::split(220000, 250000));
+        self::assertSame(['covered' => 0, 'uncovered' => 0], FloatCover::split(0, 200000));
 
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE role = \'demo\'')
+            ->execute(['2026-11-01', '1 month']);
         $before = $this->envelopes->show('2026-11-06');
         $card = $this->accounts->create([
             'name' => 'Float card',
             'type' => 'credit',
             'currency' => 'USD',
-            'balanceMinor' => 10000,
+            'balanceMinor' => 220000,
             'autopayChoice' => 'balance',
             'bankAutopay' => true,
             'dueDay' => 15,
         ]);
         $this->bills->create([
-            'name' => 'Past dinner',
+            'name' => 'Bucket dinner',
             'type' => 'restaurants',
             'accountId' => $card['id'],
-            'amountMinor' => 4000,
+            'amountMinor' => 200000,
             'recurrence' => 'once',
-            'nextDueDate' => '2026-11-01',
+            'nextDueDate' => '2026-11-20',
             'today' => '2026-11-06',
         ]);
         $this->bills->create([
-            'name' => 'Future dinner',
+            'name' => 'Later dinner',
             'type' => 'restaurants',
             'accountId' => $card['id'],
-            'amountMinor' => 2500,
+            'amountMinor' => 50000,
             'recurrence' => 'once',
-            'nextDueDate' => '2026-11-20',
+            'nextDueDate' => '2026-12-20',
             'today' => '2026-11-06',
         ]);
 
@@ -111,10 +113,10 @@ final class FloatTest extends TestCase
             }
         }
         self::assertIsArray($float);
-        self::assertSame(10000, $float['balanceMinor']);
-        self::assertSame(4000, $float['coveredMinor']);
-        self::assertSame(6000, $float['uncoveredMinor']);
-        self::assertSame($before['poolMinor'] - 6000, $sheet['poolMinor']);
+        self::assertSame(220000, $float['balanceMinor']);
+        self::assertSame(200000, $float['coveredMinor']);
+        self::assertSame(20000, $float['uncoveredMinor']);
+        self::assertSame($before['poolMinor'] - 20000, $sheet['poolMinor']);
         self::assertNotContains('Float card', array_column($sheet['sources']['accounts'], 'name'));
     }
 

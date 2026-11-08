@@ -129,6 +129,8 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame(0, $totals[3]['balanceMinor']);
         self::assertNotContains('cash', array_column($totals, 'type'));
 
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-11-01', '1 month', $_SESSION['user_id']]);
         $sheet = $this->dashboard->show('2026-11-05');
         self::assertSame([
             'payor' => 'Camp host',
@@ -176,9 +178,9 @@ final class PlannerWidgetsTest extends TestCase
         $nextMonth = ['on' => '2026-12-01', 'paycheckMinor' => 400];
         self::assertSame(500, PlannerWidgets::stillComing([$received, $today, $later, $nextMonth], '2026-11', '2026-11-05'));
         self::assertSame(400, PlannerWidgets::stillComing([$received, $today, $later, $nextMonth], '2026-12', '2026-11-05'));
-        self::assertArrayHasKey('2026-11', $sheet['incomeComing']);
-        self::assertArrayHasKey('2026-12', $sheet['incomeComing']);
-        self::assertSame(76800, $sheet['incomeComing']['2026-11']);
+        self::assertSame(500, PlannerWidgets::stillComingBetween([$received, $today, $later, $nextMonth], '2026-11-01', '2026-11-30', '2026-11-05'));
+        self::assertSame(400, PlannerWidgets::stillComingBetween([$received, $today, $later, $nextMonth], '2026-12-01', '2026-12-31', '2026-11-05'));
+        self::assertSame(76800, $sheet['incomeComing']);
     }
 
     public function testPayStayAndBillsFollowTheAppToday(): void

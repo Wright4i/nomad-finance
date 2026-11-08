@@ -26,10 +26,21 @@ final class PayCycleService
     ) {
     }
 
-    /** @return list<array<string, mixed>> */
-    public function list(string $today, bool $includeArchived): array
+    /**
+     * With a window, a card is the pay period that starts inside it.
+     * A payor with no such start is left out. The paycheck is that period's.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function list(string $today, bool $includeArchived, ?string $windowStart = null, ?string $windowEnd = null): array
     {
         $this->day($today, 'today');
+        if ($windowStart !== null) {
+            $this->day($windowStart, 'start');
+        }
+        if ($windowEnd !== null) {
+            $this->day($windowEnd, 'end');
+        }
         $sql = 'SELECT * FROM pay_cycles WHERE user_id = ?';
         if (!$includeArchived) {
             $sql .= ' AND archived_at IS NULL';
@@ -47,7 +58,28 @@ final class PayCycleService
             if (!is_array($row)) {
                 continue;
             }
-            $listed[] = $this->present($this->roll($row, $today), $today);
+            $rolled = $this->roll($row, $today);
+            $shown = $this->present($rolled, $today);
+            if ($windowStart !== null && $windowEnd !== null) {
+                $range = Period::startingIn(
+                    (string) $rolled['payday'],
+                    (string) $rolled['length'],
+                    $rolled['second_day'] === null ? null : (int) $rolled['second_day'],
+                    $rolled['next_payday'] === null ? null : (string) $rolled['next_payday'],
+                    $windowStart,
+                    $windowEnd,
+                    $today,
+                );
+                if ($range === null) {
+                    continue;
+                }
+                $shown['periodStart'] = $range['start'];
+                $shown['periodEnd'] = $range['end'];
+                $amount = $this->projected($shown, $range['start']);
+                $shown['paycheckMinor'] = $amount;
+                $shown['monthlyMinor'] = Paycheck::monthlyAmount(is_int($amount) ? $amount : null, (string) $shown['length']);
+            }
+            $listed[] = $shown;
         }
 
         return $listed;
@@ -522,10 +554,16 @@ final class PayCycleService
     /**
      * @return array{averageOn:bool,rows:list<array<string, mixed>>}
      */
-    public function payroll(int $id, string $today): array
+    public function payroll(int $id, string $today, ?string $start = null, ?string $end = null): array
     {
         $cycle = $this->get($id, $today);
-        $dates = $this->sheetDates($cycle, $today);
+        if ($start !== null) {
+            $this->day($start, 'start');
+        }
+        if ($end !== null) {
+            $this->day($end, 'end');
+        }
+        $dates = $this->sheetDates($cycle, $today, $start, $end);
         $keyed = $this->entries($id);
         $rows = [];
         foreach ($dates as $date) {
@@ -611,18 +649,33 @@ final class PayCycleService
      * @param array<string, mixed> $cycle
      * @return list<string>
      */
-    private function sheetDates(array $cycle, string $today): array
+    private function sheetDates(array $cycle, string $today, ?string $start = null, ?string $end = null): array
     {
         $second = is_int($cycle['secondDay']) ? $cycle['secondDay'] : null;
+        $bounded = $start !== null && $end !== null;
         if ($cycle['length'] === 'irregular') {
             $dates = [];
-            if (is_string($cycle['nextPayday'])) {
-                $dates[] = $cycle['nextPayday'];
+            $candidates = $bounded
+                ? [$cycle['payday'] ?? null, $cycle['nextPayday'] ?? null]
+                : [$cycle['nextPayday'] ?? null];
+            foreach ($candidates as $candidate) {
+                if (!is_string($candidate) || $candidate === '') {
+                    continue;
+                }
+                if ($bounded && ($candidate < $start || $candidate > $end)) {
+                    continue;
+                }
+                $dates[] = $candidate;
             }
+        } elseif ($bounded) {
+            $dates = Payroll::between((string) $cycle['payday'], (string) $cycle['length'], $second, $start, $end);
         } else {
             $dates = Payroll::window((string) $cycle['payday'], (string) $cycle['length'], $second, $today);
         }
         foreach ($this->keyedDates((int) $cycle['id']) as $keyed) {
+            if ($bounded && ($keyed < $start || $keyed > $end)) {
+                continue;
+            }
             $dates[] = $keyed;
         }
         $dates = array_values(array_unique($dates));

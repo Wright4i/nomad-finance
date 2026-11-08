@@ -13,6 +13,7 @@
   } from '../lib/carto';
   import type { LngLat } from '../lib/route';
   import { session } from '../lib/session.svelte.ts';
+  import { locateZoom, stayZoom, tripFrame, worldZoom } from '../lib/tripFrame';
 
   setWorkerUrl(maplibreWorker);
 
@@ -44,6 +45,7 @@
     quiet = false,
     compact = false,
     locateToken = 0,
+    stepToken = 0,
     onSelect = () => {},
     onMarker = () => {},
   }: {
@@ -61,6 +63,8 @@
     compact?: boolean;
     /** Bumps when Locate stay should fly to street level, even if that stay is already centered. */
     locateToken?: number;
+    /** Bumps when Previous or Next should fly to that stay at city zoom. */
+    stepToken?: number;
     onSelect?: (id: number) => void;
     onMarker?: (latitude: string, longitude: string) => void;
   } = $props();
@@ -73,10 +77,14 @@
   let legPins: Marker[] = [];
   let failed = $state(false);
   let seenLocate = 0;
+  let seenStep = 0;
   let flownKey = '';
+  let framed = false;
+  let heldId: number | null = null;
+  let userMoved = false;
 
-  const pinZoom = 15;
-  const routeZoom = 3.4;
+  const pinZoom = locateZoom;
+  const routeZoom = worldZoom;
   /** Further out than the satellite pin so the city and state stay in frame. */
   const cityZoom = 8;
 
@@ -362,8 +370,7 @@
         drawLegLabels();
         drawRoute();
         placeMarker();
-        const selected = pins.find((item) => item.id === selectedId) ?? pins[0];
-        if (selected && !marker && seenLocate === 0) fly(Number(selected.longitude), Number(selected.latitude));
+        aim();
       });
     } catch (error) {
       failed = true;
@@ -380,33 +387,83 @@
     };
   });
 
+  function frameKey(): string {
+    return pins.map((item) => `${item.id}:${item.longitude}:${item.latitude}`).join('|');
+  }
+
+  function aim(): void {
+    if (marker || !map) return;
+    const overview = !flat && !satellite;
+    const token = locateToken;
+    const step = stepToken;
+    const selected = pins.find((item) => item.id === selectedId);
+    const lng = selected ? Number(selected.longitude) : Number.NaN;
+    const lat = selected ? Number(selected.latitude) : Number.NaN;
+    const placed = Number.isFinite(lng) && Number.isFinite(lat);
+    const locating = token !== seenLocate;
+    if (locating && selected && placed) {
+      seenLocate = token;
+      seenStep = step;
+      userMoved = true;
+      framed = true;
+      heldId = selected.id;
+      flownKey = `locate:${selected.id}:${selected.longitude}:${selected.latitude}:${token}`;
+      fly(lng, lat, pinZoom);
+      return;
+    }
+    if (overview && step !== seenStep && selected && placed) {
+      seenStep = step;
+      userMoved = true;
+      framed = true;
+      heldId = selected.id;
+      flownKey = `step:${selected.id}:${selected.longitude}:${selected.latitude}:${step}`;
+      fly(lng, lat, stayZoom());
+      return;
+    }
+    seenStep = step;
+    if (overview && framed && selected && placed && heldId !== null && selected.id !== heldId) {
+      userMoved = true;
+      heldId = selected.id;
+      flownKey = `select:${selected.id}:${selected.longitude}:${selected.latitude}`;
+      fly(lng, lat);
+      return;
+    }
+    if (overview && !userMoved) {
+      const frame = tripFrame(pins.map((item) => ({
+        longitude: Number(item.longitude),
+        latitude: Number(item.latitude),
+      })));
+      if (!frame) return;
+      const key = `frame:${frameKey()}`;
+      framed = true;
+      heldId = selected?.id ?? null;
+      if (flownKey === key) return;
+      flownKey = key;
+      fly(frame.longitude, frame.latitude, routeZoom);
+      return;
+    }
+    if (!selected || !placed) return;
+    const key = `select:${selected.id}:${selected.longitude}:${selected.latitude}`;
+    if (flownKey === key) return;
+    flownKey = key;
+    fly(lng, lat);
+  }
+
   $effect(() => {
     pins;
     legs;
     selectedId;
     quiet;
-    const token = locateToken;
+    flat;
+    satellite;
+    locateToken;
+    stepToken;
     if (map) {
       drawPins();
       drawLegLabels();
     }
     if (map?.getSource('route')) drawRoute();
-    const selected = pins.find((item) => item.id === selectedId);
-    if (!selected || marker || !map) return;
-    const lng = Number(selected.longitude);
-    const lat = Number(selected.latitude);
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
-    const locating = token !== seenLocate;
-    if (locating) {
-      seenLocate = token;
-      flownKey = `select:${selected.id}:${selected.longitude}:${selected.latitude}`;
-      fly(lng, lat, pinZoom);
-      return;
-    }
-    const key = `select:${selected.id}:${selected.longitude}:${selected.latitude}`;
-    if (flownKey === key) return;
-    flownKey = key;
-    fly(lng, lat);
+    aim();
   });
 
   $effect(() => {

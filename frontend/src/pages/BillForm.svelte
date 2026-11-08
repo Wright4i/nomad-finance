@@ -186,6 +186,11 @@ import type { Account, Bill, Category } from '../lib/types';
     }
   }
 
+  function remove(): void {
+    if (!confirm('Delete this bill?')) return;
+    void act('delete', { confirm: true, today: todayISO() });
+  }
+
   async function act(action: string, body: unknown = {}): Promise<void> {
     if (!id) return;
     saving = true;
@@ -332,7 +337,9 @@ import type { Account, Bill, Category } from '../lib/types';
     <a class="btn" href="/bills" onclick={(event) => { event.preventDefault(); returnToBills(); }}>Back</a>
     {#if id && status === 'active'}
       <button class="btn" type="button" disabled={saving} onclick={() => act('paid', { paidOn: todayISO() })}>Mark paid</button>
-      {#if !locked}
+      {#if !locked && recurrence === 'once'}
+        <button class="btn" type="button" disabled={saving} onclick={() => act('archive')}>Archive</button>
+      {:else if !locked}
         <button class="btn" type="button" disabled={saving} onclick={() => act('pause')}>Pause</button>
       {/if}
     {/if}
@@ -342,6 +349,7 @@ import type { Account, Bill, Category } from '../lib/types';
     {/if}
     {#if id && status === 'archived'}
       <button class="btn" type="button" disabled={saving} onclick={() => act('unarchive')}>Unarchive</button>
+      <button class="btn" type="button" disabled={saving} onclick={remove}>Delete</button>
     {/if}
     {#if id && status === 'paid'}
       <button class="btn" type="button" disabled={saving} onclick={() => act('unpay')}>Unpay</button>

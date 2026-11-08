@@ -315,19 +315,10 @@ final class LifeTest extends TestCase
         ], $marks['transfers']);
         self::assertCollapsedSidebar();
         self::clickLink('Planner');
-        self::waitForText('Current Month');
-        self::click('Next Month');
-        self::wait()->until(function (): bool {
-            $pressed = self::driver()->executeScript(<<<'JS'
-                const button = [...document.querySelectorAll('button')].find((node) => node.textContent.trim() === 'Next Month');
-                return button ? button.getAttribute('aria-pressed') : '';
-            JS);
-
-            return $pressed === 'true';
-        });
+        self::waitForText('$805.00');
         $gauge = WebDriverBy::xpath('//button[contains(@class, "gauge") and contains(., "Needs")]');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($gauge))->click();
-        self::waitForText('Amounts assigned in the month on screen.');
+        self::waitForText('Amounts assigned in the period on screen.');
         self::click('Close');
         self::wait()->until(function (): bool {
             $gone = self::driver()->executeScript(<<<'JS'
@@ -1330,14 +1321,41 @@ final class LifeTest extends TestCase
             $view = self::mapView();
 
             return $view !== null
+                && $view['zoom'] > 2
                 && $view['zoom'] < 8
-                && abs($view['longitude'] + 111.6135) < 0.8
-                && abs($view['latitude'] - 33.4805) < 0.8
+                && abs($view['longitude'] + 113.40) < 0.45
+                && abs($view['latitude'] - 33.73) < 0.45
                 && str_contains($view['pin'], 'Usery Mountain');
         });
         $wide = self::mapView();
         self::assertNotNull($wide);
-        self::clickCss('.stay-list [aria-label="Locate stay"]');
+        self::click('Next');
+        self::waitForText('McDowell Mountain');
+        self::wait()->until(function (): bool {
+            $view = self::mapView();
+
+            return $view !== null
+                && $view['zoom'] > 8.7
+                && $view['zoom'] < 9.7
+                && abs($view['longitude'] + 111.707) < 0.8
+                && abs($view['latitude'] - 33.689) < 0.8
+                && str_contains($view['pin'], 'McDowell Mountain');
+        });
+        self::click('Previous');
+        self::waitForText('Usery Mountain');
+        self::wait()->until(function (): bool {
+            $view = self::mapView();
+
+            return $view !== null
+                && $view['zoom'] > 8.7
+                && $view['zoom'] < 9.7
+                && abs($view['longitude'] + 111.6135) < 0.8
+                && abs($view['latitude'] - 33.4805) < 0.8
+                && str_contains($view['pin'], 'Usery Mountain');
+        });
+        self::click('Next month');
+        self::waitForText('Nov 2026');
+        self::clickStayAction('Usery Mountain', 'Locate stay');
         self::wait()->until(function (): bool {
             $view = self::mapView();
 

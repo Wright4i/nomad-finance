@@ -71,13 +71,14 @@ final class EnvelopeService
     public function save(array $input): array
     {
         $today = $this->day(is_string($input['today'] ?? null) ? $input['today'] : '');
+        $acctSpan = null;
         if ($this->usesAcctPeriod($input)) {
-            $span = $this->acctSpanFor($input, $today);
-            if ($span['phase'] === 'closed') {
+            $acctSpan = $this->acctSpanFor($input, $today);
+            if ($acctSpan['phase'] === 'closed') {
                 throw new ApiException(409, 'A closed period can be read.');
             }
-            if ($span['phase'] === 'future') {
-                return $this->saveAcctPeriodPlan($input, $span, $today);
+            if ($acctSpan['phase'] === 'future') {
+                return $this->saveAcctPeriodPlan($input, $acctSpan, $today);
             }
         }
         $this->prepare($today);
@@ -109,7 +110,9 @@ final class EnvelopeService
             ? $this->maximums(is_array($input['maximums']) ? $input['maximums'] : null)
             : null;
         $lockedIds = $this->lockedIds();
-        $floors = $this->monthBillSums($spanStart, !$upcoming, $today);
+        $floors = $acctSpan !== null
+            ? $this->windowBillSums($acctSpan['start'], $acctSpan['end'], true, $today)
+            : $this->monthBillSums($spanStart, !$upcoming, $today);
         $tooLow = [];
         foreach ($amounts as $categoryId => $typed) {
             if (!isset($lockedIds[$categoryId])) {
@@ -164,11 +167,15 @@ final class EnvelopeService
             if ($maximums !== null) {
                 $this->saveMaximums($maximums);
             }
-            $stored = $this->pdo->prepare('SELECT period_start FROM pay_periods WHERE id = ? AND user_id = ?');
-            $stored->execute([(int) $period['id'], $this->actor->id()]);
-            $storedStart = $stored->fetchColumn();
-            if (is_string($storedStart)) {
-                $this->releaseOtherGoals((int) $period['id'], $storedStart, $amounts, $lockedIds);
+            if ($acctSpan !== null) {
+                $this->releaseOtherGoals((int) $period['id'], $acctSpan['start'], $amounts, $lockedIds, $acctSpan['end']);
+            } else {
+                $stored = $this->pdo->prepare('SELECT period_start FROM pay_periods WHERE id = ? AND user_id = ?');
+                $stored->execute([(int) $period['id'], $this->actor->id()]);
+                $storedStart = $stored->fetchColumn();
+                if (is_string($storedStart)) {
+                    $this->releaseOtherGoals((int) $period['id'], $storedStart, $amounts, $lockedIds);
+                }
             }
             $this->pdo->commit();
         } catch (Throwable $e) {
@@ -713,7 +720,9 @@ final class EnvelopeService
     }
 
     /**
-     * Paid-in-full credit and fuel cards. Past unpaid charges drawn from the card cover the balance, up to the balance.
+     * Paid-in-full credit and fuel cards.
+     * Bills drawn from the card that are already in the buckets cover the balance, up to the balance.
+     * The rest is what available to assign loses. A $2,200 card with $2,000 of those bills loses $200.
      *
      * @return list<array{id:int,name:string,type:string,balanceMinor:int,coveredMinor:int,uncoveredMinor:int}>
      */
@@ -727,18 +736,13 @@ final class EnvelopeService
              ORDER BY name COLLATE NOCASE, id'
         );
         $stmt->execute([$this->actor->id()]);
-        $covered = $this->pdo->prepare(
-            'SELECT COALESCE(SUM(amount_minor), 0) FROM bills
-             WHERE account_id = ? AND status = \'active\' AND next_due_date < ?
-               AND (source_account_id IS NULL OR source_account_id != account_id)'
-        );
+        $coveredByCard = $this->bucketCoverByCard($today);
         $rows = [];
         while ($row = $stmt->fetch()) {
             if (!is_array($row)) {
                 continue;
             }
-            $covered->execute([(int) $row['id'], $today]);
-            $split = FloatCover::split((int) $row['balance_minor'], (int) $covered->fetchColumn());
+            $split = FloatCover::split((int) $row['balance_minor'], $coveredByCard[(int) $row['id']] ?? 0);
             if ($split['uncovered'] === 0) {
                 continue;
             }
@@ -755,6 +759,49 @@ final class EnvelopeService
         }
 
         return $rows;
+    }
+
+    /**
+     * Bill amounts already sitting in the buckets, keyed by the account they are drawn from.
+     *
+     * @return array<int, int>
+     */
+    private function bucketCoverByCard(string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            $span['start'],
+            $span['end'],
+            $span['phase'] === 'current',
+        );
+        $amounts = [];
+        foreach ($picture['bills'] as $bills) {
+            foreach ($bills as $bill) {
+                $amounts[(int) $bill['id']] = (int) $bill['amountMinor'];
+            }
+        }
+        if ($amounts === []) {
+            return [];
+        }
+        $ids = array_keys($amounts);
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT id, account_id FROM bills
+             WHERE id IN ($marks)
+               AND (source_account_id IS NULL OR source_account_id != account_id)"
+        );
+        $stmt->execute($ids);
+        $covered = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $cardId = (int) $row['account_id'];
+            $covered[$cardId] = ($covered[$cardId] ?? 0) + ($amounts[(int) $row['id']] ?? 0);
+        }
+
+        return $covered;
     }
 
     /** @param array{income: list<array{amountMinor:int}>, accounts: list<array{amountMinor:int}>} $sources */
@@ -775,8 +822,9 @@ final class EnvelopeService
     }
 
     /**
-     * Goal amounts for the calendar month, each stored assignment once.
-     * A month that has no rows yet stays empty. Recurring bills fill on their own.
+     * Goal amounts for the accounting period on screen.
+     * Without that window, the calendar month of the pay period.
+     * A window that has no rows yet stays empty. Recurring bills fill on their own.
      *
      * @param list<array<string, mixed>> $categories
      * @param ?array<string, mixed> $period
@@ -787,8 +835,15 @@ final class EnvelopeService
         if ($period === null || $anchorCycleId === null || $categories === []) {
             return $categories;
         }
-        $month = $this->calendarMonth((string) $period['start']);
-        $stored = $this->goalSums($month['start'], $month['end']);
+        if ($this->viewWindow !== null) {
+            $start = $this->viewWindow['start'];
+            $end = $this->viewWindow['end'];
+        } else {
+            $month = $this->calendarMonth((string) $period['start']);
+            $start = $month['start'];
+            $end = $month['end'];
+        }
+        $stored = $this->goalSums($start, $end);
         foreach ($categories as $index => $category) {
             if (($category['role'] ?? '') === 'locked') {
                 continue;
@@ -848,7 +903,8 @@ final class EnvelopeService
     /**
      * The saved amount is the total for that goal in the window.
      * Other payors' rows in the same window drop out so the sum stays that total.
-     * Recalculate passes the accounting period. A save still uses the calendar month.
+     * Recalculate and an accounting-period save pass that window.
+     * A save without one still uses the calendar month.
      *
      * @param array<int, int> $amounts
      * @param array<int, true> $lockedIds
@@ -959,6 +1015,9 @@ final class EnvelopeService
         $total = 0;
         foreach ($this->cycles() as $cycle) {
             $open = $this->openSpan($cycle, $today);
+            if ($open['start'] > $today) {
+                continue;
+            }
             $stmt = $this->pdo->prepare(
                 'SELECT a.amount_minor
                  FROM assignments a
@@ -1083,6 +1142,9 @@ final class EnvelopeService
     private function lockedExtra(array $cycle, string $today): int
     {
         $open = $this->openSpan($cycle, $today);
+        if ($open['start'] > $today) {
+            return 0;
+        }
         $period = $this->periodRow((int) $cycle['id'], $open['start']);
         if ($period === null) {
             return 0;

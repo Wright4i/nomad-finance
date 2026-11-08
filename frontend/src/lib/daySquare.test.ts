@@ -101,4 +101,6 @@ test('planner span 1 and 2 show one day, 3 and 4 show two, 5 and 6 show three', 
   assert.deepEqual(plannerDayDates('2026-11-05', 4), ['2026-11-05', '2026-11-06']);
   assert.deepEqual(plannerDayDates('2026-11-05', 5), ['2026-11-05', '2026-11-06', '2026-11-07']);
   assert.deepEqual(plannerDayDates('2026-11-30', 6), ['2026-11-30', '2026-12-01', '2026-12-02']);
+  assert.deepEqual(plannerDayDates('2026-11-30', 6, '2026-11-01', '2026-11-30'), ['2026-11-30']);
+  assert.deepEqual(plannerDayDates('2026-12-05', 5, '2026-11-01', '2026-11-30'), ['2026-11-01', '2026-11-02', '2026-11-03']);
 });

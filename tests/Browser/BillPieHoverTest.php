@@ -96,7 +96,7 @@ final class BillPieHoverTest extends TestCase
         self::click('Log out');
         self::waitForText('Use demo');
         self::click('Use demo');
-        self::waitForText('Current Month');
+        self::waitForText('Still coming in');
         self::wait()->until(function (): bool {
             $count = self::driver()->executeScript(
                 'return document.querySelectorAll("[data-section=\\"bills\\"] .bill-legend li").length',

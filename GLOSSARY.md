@@ -24,7 +24,7 @@ _Avoid_: Off-budget, investment account
 Whether an account adds to or subtracts from net worth: asset or liability. Checking, savings, and cash are assets. Credit, loan, and fuel are liabilities. Other stores the side you choose.
 
 **Balance**:
-The amount stored for an account, as a zero-or-greater integer in cents. On an asset it is the amount on deposit. On a liability it is the amount owed. It changes when you type a new figure, or when a transfer moves money between two accounts. A bill does not move a balance by itself.
+The amount stored for an account, as a zero-or-greater integer in cents. On an asset it is the amount on deposit. On a liability it is the amount owed. It changes when you type a new figure, when a transfer moves money between two accounts, or when a new log is drawn from a liability. That log adds its amount to the amount owed. A log drawn from an asset leaves the balance as typed. Mark paid does not move a balance.
 _Avoid_: Signed balance, running balance
 
 **Minor unit**:
@@ -109,7 +109,7 @@ Retired. An assignment cannot be negative.
 _Avoid_: Cover now, carry, debt
 
 **Available-to-assign**:
-Income still coming inside the period, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full credit or fuel card. A payday before today, after the period, or marked posted is left out. Credit cards, loans, fuel accounts, and tracking accounts stay out of the pool; the uncovered float is subtracted. Covered float is past unpaid bills drawn from that card, capped at the balance. The available list gives each paycheck still coming in its own line and its date, then each included account. A paid-in-full card appears only when uncovered float is not zero, and that line is the uncovered amount as a negative number. A section with no rows is left off. Needs is 50% of the pool, Wants 30%, and Savings 20%, half up to the cent. Available follows the period that contains today. A closed period is read-only. Planning a later period does not change the number. The number can be zero, and it can be negative when the buckets hold more than the pool.
+Income still coming inside the period, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full credit or fuel card. A payday before today, after the period, or marked posted is left out. Credit cards, loans, fuel accounts, and tracking accounts stay out of the pool; the uncovered float is subtracted. Covered float is the unpaid bills drawn from that card that are already in the buckets, capped at the balance. A $2,200 card with $2,000 of those bills leaves $200 uncovered. The available list gives each paycheck still coming in its own line and its date, then each included account. A paid-in-full card appears only when uncovered float is not zero, and that line is the uncovered amount as a negative number. A section with no rows is left off. Needs is 50% of the pool, Wants 30%, and Savings 20%, half up to the cent. Available follows the period that contains today. A closed period is view only: Available to assign is hidden, the page says the period has closed, and envelope amounts cannot be typed. Planning a later period does not change the number. A pay period that has not started does not change it either, including a pay cycle whose first payday is still ahead. The number can be zero, and it can be negative when the buckets hold more than the pool.
 _Avoid_: To be budgeted
 
 **Auto-assigned**:
@@ -121,7 +121,7 @@ The amount typed on a bucket for the month, above what is auto-assigned. A new b
 _Avoid_: Bucket, posting
 
 **Target**:
-On the budget tile, auto-assigned plus the envelope for the month. It is not typed. A goal can also store an amount to hold, or an amount needed by a date.
+On the budget tile, auto-assigned plus the envelope for the month. It is not typed. A goal can also store an amount to hold, or an amount needed by a date. A target balance shows that amount to hold in place of the sum, and a Goal based chip in place of Auto-assigned.
 _Avoid_: Plan, budget
 
 **Plan**:
@@ -293,7 +293,7 @@ The dates of one pay cycle that contain today. It starts on a payday and ends th
 _Avoid_: Horizon, accounting period
 
 **Accounting period**:
-The one window for Planner, Calendar, Bills, and Budget. Those screens say period. Trips keeps its own month: Previous month and Next month move that calendar, and Past months chooses how far back the globe draws. Stored on the user as a start date and a length: 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months. The sidebar shows the dates, such as Nov 1 – Nov 30. A week is 7 days. A month runs from the start through the day before the same day that many months later, and a missing anniversary clamps to the last day of that month and then steps back one. Previous and Next move the start by that length. The accounting period that contains today is editable and available-to-assign follows it. One that ends before today is closed and read-only. One that starts after today can be planned, and available does not follow it.
+The one window for Planner, Bills, Budget, and Income. Those screens say period and show only that range. Calendar and Trips keep a standard month: Previous month and Next month move that calendar, and they do not change this window. Past months on Trips chooses how far back the globe draws. Accounts and Vehicles do not use this window. Changing it does not reload Trips, Calendar, Accounts, or Vehicles. Stored on the user as a start date and a length: 1 week, 2 weeks, 4 weeks, 1 month, 2 months, or 3 months. The sidebar shows the dates, such as Nov 1 – Nov 30. A week is 7 days. A month runs from the start through the day before the same day that many months later, and a missing anniversary clamps to the last day of that month and then steps back one. Previous and Next move the start by that length. The accounting period that contains today is editable and available-to-assign follows it. One that ends before today is closed and read-only. One that starts after today can be planned, and available does not follow it.
 _Avoid_: Span, open period, horizon, calendar month
 
 **Horizon**:
@@ -327,7 +327,7 @@ The upcoming calendar date for a bill. Marking paid moves it forward by its ever
 A flag that a bill is paid automatically by the bank. The app does not mark it paid by itself.
 
 **Archive**:
-Hiding an account, a goal bucket, or a paused bill without deleting it. Unarchive puts it back: a bill returns to paused. A locked bucket cannot be archived. A liability bill cannot be archived. An archived bill does not fill a bucket and does not block account archive. Archiving an account is refused while an active or paused bill draws from it. Archiving a goal bucket sends its bills back to the locked bucket for each bill's type.
+Hiding an account, a goal bucket, a paused repeating bill, or a one-off bill without deleting it. Unarchive puts it back: a repeating bill returns to paused, and a one-off returns to active. A locked bucket cannot be archived. A liability bill cannot be archived. An archived bill does not fill a bucket, does not block account archive, and can be deleted. Archiving an account is refused while an active or paused bill draws from it. Archiving a goal bucket sends its bills back to the locked bucket for each bill's type.
 
 **Mark paid**:
 Recording a bill's occurrence on the due date it had. A repeating bill then rolls its next due date forward by its every. That paid occurrence stays on the original due date and counts in the paid total. The next occurrence is unpaid. The account balance stays as you last typed it. A one-off bill becomes paid and leaves the due list. Unpay removes that latest paid occurrence. A repeating bill moves back by its every and stays on the books. A one-off returns to the due list. An occurrence offers Mark paid or Unpay, not both.

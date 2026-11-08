@@ -121,6 +121,55 @@ final class LogRulesTest extends TestCase
         }
     }
 
+    public function testALogOnALiabilityAddsTheAmountOwed(): void
+    {
+        $card = $this->accounts->create([
+            'name' => 'Camp card',
+            'type' => 'credit',
+            'currency' => 'USD',
+            'balanceMinor' => 86000,
+            'autopayChoice' => 'balance',
+            'bankAutopay' => true,
+            'dueDay' => 12,
+        ]);
+        $fuel = $this->accounts->create([
+            'name' => 'Fuel card',
+            'type' => 'fuel',
+            'currency' => 'USD',
+            'balanceMinor' => 6400,
+        ]);
+        $vehicle = $this->vehicles->create([
+            'name' => 'Vehicle 1',
+            'kind' => 'rv',
+            'mpgMinTenths' => 60,
+            'mpgMaxTenths' => 120,
+            'currentOdometerMiles' => 1000,
+        ]);
+
+        $this->bills->log([
+            'kind' => 'want',
+            'type' => 'restaurants',
+            'name' => 'Dinner 1',
+            'accountId' => $card['id'],
+            'amountMinor' => 2500,
+            'date' => '2026-11-05',
+            'today' => '2026-11-05',
+        ]);
+        $this->bills->log([
+            'kind' => 'fuel',
+            'accountId' => $fuel['id'],
+            'amountMinor' => 4000,
+            'vehicleId' => $vehicle['id'],
+            'odometerMiles' => 1100,
+            'date' => '2026-11-05',
+            'today' => '2026-11-05',
+        ]);
+
+        self::assertSame(88500, $this->accounts->get($card['id'])['balanceMinor']);
+        self::assertSame(10400, $this->accounts->get($fuel['id'])['balanceMinor']);
+        self::assertSame(100000, $this->balance());
+    }
+
     public function testAWantLogFilesOnTheLockedBucketAndCanBeArchivedFromPaused(): void
     {
         $before = $this->balance();
@@ -160,6 +209,49 @@ final class LogRulesTest extends TestCase
         $archived = $this->bills->archiveBill($paused['id'], ['today' => '2026-11-05']);
         self::assertSame('archived', $archived['status']);
         self::assertSame('paused', $this->bills->unarchiveBill($archived['id'], ['today' => '2026-11-05'])['status']);
+    }
+
+    public function testAOneOffArchivesWithoutPausingAndDeleteRemovesIt(): void
+    {
+        $once = $this->bills->create([
+            'name' => 'One dinner',
+            'type' => 'restaurants',
+            'accountId' => $this->checkingId,
+            'amountMinor' => 1500,
+            'currency' => 'USD',
+            'recurrence' => 'once',
+            'nextDueDate' => '2026-11-12',
+            'today' => '2026-11-05',
+        ]);
+        try {
+            $this->bills->pause($once['id'], ['today' => '2026-11-05']);
+            self::fail('A one-off was paused.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        $archived = $this->bills->archiveBill($once['id'], ['today' => '2026-11-05']);
+        self::assertSame('archived', $archived['status']);
+        self::assertSame('active', $this->bills->unarchiveBill($archived['id'], ['today' => '2026-11-05'])['status']);
+        try {
+            $this->bills->deleteBill($once['id'], true, ['today' => '2026-11-05']);
+            self::fail('An active bill was deleted.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        $this->bills->archiveBill($once['id'], ['today' => '2026-11-05']);
+        try {
+            $this->bills->deleteBill($once['id'], false, ['today' => '2026-11-05']);
+            self::fail('Delete ran without a confirmation.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        $this->bills->deleteBill($once['id'], true, ['today' => '2026-11-05']);
+        try {
+            $this->bills->get($once['id']);
+            self::fail('The archived bill was still stored.');
+        } catch (ApiException $e) {
+            self::assertSame(404, $e->status);
+        }
     }
 
     public function testANeedLogOmitsFuelAndASavingLogFilesOnItsBucket(): void

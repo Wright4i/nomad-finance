@@ -708,7 +708,7 @@ final class EnvelopeRulesTest extends TestCase
         }
     }
 
-    public function testTheDashboardShowsIncomingPayAndStepsThePeriod(): void
+    public function testTheDashboardShowsIncomingPayForTheAccountingPeriod(): void
     {
         $catalog = new CurrencyCatalog();
         $actor = new Actor($this->pdo);
@@ -722,6 +722,8 @@ final class EnvelopeRulesTest extends TestCase
             new CalendarEntryService($this->pdo, $actor),
         );
 
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-11-01', '1 month', $_SESSION['user_id']]);
         $sheet = $dashboard->show('2026-11-03');
 
         self::assertSame(624200, $sheet['incomeMinor']);
@@ -740,29 +742,20 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame(560000, $byPayor['Remote salary']);
         self::assertSame(45000, $byPayor['Photo gigs']);
         self::assertCount(3, $byPayor);
-        self::assertSame('2026-10-01', $sheet['envelopes']['previousPeriod']['start']);
-        self::assertSame('2026-12-01', $sheet['envelopes']['stepNext']['start']);
-        self::assertTrue($sheet['envelopes']['stepNext']['upcoming']);
+        self::assertNull($sheet['envelopes']['previousPeriod']);
+        self::assertNull($sheet['envelopes']['stepNext']);
+        self::assertSame('2026-11-01', $sheet['envelopes']['period']['start']);
+        self::assertSame('2026-11-30', $sheet['envelopes']['period']['end']);
+        self::assertTrue($sheet['envelopes']['period']['editable']);
+        self::assertFalse($sheet['envelopes']['period']['upcoming']);
 
-        $closed = $dashboard->show(
-            '2026-11-03',
-            $sheet['envelopes']['payCycleId'],
-            $sheet['envelopes']['previousPeriod']['id'],
-        );
-        self::assertSame('2026-10-01', $closed['envelopes']['period']['start']);
-        self::assertFalse($closed['envelopes']['period']['editable']);
-        self::assertSame(20000, $this->amount($closed['envelopes'], 'Road cushion'));
-        self::assertSame($sheet['envelopes']['availableMinor'], $closed['envelopes']['availableMinor']);
-        self::assertSame(624200, $closed['incomeMinor']);
-
-        $upcoming = $dashboard->show('2026-11-03', $sheet['envelopes']['payCycleId'], null, true);
-        self::assertTrue($upcoming['envelopes']['period']['upcoming']);
-        self::assertTrue($upcoming['envelopes']['period']['editable']);
-        self::assertSame('2026-12-01', $upcoming['envelopes']['period']['start']);
-        self::assertSame(0, $this->amount($upcoming['envelopes'], 'Road cushion'));
-        self::assertSame(0, $this->amount($upcoming['envelopes'], 'Fun money'));
-        self::assertSame($sheet['envelopes']['availableMinor'], $upcoming['envelopes']['availableMinor']);
-        self::assertSame(624200, $upcoming['incomeMinor']);
+        $ignored = $dashboard->show('2026-11-03', $sheet['envelopes']['payCycleId'], null, true);
+        self::assertSame('2026-11-01', $ignored['envelopes']['period']['start']);
+        self::assertSame('2026-11-30', $ignored['envelopes']['period']['end']);
+        self::assertFalse($ignored['envelopes']['period']['upcoming']);
+        self::assertSame($this->amount($sheet['envelopes'], 'Road cushion'), $this->amount($ignored['envelopes'], 'Road cushion'));
+        self::assertSame($sheet['envelopes']['availableMinor'], $ignored['envelopes']['availableMinor']);
+        self::assertSame(624200, $ignored['incomeMinor']);
     }
 
     public function testAGroupPastItsShareIsOver(): void
@@ -1436,6 +1429,38 @@ final class EnvelopeRulesTest extends TestCase
             [7777, 0, 8888, 'Oct 16 – Nov 15'],
             [$petsAmount, $inside, $outside, $again['acctPeriod']['label'] ?? ''],
         );
+    }
+
+    public function testAPayPeriodThatHasNotStartedDoesNotReduceAvailable(): void
+    {
+        $userId = (int) $_SESSION['user_id'];
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-16', '1 month', $userId]);
+        $before = $this->envelopes->show('2026-11-07', null, null, false, true);
+        $now = gmdate('c');
+        $this->pdo->prepare(
+            'INSERT INTO pay_cycles (
+                user_id, payor, payday, length, pay_kind, rate_minor, hours_mode, average_on, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$userId, 'Future salary', '2026-11-16', 'monthly', 'fixed', 100000, 'typed', 0, $now, $now]);
+        $cycleId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare(
+            'INSERT INTO pay_periods (user_id, pay_cycle_id, period_start, period_end, created_at) VALUES (?, ?, ?, ?, ?)'
+        )->execute([$userId, $cycleId, '2026-11-16', '2026-12-15', $now]);
+        $periodId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare(
+            'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
+        )->execute([$periodId, $this->categoryId($before, 'Road cushion'), 500000, 0]);
+        $this->pdo->prepare(
+            'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
+        )->execute([$periodId, $this->categoryId($before, 'Rent'), 800000, 800000]);
+
+        $after = $this->envelopes->show('2026-11-07', null, null, false, true);
+
+        self::assertSame($before['availableMinor'], $after['availableMinor']);
+        self::assertSame($before['assignedMinor'], $after['assignedMinor']);
+        self::assertSame('2026-10-16', $after['acctPeriod']['start']);
+        self::assertSame('2026-11-15', $after['acctPeriod']['end']);
     }
 
     private function balance(string $name): int

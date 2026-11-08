@@ -150,9 +150,15 @@ function shiftIso(iso: string, days: number): string {
 }
 
 /** Today and the following days, in calendar order, for this saved planner span. */
-export function plannerDayDates(today: string, span: number): string[] {
-  const dates: string[] = [];
+export function plannerDayDates(today: string, span: number, start?: string, end?: string): string[] {
   const count = plannerDayCount(span);
-  for (let index = 0; index < count; index += 1) dates.push(shiftIso(today, index));
+  const origin = start && end && (today < start || today > end) ? start : today;
+  const dates: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const date = shiftIso(origin, index);
+    if (end && date > end) break;
+    if (start && date < start) continue;
+    dates.push(date);
+  }
   return dates;
 }

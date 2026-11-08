@@ -148,8 +148,10 @@ final class TimelineTest extends TestCase
 
     public function testDuePiesSumActiveBillsInTheMonth(): void
     {
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-11-01', '1 month', $_SESSION['user_id']]);
         $sheet = $this->dashboard->show('2026-11-04');
-        $november = $this->slices($sheet['duePies']['2026-11']);
+        $november = $this->slices($sheet['duePies']);
         self::assertSame(['USD'], array_keys($november));
         self::assertSame('lodging', array_key_first($november['USD']));
         self::assertSame(80500, $november['USD']['rent']);
@@ -159,7 +161,10 @@ final class TimelineTest extends TestCase
         self::assertSame(3500, $november['USD']['debt']);
         self::assertArrayNotHasKey('entertainment', $november['USD']);
 
-        $december = $this->slices($sheet['duePies']['2026-12']);
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
+            ->execute(['2026-12-01', $_SESSION['user_id']]);
+        $later = $this->dashboard->show('2026-11-04');
+        $december = $this->slices($later['duePies']);
         self::assertSame(8000, $december['USD']['entertainment']);
         self::assertSame(270500, $december['USD']['debt']);
     }
