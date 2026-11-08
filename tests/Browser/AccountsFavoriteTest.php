@@ -12,6 +12,7 @@ use Facebook\WebDriver\WebDriverBy;
 use Facebook\WebDriver\WebDriverDimension;
 use Facebook\WebDriver\WebDriverExpectedCondition;
 use Facebook\WebDriver\WebDriverWait;
+use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -155,6 +156,47 @@ final class AccountsFavoriteTest extends TestCase
         });
     }
 
+    #[Depends('testFavoritesSitOnTheTopRowAndStartThePayFromLists')]
+    public function testAnArchivedAccountCanBeDeleted(): void
+    {
+        self::driver()->get(self::$base . '/accounts/new');
+        self::waitForText('Save account');
+        self::type('name', 'Scratch jar');
+        self::type('balance', '1.00');
+        self::click('Save account');
+        self::waitForText('Scratch jar');
+        self::clickAccount('Scratch jar');
+        self::waitForText('Archive');
+        self::click('Archive');
+        self::waitForText('Everyday checking');
+        self::waitForTextGone('Scratch jar');
+        self::click('Show archived');
+        self::waitForText('Scratch jar');
+        self::waitForText('Closed checking');
+        self::clickAccountDelete('Scratch jar');
+        self::waitForText('Delete this account?');
+        self::assertSame('/accounts', (string) parse_url((string) self::driver()->getCurrentURL(), PHP_URL_PATH));
+        self::click('Cancel');
+        self::waitForTextGone('Delete this account?');
+        self::waitForText('Scratch jar');
+        self::waitForText('Closed checking');
+        self::clickAccount('Scratch jar');
+        self::waitForText('Unarchive');
+        self::click('Delete');
+        self::waitForText('Delete this account?');
+        self::click('Cancel');
+        self::waitForTextGone('Delete this account?');
+        self::waitForText('Unarchive');
+        self::click('Delete');
+        self::click('Delete account');
+        self::waitForText('Everyday checking');
+        self::waitForTextGone('Scratch jar');
+        self::click('Show archived');
+        self::waitForText('Closed checking');
+        self::waitForTextGone('Scratch jar');
+        self::assertSame('/accounts', (string) parse_url((string) self::driver()->getCurrentURL(), PHP_URL_PATH));
+    }
+
     private static function assertFavoriteMarks(): void
     {
         $marks = self::driver()->executeScript(<<<'JS'
@@ -254,6 +296,31 @@ final class AccountsFavoriteTest extends TestCase
         return is_string($pressed) ? $pressed : null;
     }
 
+    private static function clickAccount(string $name): void
+    {
+        self::driver()->executeScript(<<<'JS'
+            const name = arguments[0];
+            const tile = [...document.querySelectorAll('.account-tile')].find((node) => {
+                const title = node.querySelector('strong');
+                return title && title.textContent.trim() === name;
+            });
+            tile.querySelector('a').click();
+        JS, [$name]);
+    }
+
+    private static function clickAccountDelete(string $name): void
+    {
+        self::driver()->executeScript(<<<'JS'
+            const name = arguments[0];
+            const tile = [...document.querySelectorAll('.account-tile')].find((node) => {
+                const title = node.querySelector('strong');
+                return title && title.textContent.trim() === name;
+            });
+            const button = [...tile.querySelectorAll('button')].find((node) => node.innerText.trim() === 'Delete');
+            button.click();
+        JS, [$name]);
+    }
+
     private static function clickMark(string $name, string $kind): void
     {
         self::driver()->executeScript(<<<'JS'
@@ -313,6 +380,17 @@ final class AccountsFavoriteTest extends TestCase
             return stripos($body, $text) !== false ? $body : false;
         });
         self::assertIsString($body);
+    }
+
+    private static function waitForTextGone(string $text): void
+    {
+        $body = self::wait()->until(function () use ($text): string|false {
+            $body = self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText();
+
+            return stripos($body, $text) === false ? $body : false;
+        });
+        self::assertIsString($body);
+        self::assertFalse(stripos($body, $text));
     }
 
     private static function wait(): WebDriverWait

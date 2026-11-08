@@ -11,17 +11,57 @@
   let vehicles = $state<Vehicle[]>([]);
   let message = $state('');
   let ready = $state(false);
+  let showArchived = $state(false);
+  let saving = $state(false);
+  let deleteTarget = $state<Vehicle | null>(null);
+  let deleteDialog: HTMLDialogElement | undefined = $state();
   let hasStar = $derived(vehicles.some((vehicle) => vehicle.starred));
 
+  async function load(): Promise<void> {
+    const data = await api<{ vehicles: Vehicle[] }>(`/api/vehicles?includeArchived=${showArchived ? '1' : '0'}`);
+    vehicles = data.vehicles;
+  }
+
   onMount(() => {
-    api<{ vehicles: Vehicle[] }>('/api/vehicles').then((data) => {
-      vehicles = data.vehicles;
-    }).catch((err: unknown) => {
+    load().catch((err: unknown) => {
       message = explain(err).message;
     }).finally(() => {
       ready = true;
     });
   });
+
+  async function toggleArchived(): Promise<void> {
+    showArchived = !showArchived;
+    message = '';
+    try {
+      await load();
+    } catch (err) {
+      message = explain(err).message;
+    }
+  }
+
+  function askDelete(vehicle: Vehicle): void {
+    deleteTarget = vehicle;
+    deleteDialog?.showModal();
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleteTarget) return;
+    saving = true;
+    message = '';
+    const gone = deleteTarget.id;
+    try {
+      await api(`/api/vehicles/${gone}/delete`, { method: 'POST', body: { confirm: true } });
+      vehicles = vehicles.filter((vehicle) => vehicle.id !== gone);
+      deleteDialog?.close();
+      deleteTarget = null;
+    } catch (err) {
+      deleteDialog?.close();
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
+  }
 
   function odometerChip(miles: number): string {
     return `${miles.toLocaleString('en-US')} mi`;
@@ -46,8 +86,7 @@
           fuelPriceMinor: vehicle.fuelPriceMinor,
         },
       });
-      const data = await api<{ vehicles: Vehicle[] }>('/api/vehicles');
-      vehicles = data.vehicles;
+      await load();
     } catch (err) {
       message = explain(err).message;
     }
@@ -59,6 +98,7 @@
     <h1 class="text-3xl m-0">Vehicles</h1>
     <a class="btn primary" href="/vehicles/new" onclick={(event) => follow(event, '/vehicles/new')}>New vehicle</a>
   </div>
+  <button class="btn w-fit" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
   <Note bind:message />
   {#if !ready}
     <Spinner />
@@ -73,10 +113,12 @@
               <Glyph name={vehicle.kind} />
               <span>
                 <strong>{vehicle.name}</strong>
-                <span class="block muted text-sm">{vehicle.kind}</span>
+                <span class="block muted text-sm">{vehicle.kind}{vehicle.archivedAt ? ' · archived' : ''}</span>
               </span>
             </a>
-            {#if vehicle.starred || !hasStar}
+            {#if vehicle.archivedAt}
+              <button class="btn danger" type="button" disabled={saving} onclick={() => askDelete(vehicle)}>Delete</button>
+            {:else if vehicle.starred || !hasStar}
               <button class="btn" type="button" aria-pressed={vehicle.starred} aria-label={vehicle.starred ? `${vehicle.name} is the default` : `Star ${vehicle.name}`} onclick={() => star(vehicle)}>
                 {vehicle.starred ? '★' : '☆'}
               </button>
@@ -91,3 +133,14 @@
     </div>
   {/if}
 </div>
+
+<dialog class="modal" bind:this={deleteDialog} aria-labelledby="delete-vehicle-title">
+  <div class="modal-body">
+    <h2 id="delete-vehicle-title" class="text-xl m-0">Delete this vehicle?</h2>
+    <p class="m-0">This removes {deleteTarget?.name ?? 'this vehicle'}. Its fuel entries stay, without this vehicle. It does not come back.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => deleteDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={() => void confirmDelete()}>Delete vehicle</button>
+  </div>
+</dialog>

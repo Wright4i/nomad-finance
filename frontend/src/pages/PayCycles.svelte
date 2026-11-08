@@ -32,6 +32,9 @@
   let payrollPosted = $state<Record<string, boolean>>({});
   let extraDate = $state('');
   let payrollDialog: HTMLDialogElement | undefined = $state();
+  let deleteTarget = $state<PayCycle | null>(null);
+  let deleteDialog: HTMLDialogElement | undefined = $state();
+  let saving = $state(false);
 
   async function load(): Promise<void> {
     const start = session.user?.acctPeriodStart ?? '';
@@ -53,6 +56,31 @@
   function toggle(): void {
     includeArchived = !includeArchived;
     void load();
+  }
+
+  function askDelete(cycle: PayCycle, event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    deleteTarget = cycle;
+    deleteDialog?.showModal();
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleteTarget) return;
+    saving = true;
+    message = '';
+    const gone = deleteTarget.id;
+    try {
+      await api(`/api/pay-cycles/${gone}/delete`, { method: 'POST', body: { confirm: true, today: todayISO() } });
+      cycles = cycles.filter((cycle) => cycle.id !== gone);
+      deleteDialog?.close();
+      deleteTarget = null;
+    } catch (err) {
+      deleteDialog?.close();
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
   }
 
   async function openPayroll(cycle: PayCycle): Promise<void> {
@@ -177,7 +205,18 @@
                 {#if cycle.archivedAt}<span class="block muted text-sm">archived</span>{/if}
               </span>
             </a>
-            <button class="btn" type="button" onclick={() => void openPayroll(cycle)}>Log Payroll</button>
+            <div class="pay-card-actions">
+              {#if cycle.archivedAt}
+                <button
+                  class="btn danger"
+                  type="button"
+                  title="Remove this archived pay cycle."
+                  disabled={saving}
+                  onclick={(event) => askDelete(cycle, event)}
+                >Delete</button>
+              {/if}
+              <button class="btn" type="button" onclick={() => void openPayroll(cycle)}>Log Payroll</button>
+            </div>
           </div>
           <p class="pay-period-range m-0">{span(cycle)} | {moneyOrDash(cycle.paycheckMinor)}</p>
           <div class="pay-chips">
@@ -252,5 +291,16 @@
     {/if}
     <button class="btn" type="button" onclick={() => payrollDialog?.close()}>Close</button>
     <button class="btn primary" type="button" onclick={() => void savePayroll()}>Save payroll</button>
+  </div>
+</dialog>
+
+<dialog class="modal" bind:this={deleteDialog} aria-labelledby="delete-pay-cycle-title">
+  <div class="modal-body">
+    <h2 id="delete-pay-cycle-title" class="text-xl m-0">Delete this pay cycle?</h2>
+    <p class="m-0">This removes {deleteTarget?.payor ?? 'this pay cycle'}. It does not come back.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => deleteDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={() => void confirmDelete()}>Delete pay cycle</button>
   </div>
 </dialog>

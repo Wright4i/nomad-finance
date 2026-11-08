@@ -114,6 +114,50 @@ final class PlannerWidgetsTest extends TestCase
                 const rect = node.getBoundingClientRect();
                 return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
             };
+            const linesOf = (node) => {
+                if (!node) return [];
+                const textNode = [...node.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && (child.textContent || '').trim() !== '');
+                if (!textNode) {
+                    const fallback = (node.textContent || '').replace(/\s+/g, ' ').trim();
+                    return fallback ? [fallback] : [];
+                }
+                const raw = textNode.textContent || '';
+                const range = document.createRange();
+                const lines = [];
+                let line = '';
+                let top = null;
+                for (let index = 0; index < raw.length; index++) {
+                    range.setStart(textNode, index);
+                    range.setEnd(textNode, index + 1);
+                    const rect = range.getClientRects()[0];
+                    if (!rect || rect.width === 0) {
+                        line += raw[index];
+                        continue;
+                    }
+                    if (top !== null && rect.top > top + 2) {
+                        const trimmed = line.trim();
+                        if (trimmed !== '') lines.push(trimmed);
+                        line = '';
+                    }
+                    line += raw[index];
+                    top = rect.top;
+                }
+                const trimmed = line.trim();
+                if (trimmed !== '') lines.push(trimmed);
+                return lines;
+            };
+            const inkOf = (node) => {
+                if (!node) return null;
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const rects = [...range.getClientRects()].filter((rect) => rect.width > 0 && rect.height > 0);
+                if (rects.length === 0) return null;
+                return {
+                    left: Math.min(...rects.map((rect) => rect.left)),
+                    right: Math.max(...rects.map((rect) => rect.right)),
+                    top: Math.min(...rects.map((rect) => rect.top)),
+                };
+            };
             const money = document.querySelector('[data-account-type="credit"] .money');
             const checking = document.querySelector('[data-account-type="checking"] .money');
             const otherDebt = document.querySelector('[data-account-type="other"][data-side="liability"] .money');
@@ -176,6 +220,9 @@ final class PlannerWidgetsTest extends TestCase
                         top: rect.top,
                         height: rect.height,
                         clipped: !inside(label) || !inside(amount),
+                        labelLines: linesOf(label).map((line) => line.toUpperCase()),
+                        labelInk: inkOf(label),
+                        moneyInk: inkOf(amount),
                     };
                 }),
                 tripMap: document.querySelector('[data-section="trips"] .globe') !== null,
@@ -301,6 +348,9 @@ final class PlannerWidgetsTest extends TestCase
         foreach ($seen['totals'] as $total) {
             self::assertIsArray($total);
             self::assertFalse($total['clipped']);
+            self::assertIsArray($total['labelLines']);
+            self::assertNotContains('G', $total['labelLines']);
+            self::assertSame([strtoupper((string) $total['type'])], $total['labelLines']);
             $top = (float) $total['top'];
             $placed = false;
             foreach ($accountRows as &$accountRow) {
@@ -324,6 +374,8 @@ final class PlannerWidgetsTest extends TestCase
             self::assertLessThan(2, max($accountRow['heights']) - min($accountRow['heights']));
         }
         self::assertTrue($accountRowMatched);
+        self::assertAccountFiguresSeparated($seen['totals'], 'labelInk');
+        self::assertAccountFiguresSeparated($seen['totals'], 'moneyInk');
         self::assertGreaterThan(1, $seen['billColumns']);
         self::assertFalse($seen['billStacked']);
         self::assertTrue($seen['gaugesShareRow']);
@@ -901,6 +953,45 @@ final class PlannerWidgetsTest extends TestCase
         self::assertIsArray($seen);
 
         return $seen;
+    }
+
+    /** @param list<array<string, mixed>> $totals */
+    private static function assertAccountFiguresSeparated(array $totals, string $key): void
+    {
+        $rows = [];
+        foreach ($totals as $total) {
+            $ink = $total[$key] ?? null;
+            self::assertIsArray($ink, $key);
+            $top = (float) $ink['top'];
+            $placed = false;
+            foreach ($rows as &$row) {
+                if (abs($row['top'] - $top) < 4) {
+                    $row['items'][] = $ink;
+                    $placed = true;
+                    break;
+                }
+            }
+            unset($row);
+            if (!$placed) {
+                $rows[] = ['top' => $top, 'items' => [$ink]];
+            }
+        }
+        $neighbors = 0;
+        foreach ($rows as $row) {
+            $items = $row['items'];
+            usort($items, static function (array $left, array $right): int {
+                return (float) $left['left'] <=> (float) $right['left'];
+            });
+            for ($index = 1, $count = count($items); $index < $count; $index++) {
+                $neighbors++;
+                self::assertGreaterThanOrEqual(
+                    (float) $items[$index - 1]['right'] + 8,
+                    (float) $items[$index]['left'],
+                    $key,
+                );
+            }
+        }
+        self::assertGreaterThan(0, $neighbors, $key);
     }
 
     private static function stepOrder(string $label, string $saved): void

@@ -178,6 +178,47 @@ final class AccountService
         return $this->get($id);
     }
 
+    /**
+     * Remove an archived account. Bills that draw from it stay on the books and block the delete.
+     * A bill kept by the account, drawing from somewhere else, keeps that history and loses the link.
+     * A stay with no amount can drop the link. A stay that still has an amount blocks the delete.
+     */
+    public function delete(int $id, bool $confirm): void
+    {
+        $existing = $this->get($id);
+        if ($existing['archivedAt'] === null) {
+            throw new ApiException(409, 'Only an archived account can be deleted.');
+        }
+        if (!$confirm) {
+            throw new ApiException(409, 'Confirm before deleting this account.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            if ($this->drawingBillCount($id) > 0) {
+                throw new ApiException(409, 'Stop the bills that draw from this account before deleting it.');
+            }
+            if ($this->stayCount($id) > 0) {
+                throw new ApiException(409, 'Move the stays that draw from this account before deleting it.');
+            }
+            $now = gmdate('c');
+            $this->pdo->prepare(
+                'UPDATE bills SET source_account_id = NULL, updated_at = ? WHERE source_account_id = ? AND account_id != ?'
+            )->execute([$now, $id, $id]);
+            $this->pdo->prepare(
+                'UPDATE trips SET account_id = NULL, updated_at = ? WHERE account_id = ? AND user_id = ? AND total_minor = 0'
+            )->execute([$now, $id, $this->actor->id()]);
+            $this->pdo->prepare('DELETE FROM accounts WHERE id = ? AND user_id = ?')
+                ->execute([$id, $this->actor->id()]);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     /** @param array<string, mixed> $input
      *  @return array{
      *    name:string,type:string,side:string,currency:string,balanceMinor:int,
@@ -459,6 +500,24 @@ final class AccountService
             "SELECT COUNT(*) FROM bills WHERE account_id = ? AND status IN ('active', 'paused')"
         );
         $stmt->execute([$accountId]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function drawingBillCount(int $accountId): int
+    {
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM bills WHERE account_id = ?');
+        $stmt->execute([$accountId]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function stayCount(int $accountId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM trips WHERE account_id = ? AND user_id = ? AND total_minor > 0'
+        );
+        $stmt->execute([$accountId, $this->actor->id()]);
 
         return (int) $stmt->fetchColumn();
     }

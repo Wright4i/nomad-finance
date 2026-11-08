@@ -1298,6 +1298,12 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame('closed', $closed['acctPeriod']['phase']);
         self::assertSame('2026-10-01', $closed['period']['start']);
         self::assertSame($openEnvelope, $this->amount($closed, 'Road cushion') - $this->billMinor($closed, 'Road cushion'));
+        self::assertNotSame([], $open['sources']['income']);
+        self::assertSame([], $closed['sources']['income']);
+        self::assertNotSame($open['poolMinor'], $closed['poolMinor']);
+        self::assertNotSame($open['assignedMinor'], $closed['assignedMinor']);
+        self::assertSame($closed['poolMinor'] - $closed['assignedMinor'], $closed['availableMinor']);
+        self::assertNotSame($open['availableMinor'], $closed['availableMinor']);
     }
 
     public function testALaterPeriodsBillsDoNotRaiseThisPeriodsEnvelope(): void
@@ -1406,6 +1412,25 @@ final class EnvelopeRulesTest extends TestCase
         $assign->execute([$fun, 7777, $campId, '2026-10-26']);
         $assign->execute([$fun, 8888, $campId, '2026-11-22']);
 
+        $stored = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(a.amount_minor), 0)
+             FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             JOIN pay_cycles y ON y.id = p.pay_cycle_id
+             WHERE y.payor = ? AND p.period_start = ? AND a.category_id = ?'
+        );
+        $goal = $this->pdo->prepare(
+            'SELECT a.amount_minor FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             WHERE p.pay_cycle_id = ? AND p.period_start = ? AND a.category_id = ?'
+        );
+        $stored->execute(['Remote salary', '2026-11-01', $pets]);
+        $petsBefore = (int) $stored->fetchColumn();
+        $goal->execute([$campId, '2026-10-26', $fun]);
+        $insideBefore = (int) $goal->fetchColumn();
+        $goal->execute([$campId, '2026-11-22', $fun]);
+        $outsideBefore = (int) $goal->fetchColumn();
+
         $remote = $this->pdo->prepare('SELECT id FROM pay_cycles WHERE user_id = ? AND payor = ?');
         $remote->execute([$userId, 'Remote salary']);
         $again = $this->envelopes->recalculate([
@@ -1414,29 +1439,18 @@ final class EnvelopeRulesTest extends TestCase
             'acctPeriod' => '1',
             'acctPeriodStart' => '2026-10-16',
         ]);
-        $stored = $this->pdo->prepare(
-            'SELECT COALESCE(SUM(a.amount_minor), 0)
-             FROM assignments a
-             JOIN pay_periods p ON p.id = a.pay_period_id
-             JOIN pay_cycles y ON y.id = p.pay_cycle_id
-             WHERE y.payor = ? AND p.period_start = ? AND a.category_id = ?'
-        );
         $stored->execute(['Remote salary', '2026-11-01', $pets]);
-        $petsAmount = (int) $stored->fetchColumn();
-        $goal = $this->pdo->prepare(
-            'SELECT a.amount_minor FROM assignments a
-             JOIN pay_periods p ON p.id = a.pay_period_id
-             WHERE p.pay_cycle_id = ? AND p.period_start = ? AND a.category_id = ?'
-        );
         $goal->execute([$campId, '2026-10-26', $fun]);
         $inside = (int) $goal->fetchColumn();
         $goal->execute([$campId, '2026-11-22', $fun]);
         $outside = (int) $goal->fetchColumn();
 
-        self::assertSame(
-            [7777, 0, 8888, 'Oct 16 – Nov 15'],
-            [$petsAmount, $inside, $outside, $again['acctPeriod']['label'] ?? ''],
-        );
+        self::assertSame($petsBefore, (int) $stored->fetchColumn());
+        self::assertSame([$insideBefore, $outsideBefore, 'Oct 16 – Nov 15'], [$inside, $outside, $again['acctPeriod']['label'] ?? '']);
+        $names = array_column($this->category($again, 'Pets')['bills'], 'name');
+        self::assertContains('Inside October', $names);
+        self::assertContains('Inside November', $names);
+        self::assertNotContains('After the period', $names);
     }
 
     public function testAGoalEnvelopeTypedInThisPeriodStaysWhenTheSelectedPaydayHasNotStarted(): void
@@ -1544,8 +1558,25 @@ final class EnvelopeRulesTest extends TestCase
         $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
             ->execute(['2026-11-16', $userId]);
         $later = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame('future', $later['acctPeriod']['phase']);
         self::assertGreaterThan(0, $this->billMinor($later, 'Healthcare'));
         self::assertNotSame($healthcareBills, $this->billMinor($later, 'Healthcare'));
+        $photo = array_values(array_filter(
+            $later['sources']['income'],
+            static fn (array $row): bool => $row['payor'] === 'Photo gigs',
+        ));
+        self::assertSame(['2026-12-15'], array_column($photo, 'on'));
+        self::assertSame(45000, $photo[0]['amountMinor']);
+        self::assertNotContains('Photo gigs', array_column($saved['sources']['income'], 'payor'));
+        foreach ($later['sources']['income'] as $row) {
+            self::assertGreaterThanOrEqual('2026-11-16', $row['on']);
+            self::assertLessThanOrEqual('2026-12-15', $row['on']);
+            self::assertGreaterThanOrEqual('2026-11-07', $row['on']);
+        }
+        self::assertGreaterThan($saved['poolMinor'], $later['poolMinor']);
+        self::assertGreaterThan($saved['assignedMinor'], $later['assignedMinor']);
+        self::assertSame($later['poolMinor'] - $later['assignedMinor'], $later['availableMinor']);
+        self::assertNotSame($saved['availableMinor'], $later['availableMinor']);
         self::assertSame(4200, $this->amount($later, 'Healthcare') - $this->billMinor($later, 'Healthcare'));
         self::assertSame(1500, $this->amount($later, 'Rent') - $this->billMinor($later, 'Rent'));
         self::assertSame(800, $this->amount($later, 'Fun money') - $this->billMinor($later, 'Fun money'));
@@ -1565,6 +1596,9 @@ final class EnvelopeRulesTest extends TestCase
         ]);
         self::assertSame(900, $this->amount($changed, 'Healthcare') - $this->billMinor($changed, 'Healthcare'));
         self::assertSame($this->billMinor($later, 'Healthcare'), $this->billMinor($changed, 'Healthcare'));
+        self::assertSame($later['poolMinor'], $changed['poolMinor']);
+        self::assertSame($later['availableMinor'] + (4200 - 900) + (800 - 250), $changed['availableMinor']);
+        self::assertContains('Photo gigs', array_column($changed['sources']['income'], 'payor'));
 
         $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
             ->execute(['2026-10-16', $userId]);

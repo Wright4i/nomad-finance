@@ -199,9 +199,8 @@ final class EnvelopeService
     }
 
     /**
-     * Replace the assignments on screen with the bills in that accounting period.
-     * Fuel also includes each stay that arrives in the period and has not ended.
-     * Maximums stay. A typed amount is replaced.
+     * Replace the pay-period assignments with that pay period's bills.
+     * An accounting period already shows its bills, so that call changes nothing stored.
      *
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -213,6 +212,15 @@ final class EnvelopeService
         $cycle = $this->cycle($this->asInt($input['payCycleId'] ?? null) ?? 0);
         if ($cycle['archived_at'] !== null) {
             throw new ApiException(409, 'Unarchive this pay cycle before assigning.');
+        }
+
+        if ($this->usesAcctPeriod($input)) {
+            $acct = $this->acctSpanFor($input, $today);
+            if ($acct['phase'] !== 'current') {
+                throw new ApiException(409, 'A closed period can be read.');
+            }
+
+            return $this->show($today, (int) $cycle['id'], null, false, true);
         }
 
         $upcoming = ($input['upcoming'] ?? false) === true || ($input['upcoming'] ?? null) === 1 || ($input['upcoming'] ?? null) === '1';
@@ -233,18 +241,7 @@ final class EnvelopeService
             $spanStart = (string) $period['period_start'];
         }
 
-        $releaseEnd = null;
-        if ($this->usesAcctPeriod($input)) {
-            $acct = $this->acctSpanFor($input, $today);
-            if ($acct['phase'] !== 'current') {
-                throw new ApiException(409, 'A closed period can be read.');
-            }
-            $sums = $this->windowBillSums($acct['start'], $acct['end'], true, $today);
-            $spanStart = $acct['start'];
-            $releaseEnd = $acct['end'];
-        } else {
-            $sums = $this->monthBillSums($spanStart, !$upcoming, $today);
-        }
+        $sums = $this->monthBillSums($spanStart, !$upcoming, $today);
         $lockedIds = $this->lockedIds();
         $goalAmounts = [];
         $goals = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role != 'locked'");
@@ -266,7 +263,7 @@ final class EnvelopeService
                 }
                 $insert->execute([$periodId, $categoryId, $amount, $amount]);
             }
-            $this->releaseOtherGoals($periodId, $spanStart, $goalAmounts, $lockedIds, $releaseEnd);
+            $this->releaseOtherGoals($periodId, $spanStart, $goalAmounts, $lockedIds);
             $this->syncAmounts($today);
             $this->pdo->commit();
         } catch (Throwable $e) {
@@ -695,8 +692,8 @@ final class EnvelopeService
 
     /**
      * The amount under the headline is income still coming inside the accounting period
-     * plus every asset account marked Include in Budget. A payday before today,
-     * after the accounting period, or already posted is left out.
+     * on screen, plus every asset account marked Include in Budget.
+     * A payday before today, after that period, or already posted is left out.
      * Those lines are that total. The headline is the total minus what is already assigned.
      *
      * @return array{income: list<array{id:int,payor:string,on:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,institution:?string,holder:?string,amountMinor:int}>, floats: list<array{id:int,name:string,type:string,institution:?string,holder:?string,balanceMinor:int,coveredMinor:int,uncoveredMinor:int}>}
@@ -889,14 +886,9 @@ final class EnvelopeService
         if ($period === null || $anchorCycleId === null || $categories === []) {
             return $categories;
         }
-        if ($this->viewWindow !== null) {
-            $start = $this->viewWindow['start'];
-            $end = $this->viewWindow['end'];
-        } else {
-            $month = $this->calendarMonth((string) $period['start']);
-            $start = $month['start'];
-            $end = $month['end'];
-        }
+        $month = $this->calendarMonth((string) $period['start']);
+        $start = $month['start'];
+        $end = $month['end'];
         $stored = $this->goalSums($start, $end);
         foreach ($categories as $index => $category) {
             if (($category['role'] ?? '') === 'locked') {
@@ -957,7 +949,7 @@ final class EnvelopeService
     /**
      * The saved amount is the total for that goal in the window.
      * Other payors' rows in the same window drop out so the sum stays that total.
-     * Recalculate and an accounting-period save pass that window.
+     * An accounting-period save passes that window.
      * A save without one still uses the calendar month.
      *
      * @param array<int, int> $amounts
@@ -1066,10 +1058,10 @@ final class EnvelopeService
     /** @param ?array<string, mixed> $billCycle */
     private function assignedOpen(string $today, ?array $billCycle): int
     {
-        if ($this->viewWindow !== null && $this->viewWindow['phase'] === 'current') {
+        if ($this->viewWindow !== null) {
             $span = $this->viewWindow;
             $total = $this->envelopeTotal();
-            foreach ($this->windowBillSums($span['start'], $span['end'], true, $today) as $amount) {
+            foreach ($this->windowBillSums($span['start'], $span['end'], $span['phase'] === 'current', $today) as $amount) {
                 $total += $amount;
             }
 

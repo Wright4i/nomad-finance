@@ -51,6 +51,40 @@ function addDays(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+export const PERIOD_REACH = 11;
+
+/** Steps from start to the period of this length that contains today. Positive when start is earlier. */
+export function periodStepsFromToday(start: string, length: string, today: string): number {
+  const weeks = WEEK_DAYS[length];
+  if (weeks !== undefined) return Math.floor(daySpan(start, today) / weeks);
+  if (start <= today && today <= periodEnd(start, length)) return 0;
+
+  let step = 0;
+  if (today > start) {
+    do {
+      step += 1;
+      if (step > 24000) return step;
+    } while (today > addDays(periodShift(start, length, step + 1), -1));
+    return step;
+  }
+  do {
+    step -= 1;
+    if (step < -24000) return step;
+  } while (periodShift(start, length, step) > today);
+  return step;
+}
+
+export function periodWithinReach(start: string, length: string, today: string): boolean {
+  const steps = periodStepsFromToday(start, length, today);
+  return steps >= -PERIOD_REACH && steps <= PERIOD_REACH;
+}
+
+function daySpan(from: string, to: string): number {
+  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
+  const [toYear, toMonth, toDay] = to.split('-').map(Number);
+  return Math.round((Date.UTC(toYear, toMonth - 1, toDay) - Date.UTC(fromYear, fromMonth - 1, fromDay)) / 86400000);
+}
+
 function addMonths(start: string, months: number): string {
   const [year, month, day] = start.split('-').map(Number);
   const cursor = new Date(Date.UTC(year, month - 1 + months, 1));

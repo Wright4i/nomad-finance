@@ -16,6 +16,9 @@ final class AcctPeriod
 {
     public const LENGTHS = ['1 week', '2 weeks', '4 weeks', '1 month', '2 months', '3 months'];
 
+    /** Previous and Next both stop this many periods from the one that contains today. */
+    public const REACH = 11;
+
     public static function valid(string $length): bool
     {
         return in_array($length, self::LENGTHS, true);
@@ -52,6 +55,54 @@ final class AcctPeriod
         }
 
         return self::addMonths($start, (int) self::months($length) * $steps);
+    }
+
+    /**
+     * Steps from $start to the period of $length that contains $today.
+     * Positive when $start is earlier than that period.
+     */
+    public static function stepsFromToday(string $start, string $length, string $today): int
+    {
+        if (!self::valid($length)) {
+            throw new \InvalidArgumentException('Choose an accounting period length.');
+        }
+        $start = Dates::parse($start)->format('Y-m-d');
+        $today = Dates::parse($today)->format('Y-m-d');
+        $weeks = self::weeks($length);
+        if ($weeks !== null) {
+            return self::floorDiv(self::daysBetween($start, $today), $weeks * 7);
+        }
+        if (self::holds($start, $length, $today)) {
+            return 0;
+        }
+
+        $step = 0;
+        if ($today > $start) {
+            do {
+                $step++;
+                if ($step > 24000) {
+                    return $step;
+                }
+            } while ($today > self::boundary($start, $length, $step));
+
+            return $step;
+        }
+
+        do {
+            $step--;
+            if ($step < -24000) {
+                return $step;
+            }
+        } while (self::shift($start, $length, $step) > $today);
+
+        return $step;
+    }
+
+    public static function withinReach(string $start, string $length, string $today): bool
+    {
+        $steps = self::stepsFromToday($start, $length, $today);
+
+        return $steps >= -self::REACH && $steps <= self::REACH;
     }
 
     /** current when today is inside, closed when the accounting period has ended, future when it has not started. */
@@ -138,5 +189,34 @@ final class AcctPeriod
             (int) $cursor->format('n'),
             min($day, $last),
         )->format('Y-m-d');
+    }
+
+    private static function holds(string $start, string $length, string $today): bool
+    {
+        return $start <= $today && $today <= self::end($start, $length);
+    }
+
+    /** Last day of the period `step` lengths from $start, counted on that start's own grid. */
+    private static function boundary(string $start, string $length, int $step): string
+    {
+        return Dates::parse(self::shift($start, $length, $step + 1))->modify('-1 day')->format('Y-m-d');
+    }
+
+    private static function daysBetween(string $from, string $to): int
+    {
+        $start = new \DateTimeImmutable($from . ' UTC');
+        $end = new \DateTimeImmutable($to . ' UTC');
+
+        return (int) $start->diff($end)->format('%r%a');
+    }
+
+    private static function floorDiv(int $numerator, int $denominator): int
+    {
+        $quote = intdiv($numerator, $denominator);
+        if ($numerator < 0 && $numerator % $denominator !== 0) {
+            $quote--;
+        }
+
+        return $quote;
     }
 }

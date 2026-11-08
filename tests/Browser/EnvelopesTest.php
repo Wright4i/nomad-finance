@@ -430,7 +430,35 @@ final class EnvelopesTest extends TestCase
 
             return $value === '115.00';
         });
-        self::waitForText('a plan for this period');
+        self::assertStringNotContainsString(
+            'still follows the period that contains today',
+            self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText(),
+        );
+        self::wait()->until(function () use ($availableText, $hero): bool {
+            $state = self::driver()->executeScript(<<<'JS'
+                const figure = document.querySelector('[data-action="available"] .figure');
+                const line = document.querySelector('[data-action="available"]')?.parentElement?.querySelector('p.muted');
+                return {
+                    figure: figure ? figure.textContent.trim() : '',
+                    of: line ? line.innerText.trim() : '',
+                };
+            JS);
+
+            return is_array($state)
+                && $state['figure'] !== ''
+                && $state['figure'] !== $availableText
+                && $state['of'] !== ''
+                && $state['of'] !== $hero['of'];
+        });
+        self::clickAvailable();
+        $futureIncome = self::driver()->executeScript(<<<'JS'
+            const income = document.querySelector('dialog.modal[open] [data-source="income"]');
+            return income ? income.innerText : '';
+        JS);
+        self::assertIsString($futureIncome);
+        self::assertStringContainsString('Photo gigs', $futureIncome);
+        self::assertStringContainsString('Dec 15', $futureIncome);
+        self::clickBackdrop();
         self::typeAssigned('Road cushion', '700.00');
         $started = microtime(true);
         self::wait()->until(function () use ($started): bool {
@@ -528,25 +556,8 @@ final class EnvelopesTest extends TestCase
             return $ready === true;
         });
         self::clickLink('Budget');
-        self::waitForText('Recalculate');
-        self::click('Recalculate');
-        self::waitForText('Recalculate this period?');
-        self::waitForText('Envelope amounts stay as you typed them.');
-        self::click('Cancel');
-        self::wait()->until(function (): bool {
-            $value = self::driver()->executeScript(<<<'JS'
-                const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
-                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
-                const dialog = document.getElementById('recalculate-title');
-                return input && input.value === '215.00' && dialog instanceof HTMLElement && !dialog.closest('dialog')?.open
-                    ? input.value
-                    : '';
-            JS);
-
-            return $value === '215.00';
-        });
-        self::click('Recalculate');
-        self::click('Recalculate this period');
+        self::waitForText('Road cushion');
+        self::assertNull(self::driver()->executeScript('return document.querySelector(\'[data-action="recalculate"]\');'));
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -558,17 +569,13 @@ final class EnvelopesTest extends TestCase
         });
         self::click('Previous period');
         self::wait()->until(function (): bool {
-            $state = self::driver()->executeScript(<<<'JS'
-                const button = document.querySelector('[data-action="recalculate"]');
+            $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
                 const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
-                return {
-                    disabled: button instanceof HTMLButtonElement && button.disabled,
-                    envelope: input ? input.value : '',
-                };
+                return input ? input.value : '';
             JS);
 
-            return is_array($state) && $state['disabled'] === true && $state['envelope'] === '215.00';
+            return $value === '215.00';
         });
         self::click('Next period');
         self::clickLink('Lodging');
@@ -686,17 +693,7 @@ final class EnvelopesTest extends TestCase
         });
         $needs = self::figure('needs', 'envelope');
         self::assertSame('ENVELOPE $115.00', $needs);
-        self::click('Recalculate');
-        self::waitForText('Recalculate this period?');
-        $dialog = self::driver()->executeScript(<<<'JS'
-            const dialog = document.getElementById('recalculate-title')?.closest('dialog');
-            return dialog ? dialog.innerText : '';
-        JS);
-        self::assertIsString($dialog);
-        self::assertStringContainsString('Oct 16 – Nov 15', $dialog);
-        self::assertStringNotContainsString('October', $dialog);
-        self::assertStringNotContainsString('Oct 2026', $dialog);
-        self::click('Cancel');
+        self::assertNull(self::driver()->executeScript('return document.querySelector(\'[data-action="recalculate"]\');'));
 
         self::driver()->findElement(WebDriverBy::cssSelector('button[aria-label="Next"]'))->click();
         self::waitForText('Nov 16');

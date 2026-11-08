@@ -5,7 +5,7 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { formatDate, formatMinor, minorToInput, parseMajor } from '../lib/money';
-  import { follow } from '../lib/nav.svelte.ts';
+  import { follow, go } from '../lib/nav.svelte.ts';
   import type { Vehicle, VehicleReading } from '../lib/types';
   import { fieldTips } from '../lib/fieldTips';
   import { tip } from '../lib/tip';
@@ -38,7 +38,10 @@
   let othersStarred = $state(false);
   let currentOdometer = $state('');
   let fuelPrice = $state('');
+  let archivedAt = $state<string | null>(null);
   let vehicle = $state<Vehicle | null>(null);
+  let archiveDialog: HTMLDialogElement | undefined = $state();
+  let deleteDialog: HTMLDialogElement | undefined = $state();
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
@@ -52,7 +55,7 @@
   let editFields = $state<Record<string, string>>({});
   let editMessage = $state('');
   let editSaving = $state(false);
-  let showStar = $derived(starred || !othersStarred);
+  let showStar = $derived((starred || !othersStarred) && archivedAt == null);
 
   async function load(): Promise<void> {
     if (!id) return;
@@ -63,6 +66,7 @@
     mpgMin = tenthsToInput(data.vehicle.mpgMinTenths);
     mpgMax = tenthsToInput(data.vehicle.mpgMaxTenths);
     starred = data.vehicle.starred;
+    archivedAt = data.vehicle.archivedAt;
     currentOdometer = String(data.vehicle.currentOdometerMiles);
     fuelPrice = data.vehicle.fuelPriceMinor == null ? '' : minorToInput(data.vehicle.fuelPriceMinor, 2);
     ready = true;
@@ -128,6 +132,63 @@
       const problem = explain(err);
       message = problem.message;
       fields = problem.fields;
+    } finally {
+      saving = false;
+    }
+  }
+
+  function askArchive(): void {
+    archiveDialog?.showModal();
+  }
+
+  async function archive(): Promise<void> {
+    if (!id) return;
+    saving = true;
+    message = '';
+    try {
+      await api(`/api/vehicles/${id}/archive`, { method: 'POST', body: {} });
+      archiveDialog?.close();
+      go('/vehicles');
+    } catch (err) {
+      archiveDialog?.close();
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function unarchive(): Promise<void> {
+    if (!id) return;
+    saving = true;
+    message = '';
+    try {
+      const data = await api<{ vehicle: Vehicle }>(`/api/vehicles/${id}/unarchive`, { method: 'POST', body: {} });
+      vehicle = data.vehicle;
+      archivedAt = data.vehicle.archivedAt;
+      starred = data.vehicle.starred;
+      go('/vehicles');
+    } catch (err) {
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
+  }
+
+  function askDelete(): void {
+    deleteDialog?.showModal();
+  }
+
+  async function remove(): Promise<void> {
+    if (!id) return;
+    saving = true;
+    message = '';
+    try {
+      await api(`/api/vehicles/${id}/delete`, { method: 'POST', body: { confirm: true } });
+      deleteDialog?.close();
+      go('/vehicles');
+    } catch (err) {
+      deleteDialog?.close();
+      message = explain(err).message;
     } finally {
       saving = false;
     }
@@ -263,6 +324,13 @@
   <div class="flex flex-wrap gap-2">
     <button class="btn primary" type="submit" disabled={saving} aria-busy={saving}>{saving ? 'Saving…' : 'Save vehicle'}</button>
     <a class="btn" href="/vehicles" onclick={(event) => follow(event, '/vehicles')}>Back</a>
+    {#if id && !archivedAt}
+      <button class="btn danger" type="button" title="Hide this vehicle and clear its star." disabled={saving} onclick={askArchive}>Archive</button>
+    {/if}
+    {#if id && archivedAt}
+      <button class="btn" type="button" title="Put this vehicle back on the list." disabled={saving} onclick={unarchive}>Unarchive</button>
+      <button class="btn danger" type="button" title="Remove this archived vehicle." disabled={saving} onclick={askDelete}>Delete</button>
+    {/if}
   </div>
   {#if id && !ready}
     <div class="form-cover" aria-busy="true">
@@ -328,6 +396,28 @@
     {/if}
   </section>
 {/if}
+
+<dialog class="modal" bind:this={archiveDialog} aria-labelledby="archive-vehicle-title">
+  <div class="modal-body">
+    <h2 id="archive-vehicle-title" class="text-xl m-0">Archive this vehicle?</h2>
+    <p class="m-0">Archiving hides the name and clears the star. The fuel entries stay.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => archiveDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={archive}>Archive vehicle</button>
+  </div>
+</dialog>
+
+<dialog class="modal" bind:this={deleteDialog} aria-labelledby="delete-vehicle-form-title">
+  <div class="modal-body">
+    <h2 id="delete-vehicle-form-title" class="text-xl m-0">Delete this vehicle?</h2>
+    <p class="m-0">This removes the archived vehicle. Its fuel entries stay, without this vehicle. It does not come back.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => deleteDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={remove}>Delete vehicle</button>
+  </div>
+</dialog>
 
 <dialog class="modal" bind:this={fuelDialog} aria-labelledby="fuel-edit-title">
   <form onsubmit={saveFuel}>

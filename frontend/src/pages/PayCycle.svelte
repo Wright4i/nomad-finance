@@ -45,6 +45,7 @@
   let saving = $state(false);
   let ready = $state(false);
   let dialog: HTMLDialogElement | undefined = $state();
+  let deleteDialog: HTMLDialogElement | undefined = $state();
 
   function apply(next: PayCycle): void {
     cycle = next;
@@ -204,6 +205,26 @@
       saving = false;
     }
   }
+
+  function askDelete(): void {
+    deleteDialog?.showModal();
+  }
+
+  async function remove(): Promise<void> {
+    if (!id) return;
+    saving = true;
+    message = '';
+    try {
+      await api(`/api/pay-cycles/${id}/delete`, { method: 'POST', body: { confirm: true, today: todayISO() } });
+      deleteDialog?.close();
+      go('/pay-cycles');
+    } catch (err) {
+      deleteDialog?.close();
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
+  }
 </script>
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
@@ -351,6 +372,7 @@
     {/if}
     {#if id && cycle?.archivedAt}
       <button class="btn" type="button" title="Put this payor back on the list." disabled={saving} onclick={unarchive}>Unarchive</button>
+      <button class="btn danger" type="button" title="Remove this archived pay cycle." disabled={saving} onclick={askDelete}>Delete</button>
     {/if}
   </div>
   {#if id && !ready}
@@ -369,5 +391,16 @@
   <div class="modal-actions">
     <button class="btn" type="button" onclick={closeArchive}>Cancel</button>
     <button class="btn danger" type="button" disabled={saving} onclick={archive}>Archive pay cycle</button>
+  </div>
+</dialog>
+
+<dialog class="modal" bind:this={deleteDialog} aria-labelledby="delete-title">
+  <div class="modal-body">
+    <h2 id="delete-title" class="text-xl m-0">Delete this pay cycle?</h2>
+    <p class="m-0">This removes the archived pay cycle. It does not come back.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => deleteDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={remove}>Delete pay cycle</button>
   </div>
 </dialog>

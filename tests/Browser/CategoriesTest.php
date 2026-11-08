@@ -238,6 +238,55 @@ final class CategoriesTest extends TestCase
         self::assertTrue($marked === true);
     }
 
+    #[Depends('testDemoListsOneCategoryInEachGroup')]
+    public function testAnArchivedBucketCanBeDeleted(): void
+    {
+        self::driver()->get(self::$base . '/budget');
+        self::waitForText('Road cushion');
+        self::clickLink('Add bucket');
+        self::type('name', 'Gone fund');
+        self::click('Save bucket');
+        self::waitForText('Gone fund');
+        self::clickLinkContaining('Gone fund');
+        self::click('Archive');
+        self::click('Archive bucket');
+        self::waitForTextGone('Gone fund');
+        self::click('Show archived');
+        self::waitForText('Gone fund');
+        $hasDelete = self::driver()->executeScript(<<<'JS'
+            const row = [...document.querySelectorAll('.row')].find((node) => node.innerText.includes('Gone fund'));
+            const button = row ? [...row.querySelectorAll('button')].find((node) => node.innerText.trim() === 'Delete') : null;
+            return button !== null;
+        JS);
+        self::assertTrue($hasDelete === true);
+        self::driver()->executeScript(<<<'JS'
+            const row = [...document.querySelectorAll('.row')].find((node) => node.innerText.includes('Gone fund'));
+            const button = [...row.querySelectorAll('button')].find((node) => node.innerText.trim() === 'Delete');
+            button.click();
+        JS);
+        self::waitForText('Delete this bucket?');
+        self::click('Cancel');
+        self::waitForTextGone('Delete this bucket?');
+        self::waitForText('Gone fund');
+        self::clickLinkContaining('Gone fund');
+        self::waitForText('Unarchive');
+        self::click('Delete');
+        self::waitForText('Delete this bucket?');
+        self::driver()->executeScript(<<<'JS'
+            const dialog = document.querySelector('dialog[open]');
+            const cancel = dialog ? [...dialog.querySelectorAll('button')].find((node) => node.innerText.trim() === 'Cancel') : null;
+            cancel?.click();
+        JS);
+        self::waitForTextGone('Delete this bucket?');
+        self::click('Delete');
+        self::click('Delete bucket');
+        self::waitForText('Road cushion');
+        self::waitForTextGone('Gone fund');
+        self::click('Show archived');
+        self::waitForText('Old gym');
+        self::waitForTextGone('Gone fund');
+    }
+
     #[Depends('testANewCategoryCanBeArchivedFromAModal')]
     public function testUnarchivePutsTheNameBack(): void
     {

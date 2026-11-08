@@ -12,6 +12,7 @@ use Facebook\WebDriver\WebDriverBy;
 use Facebook\WebDriver\WebDriverDimension;
 use Facebook\WebDriver\WebDriverExpectedCondition;
 use Facebook\WebDriver\WebDriverWait;
+use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -296,6 +297,67 @@ final class VehiclesTest extends TestCase
         self::assertThemePill(false);
     }
 
+    #[Depends('testAVehicleFormHasNoColorAndStillSaves')]
+    public function testAnArchivedVehicleCanBeDeleted(): void
+    {
+        self::driver()->get(self::$base . '/vehicles');
+        self::waitForText('Bunkhouse');
+        self::waitForTextGone('Old truck');
+        self::click('Show archived');
+        self::waitForText('Old truck');
+        self::waitForText('archived');
+        self::click('Hide archived');
+        self::waitForTextGone('Old truck');
+        self::clickLink('New vehicle');
+        self::type('name', 'Gone rig');
+        self::type('currentOdometer', '0');
+        self::click('Save vehicle');
+        self::waitForText('Fuel');
+        self::click('Archive');
+        self::waitForText('Archive this vehicle?');
+        self::closeOpenDialog();
+        self::waitForTextGone('Archive this vehicle?');
+        self::click('Archive');
+        self::click('Archive vehicle');
+        self::waitForText('New vehicle');
+        self::waitForTextGone('Gone rig');
+        self::click('Show archived');
+        self::waitForText('Gone rig');
+        self::waitForText('Old truck');
+        self::driver()->executeScript(<<<'JS'
+            const card = [...document.querySelectorAll('article')].find((node) => node.innerText.includes('Gone rig'));
+            const button = card ? [...card.querySelectorAll('button')].find((node) => node.innerText.trim() === 'Delete') : null;
+            button?.click();
+        JS);
+        self::waitForText('Delete this vehicle?');
+        self::closeOpenDialog();
+        self::waitForTextGone('Delete this vehicle?');
+        self::waitForText('Gone rig');
+        self::clickLinkContaining('Gone rig');
+        self::waitForText('Unarchive');
+        self::click('Delete');
+        self::waitForText('Delete this vehicle?');
+        self::closeOpenDialog();
+        self::waitForTextGone('Delete this vehicle?');
+        self::click('Delete');
+        self::click('Delete vehicle');
+        self::waitForText('Bunkhouse');
+        self::waitForTextGone('Gone rig');
+        self::click('Show archived');
+        self::waitForText('Old truck');
+        self::waitForTextGone('Gone rig');
+        self::click('Hide archived');
+    }
+
+    private static function closeOpenDialog(): void
+    {
+        self::driver()->executeScript(<<<'JS'
+            const dialog = document.querySelector('dialog[open]');
+            const cancel = dialog ? [...dialog.querySelectorAll('button')].find((node) => node.innerText.trim() === 'Cancel') : null;
+            cancel?.click();
+        JS);
+    }
+
     private static function assertThemePill(bool $day): void
     {
         $label = $day ? 'Day' : 'Night';
@@ -467,6 +529,17 @@ final class VehiclesTest extends TestCase
         });
         self::assertIsString($body);
         self::assertNotFalse(stripos($body, $text));
+    }
+
+    private static function waitForTextGone(string $text): void
+    {
+        $body = self::wait()->until(function () use ($text): string|false {
+            $body = self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText();
+
+            return stripos($body, $text) === false ? $body : false;
+        });
+        self::assertIsString($body);
+        self::assertFalse(stripos($body, $text));
     }
 
     private static function wait(): WebDriverWait

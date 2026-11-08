@@ -10,6 +10,7 @@ use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\Support\Dates;
 use PDO;
+use Throwable;
 
 final class PayCycleService
 {
@@ -272,6 +273,49 @@ final class PayCycleService
         (new BillFill($this->pdo, new CurrencyCatalog(), $this->actor))->apply($today);
 
         return $this->get($id, $today);
+    }
+
+    /**
+     * Remove an archived pay cycle. Its periods, the assignments on those periods, and its keyed payroll go with it.
+     * A target that named this pay cycle keeps its amount and date.
+     */
+    public function delete(int $id, bool $confirm, string $today): void
+    {
+        $this->day($today, 'today');
+        $existing = $this->must($id);
+        if ($existing['archived_at'] === null) {
+            throw new ApiException(409, 'Only an archived pay cycle can be deleted.');
+        }
+        if (!$confirm) {
+            throw new ApiException(409, 'Confirm before deleting this pay cycle.');
+        }
+
+        $userId = $this->actor->id();
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare(
+                'DELETE FROM assignments
+                 WHERE pay_period_id IN (
+                    SELECT id FROM pay_periods WHERE pay_cycle_id = ? AND user_id = ?
+                 )'
+            )->execute([$id, $userId]);
+            $this->pdo->prepare('DELETE FROM pay_periods WHERE pay_cycle_id = ? AND user_id = ?')
+                ->execute([$id, $userId]);
+            $this->pdo->prepare('DELETE FROM payroll_entries WHERE pay_cycle_id = ?')
+                ->execute([$id]);
+            $this->pdo->prepare(
+                'UPDATE targets SET pay_cycle_id = NULL, updated_at = ? WHERE pay_cycle_id = ? AND user_id = ?'
+            )->execute([gmdate('c'), $id, $userId]);
+            $this->pdo->prepare('DELETE FROM pay_cycles WHERE id = ? AND user_id = ?')
+                ->execute([$id, $userId]);
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        (new BillFill($this->pdo, new CurrencyCatalog(), $this->actor))->apply($today);
     }
 
     /**

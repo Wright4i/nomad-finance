@@ -149,7 +149,7 @@ final class PayCycleTest extends TestCase
         JS);
         self::assertIsArray($card);
         self::assertSame('Nov 1 - Nov 30 | $5,600.00', $card['range']);
-        self::assertSame('Nov 1 - Nov 7 | $192.00', $card['weeklyRange']);
+        self::assertSame('Nov 8 - Nov 14 | $192.00', $card['weeklyRange']);
         self::assertSame('normal', $card['italic']);
         self::assertSame('Log Payroll', $card['button']);
         self::assertSame('rgba(0, 0, 0, 0)', $card['background']);
@@ -304,6 +304,68 @@ final class PayCycleTest extends TestCase
     }
 
     #[Depends('testANewPayorGetsItsOwnCycle')]
+    public function testAnArchivedPayCycleCanBeDeleted(): void
+    {
+        self::clickLink('Income');
+        self::clickLink('New pay cycle');
+        self::type('payor', 'Side stipend');
+        self::driver()->executeScript(<<<'JS'
+            const input = document.querySelector('input[name="payday"]');
+            input.value = '11 / 01 / 2026';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        JS);
+        self::click('Fixed');
+        self::type('rate', '640.00');
+        self::click('Save pay cycle');
+        self::waitForText('Side stipend');
+        self::clickLink('Side stipend');
+        self::click('Archive');
+        self::click('Archive pay cycle');
+        self::waitForText('Camp host');
+        self::waitForTextGone('Side stipend');
+        self::click('Show archived');
+        self::waitForText('Side stipend');
+        self::waitForText('Warehouse job');
+        self::waitForText('Scratch Payor');
+        $hasDelete = self::driver()->executeScript(<<<'JS'
+            const card = [...document.querySelectorAll('.payor-columns article')].find((node) => node.innerText.includes('Side stipend'));
+            const button = card ? [...card.querySelectorAll('.pay-card-actions button')].find((node) => node.innerText.trim() === 'Delete') : null;
+            const link = card ? card.querySelector('a') : null;
+            return button !== null && link !== null && !link.contains(button);
+        JS);
+        self::assertTrue($hasDelete === true);
+        self::driver()->executeScript(<<<'JS'
+            const card = [...document.querySelectorAll('.payor-columns article')].find((node) => node.innerText.includes('Side stipend'));
+            const button = [...card.querySelectorAll('.pay-card-actions button')].find((node) => node.innerText.trim() === 'Delete');
+            button.click();
+        JS);
+        self::waitForText('Delete this pay cycle?');
+        self::click('Cancel');
+        self::waitForTextGone('Delete this pay cycle?');
+        self::waitForText('Side stipend');
+        self::clickLinkContaining('Side stipend');
+        self::waitForText('Unarchive');
+        self::click('Delete');
+        self::waitForText('Delete this pay cycle?');
+        self::driver()->executeScript(<<<'JS'
+            const dialog = document.querySelector('dialog[open]');
+            const cancel = dialog ? [...dialog.querySelectorAll('button')].find((node) => node.innerText.trim() === 'Cancel') : null;
+            cancel?.click();
+        JS);
+        self::waitForTextGone('Delete this pay cycle?');
+        self::waitForText('Unarchive');
+        self::click('Delete');
+        self::click('Delete pay cycle');
+        self::waitForText('Camp host');
+        self::waitForTextGone('Side stipend');
+        self::click('Show archived');
+        self::waitForText('Warehouse job');
+        self::waitForText('Scratch Payor');
+        self::waitForTextGone('Side stipend');
+    }
+
+    #[Depends('testAnArchivedPayCycleCanBeDeleted')]
     public function testTheOwnerDoesNotSeeDemoPayors(): void
     {
         self::click('Log out');

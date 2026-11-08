@@ -347,6 +347,7 @@ export type Vehicle = {
   fuelPriceMinor: number | null;
   suggestedPricePerGallonMinor: number | null;
   milesPerGallon: string | null;
+  archivedAt: string | null;
   readings: VehicleReading[];
 };
 

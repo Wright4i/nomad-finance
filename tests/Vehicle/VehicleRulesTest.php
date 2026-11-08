@@ -262,6 +262,63 @@ final class VehicleRulesTest extends TestCase
         }
     }
 
+    public function testArchiveClearsTheStarAndDeleteLeavesTheFuel(): void
+    {
+        $starred = $this->vehicles->create($this->vehicle('Tow rig', true));
+        $id = (int) $starred['id'];
+        $billId = $this->fill(1200, 2500, $id, '2026-11-02');
+        $archived = $this->vehicles->archive($id);
+        self::assertNotNull($archived['archivedAt']);
+        self::assertFalse($archived['starred']);
+        self::assertNull($this->vehicles->starred());
+        self::assertSame([], array_filter(
+            $this->vehicles->list(),
+            static fn (array $vehicle): bool => $vehicle['name'] === 'Tow rig',
+        ));
+        $hidden = $this->vehicles->list(true);
+        $names = array_column($hidden, 'name');
+        self::assertContains('Tow rig', $names);
+
+        try {
+            $this->vehicles->update($id, $this->vehicle('Tow rig', true));
+            self::fail('An archived vehicle cannot be starred.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+            self::assertSame('Unarchive this vehicle before starring it.', $e->getMessage());
+        }
+
+        $live = $this->vehicles->create($this->vehicle('Still here', false));
+        try {
+            $this->vehicles->delete((int) $live['id'], true);
+            self::fail('A vehicle still on the list cannot be deleted.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+            self::assertSame('Only an archived vehicle can be deleted.', $e->getMessage());
+        }
+        try {
+            $this->vehicles->delete($id, false);
+            self::fail('Delete waits for a confirmation.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+            self::assertSame('Confirm before deleting this vehicle.', $e->getMessage());
+        }
+
+        $restored = $this->vehicles->unarchive($id);
+        self::assertNull($restored['archivedAt']);
+        self::assertFalse($restored['starred']);
+        $this->vehicles->archive($id);
+        $this->vehicles->delete($id, true);
+        try {
+            $this->vehicles->get($id);
+            self::fail('The archived vehicle is gone.');
+        } catch (ApiException $e) {
+            self::assertSame(404, $e->status);
+        }
+        $home = $this->pdo->query('SELECT vehicle_id FROM bills WHERE id = ' . $billId)->fetchColumn();
+        self::assertTrue($home === null || $home === false);
+        self::assertSame('Still here', $this->vehicles->get((int) $live['id'])['name']);
+    }
+
     /** @param array<string, mixed> $overrides
      *  @return array<string, mixed>
      */

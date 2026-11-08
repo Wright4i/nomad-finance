@@ -253,6 +253,12 @@ final class AuthService
         $acctPeriodLength = array_key_exists('acctPeriodLength', $input)
             ? $this->acctPeriodLength($input['acctPeriodLength'])
             : $current['acctPeriodLength'];
+        if (
+            (array_key_exists('acctPeriodStart', $input) || array_key_exists('acctPeriodLength', $input))
+            && !AcctPeriod::withinReach($acctPeriodStart, $acctPeriodLength, gmdate('Y-m-d'))
+        ) {
+            throw new ApiException(409, 'That period is more than ' . AcctPeriod::REACH . ' from today.');
+        }
         if (array_key_exists('plannerOrder', $input)) {
             $accepted = PlannerWidgets::accept($input['plannerOrder']);
             if ($accepted === null) {

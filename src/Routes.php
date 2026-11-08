@@ -206,7 +206,9 @@ final class Routes
                 });
 
                 $secure->get('/vehicles', function (ServerRequestInterface $request, ResponseInterface $response) use ($vehicles) {
-                    return Json::write($response, ['vehicles' => $vehicles->list()]);
+                    $include = ($request->getQueryParams()['includeArchived'] ?? '') === '1';
+
+                    return Json::write($response, ['vehicles' => $vehicles->list($include)]);
                 });
                 $secure->post('/vehicles', function (ServerRequestInterface $request, ResponseInterface $response) use ($vehicles) {
                     return Json::write($response, ['vehicle' => $vehicles->create(self::body($request))], 201);
@@ -216,6 +218,19 @@ final class Routes
                 });
                 $secure->patch('/vehicles/{id:[0-9]+}', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($vehicles) {
                     return Json::write($response, ['vehicle' => $vehicles->update((int) $args['id'], self::body($request))]);
+                });
+                $secure->post('/vehicles/{id:[0-9]+}/archive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($vehicles) {
+                    return Json::write($response, ['vehicle' => $vehicles->archive((int) $args['id'])]);
+                });
+                $secure->post('/vehicles/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($vehicles) {
+                    return Json::write($response, ['vehicle' => $vehicles->unarchive((int) $args['id'])]);
+                });
+                $secure->post('/vehicles/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($vehicles) {
+                    $body = self::body($request);
+                    $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
+                    $vehicles->delete((int) $args['id'], $confirm);
+
+                    return Json::write($response, ['ok' => true]);
                 });
 
                 $secure->get('/accounts', function (ServerRequestInterface $request, ResponseInterface $response) use ($accounts) {
@@ -237,6 +252,13 @@ final class Routes
                 });
                 $secure->post('/accounts/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($accounts) {
                     return Json::write($response, ['account' => $accounts->unarchive((int) $args['id'])]);
+                });
+                $secure->post('/accounts/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($accounts) {
+                    $body = self::body($request);
+                    $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
+                    $accounts->delete((int) $args['id'], $confirm);
+
+                    return Json::write($response, ['ok' => true]);
                 });
 
                 $secure->get('/bills', function (ServerRequestInterface $request, ResponseInterface $response) use ($bills) {
@@ -350,6 +372,13 @@ final class Routes
                 $secure->post('/buckets/{id:[0-9]+}/unarchive', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
                     return Json::write($response, ['category' => $categories->unarchive((int) $args['id'])]);
                 });
+                $secure->post('/buckets/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($categories) {
+                    $body = self::body($request);
+                    $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
+                    $categories->delete((int) $args['id'], $confirm);
+
+                    return Json::write($response, ['ok' => true]);
+                });
 
                 $secure->get('/pay-cycles/month', function (ServerRequestInterface $request, ResponseInterface $response) use ($payCycle) {
                     $query = $request->getQueryParams();
@@ -423,6 +452,13 @@ final class Routes
                     return Json::write($response, [
                         'payCycle' => $payCycle->unarchive((int) $args['id'], (string) ($body['today'] ?? '')),
                     ]);
+                });
+                $secure->post('/pay-cycles/{id:[0-9]+}/delete', function (ServerRequestInterface $request, ResponseInterface $response, array $args) use ($payCycle) {
+                    $body = self::body($request);
+                    $confirm = ($body['confirm'] ?? false) === true || ($body['confirm'] ?? null) === 1 || ($body['confirm'] ?? null) === '1';
+                    $payCycle->delete((int) $args['id'], $confirm, (string) ($body['today'] ?? ''));
+
+                    return Json::write($response, ['ok' => true]);
                 });
 
                 $secure->get('/budget', function (ServerRequestInterface $request, ResponseInterface $response) use ($envelopes) {

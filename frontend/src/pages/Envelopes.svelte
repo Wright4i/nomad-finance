@@ -4,7 +4,7 @@
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
-  import { periodShift, type PeriodLength } from '../lib/acctPeriod';
+  import { periodShift, periodWithinReach, type PeriodLength } from '../lib/acctPeriod';
   import { balanceGoalMinor, bucketMark, fillFor, type FillBucket } from '../lib/bucketFill';
   import { formatChipDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
@@ -30,16 +30,24 @@
   let ready = $state(false);
   let showArchived = $state(false);
   let archived = $state<Category[]>([]);
+  let deleteTarget = $state<Category | null>(null);
+  let deleteDialog: HTMLDialogElement | undefined = $state();
   let sourcesDialog: HTMLDialogElement | undefined = $state();
-  let recalculateDialog: HTMLDialogElement | undefined = $state();
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let alive = true;
 
   let editable = $derived(sheet?.period?.editable === true);
   let closed = $derived(sheet?.acctPeriod?.phase === 'closed');
 
+  function periodOpen(steps: number): boolean {
+    if (!session.user) return false;
+    const length = session.user.acctPeriodLength;
+    const next = periodShift(session.user.acctPeriodStart, length as PeriodLength, steps);
+    return periodWithinReach(next, length, todayISO());
+  }
+
   async function nudgePeriod(steps: number): Promise<void> {
-    if (!session.user || saving) return;
+    if (!session.user || saving || !periodOpen(steps)) return;
     const length = session.user.acctPeriodLength;
     saving = true;
     try {
@@ -92,6 +100,29 @@
     return archived
       .filter((category) => category.group === id && category.archivedAt !== null && !shown.has(category.id))
       .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  function askDelete(category: Category): void {
+    deleteTarget = category;
+    deleteDialog?.showModal();
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleteTarget) return;
+    saving = true;
+    message = '';
+    const gone = deleteTarget.id;
+    try {
+      await api(`/api/buckets/${gone}/delete`, { method: 'POST', body: { confirm: true } });
+      archived = archived.filter((category) => category.id !== gone);
+      deleteDialog?.close();
+      deleteTarget = null;
+    } catch (err) {
+      deleteDialog?.close();
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
   }
 
   async function toggleArchived(): Promise<void> {
@@ -203,37 +234,6 @@
       saving = false;
     }
   }
-
-  async function confirmRecalculate(): Promise<void> {
-    if (!sheet || !editable || closed) return;
-    saving = true;
-    message = '';
-    fields = {};
-    try {
-      const data = await api<EnvelopeSheet>('/api/budget/recalculate', {
-        method: 'POST',
-        body: {
-          today: todayISO(),
-          payCycleId: sheet.payCycleId,
-          upcoming: sheet.period?.upcoming === true,
-          acctPeriod: '1',
-          acctPeriodStart: sheet.acctPeriod?.start ?? '',
-        },
-      });
-      sheet = data;
-      payCycleId = data.payCycleId;
-      upcoming = data.period?.upcoming === true;
-      periodId = null;
-      applyDrafts(data);
-      recalculateDialog?.close();
-    } catch (err) {
-      const problem = explain(err);
-      message = problem.message;
-      fields = problem.fields;
-    } finally {
-      saving = false;
-    }
-  }
 </script>
 
 <div class="grid gap-5">
@@ -328,26 +328,12 @@
 
       <div class="flex flex-wrap items-center gap-2">
         {#if sheet.acctPeriod}
-          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(-1)}>Previous period</button>
+          <button class="btn" type="button" disabled={saving || !periodOpen(-1)} onclick={() => void nudgePeriod(-1)}>Previous period</button>
           <p class="m-0" data-period={sheet.acctPeriod.start}>{formatChipDate(sheet.acctPeriod.start)} – {formatChipDate(sheet.acctPeriod.end)}</p>
-          <button class="btn" type="button" disabled={saving} onclick={() => void nudgePeriod(1)}>Next period</button>
+          <button class="btn" type="button" disabled={saving || !periodOpen(1)} onclick={() => void nudgePeriod(1)}>Next period</button>
         {/if}
         <button class="btn" type="button" onclick={() => void toggleArchived()}>{showArchived ? 'Hide archived' : 'Show archived'}</button>
-        <button class="btn" type="button" data-action="recalculate" disabled={!editable || saving || sheet.acctPeriod?.phase === 'future' || sheet.acctPeriod?.phase === 'closed'} onclick={() => recalculateDialog?.showModal()}>Recalculate</button>
       </div>
-      <dialog class="modal" bind:this={recalculateDialog} aria-labelledby="recalculate-title">
-        <div class="modal-body">
-          <h2 id="recalculate-title" class="m-0 text-2xl">Recalculate this period?</h2>
-          <p class="m-0">This sets Bill assignments for {sheet.acctPeriod?.label ?? 'this period'} to the bills in that period. Fuel also includes the estimate for each stay that is still open and arrives in the period. Envelope amounts stay as you typed them. Account balances stay as you typed them.</p>
-        </div>
-        <div class="modal-actions">
-          <button class="btn danger" type="button" disabled={saving} aria-busy={saving} onclick={() => void confirmRecalculate()}>Recalculate this period</button>
-          <button class="btn" type="button" onclick={() => recalculateDialog?.close()}>Cancel</button>
-        </div>
-      </dialog>
-      {#if sheet.acctPeriod?.phase === 'future'}
-        <p class="muted m-0">These amounts are a plan for this period. Available to assign still follows the period that contains today.</p>
-      {/if}
 
       {#each groups as group (group.id)}
         {@const rows = inGroup(group.id)}
@@ -439,13 +425,27 @@
             {/each}
             </div>
             {#each hidden as category (category.id)}
-              <a class="row" href={`/buckets/${category.id}`} onclick={(event) => follow(event, `/buckets/${category.id}`)}>
-                <strong>{category.name}</strong>
-                <span class="muted">archived</span>
-              </a>
+              <div class="row">
+                <a class="flex min-w-0 flex-1 items-center justify-between gap-4 no-underline" href={`/buckets/${category.id}`} style="color: inherit" onclick={(event) => follow(event, `/buckets/${category.id}`)}>
+                  <strong>{category.name}</strong>
+                  <span class="muted">archived</span>
+                </a>
+                <button class="btn danger" type="button" disabled={saving} onclick={() => askDelete(category)}>Delete</button>
+              </div>
             {/each}
           </section>
         {/if}
       {/each}
   {/if}
 </div>
+
+<dialog class="modal" bind:this={deleteDialog} aria-labelledby="delete-bucket-title">
+  <div class="modal-body">
+    <h2 id="delete-bucket-title" class="text-xl m-0">Delete this bucket?</h2>
+    <p class="m-0">This removes {deleteTarget?.name ?? 'this bucket'}. It does not come back.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => deleteDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={() => void confirmDelete()}>Delete bucket</button>
+  </div>
+</dialog>

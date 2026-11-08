@@ -163,7 +163,7 @@ Retired. A savings amount is a bill or a transfer.
 _Avoid_: Need log, want log
 
 **Vehicle**:
-A named odometer: a kind, a current odometer, and a minimum and maximum miles per gallon. At most one vehicle is starred. The other stars stay hidden until that one is cleared. The fuel label uses that one.
+A named odometer: a kind, a current odometer, and a minimum and maximum miles per gallon. At most one vehicle is starred. The other stars stay hidden until that one is cleared. The fuel label uses that one. Archiving hides the vehicle and clears its star. Unarchive puts the name back and does not star it. Delete removes an archived vehicle. Its fuel entries stay, without that vehicle.
 _Avoid_: Account, trip
 
 **Current odometer**:
@@ -333,7 +333,7 @@ The upcoming calendar date for a bill. Marking paid moves it forward by its ever
 A flag that a bill is paid automatically by the bank. The app does not mark it paid by itself.
 
 **Archive**:
-Hiding an account, a goal bucket, a paused repeating bill, or a one-off bill without deleting it. Unarchive puts it back: a repeating bill returns to paused, and a one-off returns to active. A locked bucket cannot be archived. A liability bill cannot be archived. An archived bill does not fill a bucket, does not block account archive, and can be deleted. Archiving an account is refused while an active or paused bill draws from it. Archiving a goal bucket sends its bills back to the locked bucket for each bill's type.
+Hiding an account, a goal bucket, a paused repeating bill, a one-off bill, or a pay cycle without deleting it. Unarchive puts it back: a repeating bill returns to paused, a one-off returns to active, and a pay cycle returns to the income list. A locked bucket cannot be archived. A liability bill cannot be archived. An archived bill does not fill a bucket, does not block account archive, and can be deleted. An archived pay cycle can be deleted. That removes its periods, the assignments on those periods, and its keyed payroll. A pay cycle still on the list cannot. A target that named it keeps its amount and date. Archiving an account is refused while an active or paused bill draws from it. Delete removes an archived account. A live account cannot be deleted. Archiving a goal bucket sends its bills back to the locked bucket for each bill's type.
 
 **Mark paid**:
 Recording a bill's occurrence on the due date it had. A repeating bill then rolls its next due date forward by its every. That paid occurrence stays on the original due date and counts in the paid total. The next occurrence is unpaid. The account balance stays as you last typed it. A one-off bill becomes paid and leaves the due list. Unpay removes that latest paid occurrence. A repeating bill moves back by its every and stays on the books. A one-off returns to the due list. An occurrence offers Mark paid or Unpay, not both.

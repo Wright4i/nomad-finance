@@ -601,6 +601,12 @@ final class DemoLibrary
         ] as [$name, $kind, $min, $max, $miles]) {
             $extra->execute([$userId, $name, $kind, $min, $max, $miles, $miles, $now, $now]);
         }
+        $this->pdo->prepare(
+            'INSERT INTO vehicles (
+                user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
+                current_odometer_miles, origin_odometer_miles, fuel_price_minor, archived_at, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL, ?, ?, ?)'
+        )->execute([$userId, 'Old truck', 'truck', 100, 180, 84200, 84200, $now, $now, $now]);
 
         return $id;
     }

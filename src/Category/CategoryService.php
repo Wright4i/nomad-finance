@@ -111,17 +111,7 @@ final class CategoryService
         if ($existing['amountMinor'] !== 0) {
             throw new ApiException(409, 'This bucket still holds an amount. Bring it to zero before archiving it.');
         }
-        $bills = $this->pdo->prepare('SELECT id, type FROM bills WHERE category_id = ?');
-        $bills->execute([$id]);
-        $move = $this->pdo->prepare('UPDATE bills SET category_id = ?, updated_at = ? WHERE id = ?');
-        $now = gmdate('c');
-        while ($bill = $bills->fetch()) {
-            if (!is_array($bill)) {
-                break;
-            }
-            $home = SystemBuckets::idForType($this->pdo, $this->actor->id(), (string) $bill['type']);
-            $move->execute([$home, $now, (int) $bill['id']]);
-        }
+        $this->releaseBills($id);
         $now = gmdate('c');
         $this->pdo->prepare(
             'UPDATE categories SET archived_at = COALESCE(archived_at, ?), updated_at = ? WHERE id = ? AND user_id = ?'
@@ -142,6 +132,54 @@ final class CategoryService
         )->execute([$now, $id, $this->actor->id()]);
 
         return $this->get($id);
+    }
+
+    public function delete(int $id, bool $confirm): void
+    {
+        $existing = $this->present($this->row($id));
+        if ($existing['role'] !== 'goal') {
+            throw new ApiException(409, 'This bucket stays on the books.');
+        }
+        if ($existing['archivedAt'] === null) {
+            throw new ApiException(409, 'Only an archived bucket can be deleted.');
+        }
+        if (!$confirm) {
+            throw new ApiException(409, 'Confirm before deleting this bucket.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->releaseBills($id);
+            $this->pdo->prepare('DELETE FROM assignments WHERE category_id = ?')->execute([$id]);
+            $this->pdo->prepare('DELETE FROM targets WHERE category_id = ? AND user_id = ?')
+                ->execute([$id, $this->actor->id()]);
+            $this->pdo->prepare('DELETE FROM acct_period_assignments WHERE category_id = ? AND user_id = ?')
+                ->execute([$id, $this->actor->id()]);
+            $this->pdo->prepare('DELETE FROM categories WHERE id = ? AND user_id = ?')
+                ->execute([$id, $this->actor->id()]);
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+        (new BillFill($this->pdo, new CurrencyCatalog(), $this->actor))->apply(gmdate('Y-m-d'));
+    }
+
+    private function releaseBills(int $id): void
+    {
+        $bills = $this->pdo->prepare('SELECT id, type FROM bills WHERE category_id = ?');
+        $bills->execute([$id]);
+        $move = $this->pdo->prepare('UPDATE bills SET category_id = ?, updated_at = ? WHERE id = ?');
+        $now = gmdate('c');
+        while ($bill = $bills->fetch()) {
+            if (!is_array($bill)) {
+                break;
+            }
+            $home = SystemBuckets::idForType($this->pdo, $this->actor->id(), (string) $bill['type']);
+            $move->execute([$home, $now, (int) $bill['id']]);
+        }
     }
 
     /**

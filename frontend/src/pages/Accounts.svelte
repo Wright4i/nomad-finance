@@ -3,7 +3,7 @@
   import Glyph from '../components/Glyph.svelte';
   import Spinner from '../components/Spinner.svelte';
   import Note from '../components/Note.svelte';
-  import { api } from '../lib/api';
+  import { api, explain } from '../lib/api';
   import { fieldTips } from '../lib/fieldTips';
   import { formatBps, formatMinor } from '../lib/money';
   import { tip } from '../lib/tip';
@@ -14,6 +14,9 @@
   let includeArchived = $state(false);
   let message = $state('');
   let ready = $state(false);
+  let saving = $state(false);
+  let deleteDialog: HTMLDialogElement | undefined = $state();
+  let deleteTarget = $state<Account | null>(null);
   let hasGas = $derived(accounts.some((account) => account.gasFavorite));
   let hasShopping = $derived(accounts.some((account) => account.shoppingFavorite));
   let hasAsset = $derived(accounts.some((account) => account.assetFavorite));
@@ -40,6 +43,29 @@
   function toggle(): void {
     includeArchived = !includeArchived;
     void load();
+  }
+
+  function askDelete(account: Account): void {
+    deleteTarget = account;
+    deleteDialog?.showModal();
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleteTarget) return;
+    saving = true;
+    message = '';
+    const gone = deleteTarget.id;
+    try {
+      await api(`/api/accounts/${gone}/delete`, { method: 'POST', body: { confirm: true } });
+      deleteDialog?.close();
+      deleteTarget = null;
+      await load();
+    } catch (err) {
+      deleteDialog?.close();
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
   }
 
   function chipsFor(account: Account): { key: string; label: string }[] {
@@ -179,6 +205,18 @@
         {/if}
         <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
       </a>
+      {#if account.archivedAt}
+        <button
+          class="btn danger w-fit account-delete"
+          type="button"
+          disabled={saving}
+          onclick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            askDelete(account);
+          }}
+        >Delete</button>
+      {/if}
       {#if showGas(account) || showShopping(account) || showAsset(account)}
         <span class="account-marks">
           {#if showGas(account)}
@@ -216,6 +254,17 @@
   {/if}
 </div>
 
+<dialog class="modal" bind:this={deleteDialog} aria-labelledby="delete-account-title">
+  <div class="modal-body">
+    <h2 id="delete-account-title" class="text-xl m-0">Delete this account?</h2>
+    <p class="m-0">This removes the archived account. It does not come back.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => deleteDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={() => void confirmDelete()}>Delete account</button>
+  </div>
+</dialog>
+
 <style>
   a.bucket-tile {
     display: flex;
@@ -223,6 +272,11 @@
     align-items: stretch;
     gap: 0.35rem;
     height: 100%;
+  }
+
+  .account-delete {
+    justify-self: start;
+    margin-top: 0.35rem;
   }
 
   .account-id {

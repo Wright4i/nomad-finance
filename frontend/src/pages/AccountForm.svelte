@@ -38,6 +38,7 @@
   let othersShopping = $state(false);
   let othersAsset = $state(false);
   let archivedAt = $state<string | null>(null);
+  let deleteDialog: HTMLDialogElement | undefined = $state();
   let fields = $state<Record<string, string>>({});
   let message = $state('');
   let saving = $state(false);
@@ -216,6 +217,26 @@
       saving = false;
     }
   }
+
+  function askDelete(): void {
+    deleteDialog?.showModal();
+  }
+
+  async function remove(): Promise<void> {
+    if (!id) return;
+    saving = true;
+    message = '';
+    try {
+      await api(`/api/accounts/${id}/delete`, { method: 'POST', body: { confirm: true } });
+      deleteDialog?.close();
+      go('/accounts');
+    } catch (err) {
+      deleteDialog?.close();
+      message = explain(err).message;
+    } finally {
+      saving = false;
+    }
+  }
 </script>
 
 <form class="grid gap-4 max-w-xl" aria-busy={loading} onsubmit={submit}>
@@ -389,8 +410,20 @@
     {/if}
     {#if id && archivedAt}
       <button class="btn" type="button" title="Put this account back on the list." disabled={saving} onclick={unarchive}>Unarchive</button>
+      <button class="btn danger" type="button" title="Remove this archived account." disabled={saving} onclick={askDelete}>Delete</button>
     {/if}
   </div>
   </div>
   </div>
 </form>
+
+<dialog class="modal" bind:this={deleteDialog} aria-labelledby="delete-account-title">
+  <div class="modal-body">
+    <h2 id="delete-account-title" class="text-xl m-0">Delete this account?</h2>
+    <p class="m-0">This removes the archived account. It does not come back.</p>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" type="button" onclick={() => deleteDialog?.close()}>Cancel</button>
+    <button class="btn danger" type="button" disabled={saving} onclick={remove}>Delete account</button>
+  </div>
+</dialog>

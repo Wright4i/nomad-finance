@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\PayCycle;
 
 use App\Auth\Actor;
+use App\Category\CategoryService;
 use App\Database\Database;
 use App\Http\ApiException;
 use App\PayCycle\PayCycleService;
+use App\Target\TargetService;
 use App\Tests\Support\DemoSession;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -423,5 +425,124 @@ final class PayCycleRulesTest extends TestCase
             ['2026-11-01', '2026-11-08', '2026-11-15', '2026-11-22', '2026-11-29'],
             array_column($this->cycles->payroll($camp, '2026-11-07', '2026-11-01', '2026-11-30')['rows'], 'payday'),
         );
+    }
+
+    public function testDeleteRemovesAnArchivedPayCycleAndLeavesTheRest(): void
+    {
+        $gone = $this->cycles->create([
+            'payor' => 'Old job',
+            'payday' => '2026-11-01',
+            'length' => 'monthly',
+            'payKind' => 'fixed',
+            'rateMinor' => 100000,
+        ], '2026-11-07');
+        $kept = $this->cycles->create([
+            'payor' => 'Current job',
+            'payday' => '2026-11-01',
+            'length' => 'weekly',
+            'payKind' => 'fixed',
+            'rateMinor' => 50000,
+        ], '2026-11-07');
+        $goneId = (int) $gone['id'];
+        $keptId = (int) $kept['id'];
+
+        $actor = new Actor($this->pdo);
+        $categories = new CategoryService($this->pdo, $actor, new TargetService($this->pdo, $actor));
+        $bucket = $categories->create([
+            'name' => 'Shelter',
+            'group' => 'needs',
+            'target' => [
+                'kind' => 'needed',
+                'amountMinor' => 120000,
+                'targetDate' => '2027-02-01',
+                'payCycleId' => $goneId,
+            ],
+        ], '2026-11-07');
+        $bucketId = (int) $bucket['id'];
+
+        $now = gmdate('c');
+        $insertPeriod = $this->pdo->prepare(
+            'INSERT INTO pay_periods (user_id, pay_cycle_id, period_start, period_end, created_at) VALUES (?, ?, ?, ?, ?)'
+        );
+        $insertPeriod->execute([$this->demoId, $goneId, '2026-09-01', '2026-09-30', $now]);
+        $gonePeriod = (int) $this->pdo->lastInsertId();
+        $insertPeriod->execute([$this->demoId, $keptId, '2026-09-01', '2026-09-07', $now]);
+        $keptPeriod = (int) $this->pdo->lastInsertId();
+        $assign = $this->pdo->prepare(
+            'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, 0)'
+        );
+        $assign->execute([$gonePeriod, $bucketId, 4000]);
+        $assign->execute([$keptPeriod, $bucketId, 2500]);
+        $payroll = $this->pdo->prepare(
+            'INSERT INTO payroll_entries (pay_cycle_id, payday, amount_minor) VALUES (?, ?, ?)'
+        );
+        $payroll->execute([$goneId, '2026-09-01', 100000]);
+        $payroll->execute([$keptId, '2026-09-01', 50000]);
+
+        $this->cycles->archive($goneId, '2026-11-07');
+
+        try {
+            $this->cycles->delete($goneId, false, '2026-11-07');
+            self::fail('Delete waits for a confirmation.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+            self::assertSame('Confirm before deleting this pay cycle.', $e->getMessage());
+        }
+        self::assertNotNull($this->cycles->get($goneId, '2026-11-07')['archivedAt']);
+        self::assertSame(1, $this->countRows('assignments', 'pay_period_id = ' . $gonePeriod));
+
+        try {
+            $this->cycles->delete($keptId, true, '2026-11-07');
+            self::fail('A pay cycle still on the list cannot be deleted.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+            self::assertSame('Only an archived pay cycle can be deleted.', $e->getMessage());
+        }
+        self::assertSame(2500, (int) $this->pdo->query('SELECT amount_minor FROM assignments WHERE pay_period_id = ' . $keptPeriod)->fetchColumn());
+
+        $this->pdo->prepare(
+            'INSERT INTO user (name, password_hash, base_currency, theme, role, created_at)
+             VALUES (?, ?, \'EUR\', \'light\', \'owner\', ?)'
+        )->execute(['Ada', password_hash('correct horse battery', PASSWORD_DEFAULT), gmdate('c')]);
+        $_SESSION['user_id'] = (int) $this->pdo->lastInsertId();
+        try {
+            $this->cycles->delete($goneId, true, '2026-11-07');
+            self::fail('Another person cannot delete this cycle.');
+        } catch (ApiException $e) {
+            self::assertSame(404, $e->status);
+        }
+
+        $_SESSION['user_id'] = $this->demoId;
+        self::assertSame('Old job', $this->cycles->get($goneId, '2026-11-07')['payor']);
+        self::assertSame(1, $this->countRows('pay_periods', 'id = ' . $gonePeriod));
+        self::assertSame(1, $this->countRows('pay_periods', 'pay_cycle_id = ' . $keptId . ' AND id = ' . $keptPeriod));
+
+        $this->cycles->delete($goneId, true, '2026-11-07');
+        try {
+            $this->cycles->get($goneId, '2026-11-07');
+            self::fail('The archived pay cycle is gone.');
+        } catch (ApiException $e) {
+            self::assertSame(404, $e->status);
+        }
+
+        self::assertSame(0, $this->countRows('pay_periods', 'pay_cycle_id = ' . $goneId));
+        self::assertSame(0, $this->countRows('assignments', 'pay_period_id = ' . $gonePeriod));
+        self::assertSame(0, $this->countRows('payroll_entries', 'pay_cycle_id = ' . $goneId));
+        self::assertGreaterThan(0, $this->countRows('pay_periods', 'pay_cycle_id = ' . $keptId));
+        self::assertSame(2500, (int) $this->pdo->query('SELECT amount_minor FROM assignments WHERE pay_period_id = ' . $keptPeriod)->fetchColumn());
+        self::assertSame(1, $this->countRows('payroll_entries', 'pay_cycle_id = ' . $keptId));
+        self::assertSame('Current job', $this->cycles->get($keptId, '2026-11-07')['payor']);
+        self::assertSame('Shelter', $categories->get($bucketId)['name']);
+        self::assertGreaterThan(0, $this->countRows('categories', "user_id = {$this->demoId} AND role = 'locked'"));
+        $target = $this->pdo->query('SELECT pay_cycle_id, amount_minor, target_date FROM targets WHERE category_id = ' . $bucketId)->fetch();
+        self::assertIsArray($target);
+        self::assertNull($target['pay_cycle_id']);
+        self::assertSame(120000, (int) $target['amount_minor']);
+        self::assertSame('2027-02-01', $target['target_date']);
+    }
+
+    private function countRows(string $table, string $where): int
+    {
+        return (int) $this->pdo->query('SELECT COUNT(*) FROM ' . $table . ' WHERE ' . $where)->fetchColumn();
     }
 }

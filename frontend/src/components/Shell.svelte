@@ -8,8 +8,9 @@
   import Glyph from './Glyph.svelte';
   import { formatChipDate, formatSlashSpan } from '../lib/dates';
   import { fieldTips } from '../lib/fieldTips';
+  import { todayISO } from '../lib/money';
   import { tip } from '../lib/tip';
-  import { PERIOD_LENGTHS, periodEnd, periodShift, type PeriodLength } from '../lib/acctPeriod';
+  import { PERIOD_LENGTHS, periodEnd, periodShift, periodWithinReach, type PeriodLength } from '../lib/acctPeriod';
 
   let { children }: { children: Snippet } = $props();
   let open = $state(false);
@@ -122,8 +123,15 @@
     acctPeriodLength = next;
   }
 
+  function canNudge(steps: number): boolean {
+    if (!session.user) return false;
+    const length = session.user.acctPeriodLength;
+    const next = periodShift(session.user.acctPeriodStart, length, steps);
+    return periodWithinReach(next, length, todayISO());
+  }
+
   async function nudgeSpan(steps: number): Promise<void> {
-    if (!session.user || savingSpan) return;
+    if (!session.user || savingSpan || !canNudge(steps)) return;
     savingSpan = true;
     try {
       const data = await api<{ user: User }>('/api/settings', {
@@ -134,6 +142,8 @@
         },
       });
       adoptUser(data.user);
+    } catch {
+      // The arrows stay on the saved period when the request fails.
     } finally {
       savingSpan = false;
     }
@@ -286,11 +296,11 @@
     <div class="nav-foot">
       {#if spanLabel}
         <div class="period-step" role="group" aria-label={spanLabel}>
-          <button type="button" aria-label="Previous" disabled={savingSpan} onclick={() => void nudgeSpan(-1)}>
+          <button type="button" aria-label="Previous" disabled={savingSpan || !canNudge(-1)} onclick={() => void nudgeSpan(-1)}>
             <Glyph name="collapse" mini />
           </button>
           <span class="period-dates">{collapsed ? compactSpan : spanLabel}</span>
-          <button type="button" aria-label="Next" disabled={savingSpan} onclick={() => void nudgeSpan(1)}>
+          <button type="button" aria-label="Next" disabled={savingSpan || !canNudge(1)} onclick={() => void nudgeSpan(1)}>
             <Glyph name="expand" mini />
           </button>
         </div>

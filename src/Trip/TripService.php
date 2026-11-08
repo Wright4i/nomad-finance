@@ -659,7 +659,7 @@ final class TripService
     private function fuelPrice(): ?int
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, fuel_price_minor FROM vehicles WHERE user_id = ? AND starred = 1'
+            'SELECT id, fuel_price_minor FROM vehicles WHERE user_id = ? AND starred = 1 AND archived_at IS NULL'
         );
         $stmt->execute([$this->actor->id()]);
         $vehicle = $stmt->fetch();
@@ -698,7 +698,7 @@ final class TripService
     private function starredMpg(): ?int
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, mpg_min_tenths, mpg_max_tenths FROM vehicles WHERE user_id = ? AND starred = 1'
+            'SELECT id, mpg_min_tenths, mpg_max_tenths FROM vehicles WHERE user_id = ? AND starred = 1 AND archived_at IS NULL'
         );
         $stmt->execute([$this->actor->id()]);
         $row = $stmt->fetch();

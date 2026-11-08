@@ -21,11 +21,14 @@ final class VehicleService
     }
 
     /** @return list<array<string, mixed>> */
-    public function list(): array
+    public function list(bool $includeArchived = false): array
     {
-        $stmt = $this->pdo->prepare(
-            'SELECT * FROM vehicles WHERE user_id = ? ORDER BY starred DESC, name COLLATE NOCASE, id'
-        );
+        $sql = 'SELECT * FROM vehicles WHERE user_id = ?';
+        if (!$includeArchived) {
+            $sql .= ' AND archived_at IS NULL';
+        }
+        $sql .= ' ORDER BY CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END, starred DESC, name COLLATE NOCASE, id';
+        $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$this->actor->id()]);
         $prices = $this->fuelPriceIndex();
         $rows = [];
@@ -87,7 +90,10 @@ final class VehicleService
     /** @param array<string, mixed> $input */
     public function update(int $id, array $input): array
     {
-        $this->row($id);
+        $existing = $this->row($id);
+        if ($existing['archived_at'] !== null && !empty($input['starred'])) {
+            throw new ApiException(409, 'Unarchive this vehicle before starring it.');
+        }
         $data = $this->validate($input, $id);
         $now = gmdate('c');
         $this->pdo->beginTransaction();
@@ -123,11 +129,60 @@ final class VehicleService
         return $this->get($id);
     }
 
+    /** @return array<string, mixed> */
+    public function archive(int $id): array
+    {
+        $this->row($id);
+        $now = gmdate('c');
+        $this->pdo->prepare(
+            'UPDATE vehicles SET archived_at = COALESCE(archived_at, ?), starred = 0, updated_at = ? WHERE id = ? AND user_id = ?'
+        )->execute([$now, $now, $id, $this->actor->id()]);
+
+        return $this->get($id);
+    }
+
+    /** @return array<string, mixed> */
+    public function unarchive(int $id): array
+    {
+        $this->row($id);
+        $now = gmdate('c');
+        $this->pdo->prepare(
+            'UPDATE vehicles SET archived_at = NULL, updated_at = ? WHERE id = ? AND user_id = ?'
+        )->execute([$now, $id, $this->actor->id()]);
+
+        return $this->get($id);
+    }
+
+    public function delete(int $id, bool $confirm): void
+    {
+        $existing = $this->row($id);
+        if ($existing['archived_at'] === null) {
+            throw new ApiException(409, 'Only an archived vehicle can be deleted.');
+        }
+        if (!$confirm) {
+            throw new ApiException(409, 'Confirm before deleting this vehicle.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare('UPDATE bills SET vehicle_id = NULL, updated_at = ? WHERE vehicle_id = ?')
+                ->execute([gmdate('c'), $id]);
+            $this->pdo->prepare('DELETE FROM vehicles WHERE id = ? AND user_id = ?')
+                ->execute([$id, $this->actor->id()]);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     /** @return array{id:int,mpgMinTenths:int,mpgMaxTenths:int}|null */
     public function starred(): ?array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, mpg_min_tenths, mpg_max_tenths FROM vehicles WHERE user_id = ? AND starred = 1'
+            'SELECT id, mpg_min_tenths, mpg_max_tenths FROM vehicles WHERE user_id = ? AND starred = 1 AND archived_at IS NULL'
         );
         $stmt->execute([$this->actor->id()]);
         $row = $stmt->fetch();
@@ -308,6 +363,7 @@ final class VehicleService
             'fuelPriceMinor' => $fallback,
             'suggestedPricePerGallonMinor' => $this->openingPrice($prices, (int) $row['id'], $fallback),
             'milesPerGallon' => Fuel::label($pooled),
+            'archivedAt' => $row['archived_at'],
             'readings' => $readings,
         ];
     }
