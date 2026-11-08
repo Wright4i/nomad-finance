@@ -29,6 +29,16 @@ export function lockedBucketMaxMinor(targetMinor: number | null | undefined, bil
  * Preview fill for a want log. The typed amount does not change the bucket.
  * A zero Max stays an empty bar. Assigned plus the typed amount above Max is the overage.
  */
+/** Rounded percent of goal assigned. Null when goal is zero but something is assigned. */
+export function wantGaugeGoalPercent(assignedMinor: number, goalMinor: number): number | null {
+  const assigned = positive(assignedMinor);
+  const goal = positive(goalMinor);
+  if (goal === 0) {
+    return assigned === 0 ? 0 : null;
+  }
+  return Math.round((assigned * 100) / goal);
+}
+
 export function wantGaugeLevels(assignedMinor: number, maxMinor: number, typedMinor: number): WantGaugeLevels {
   const assigned = positive(assignedMinor);
   const max = positive(maxMinor);

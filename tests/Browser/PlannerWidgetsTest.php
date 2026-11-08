@@ -365,7 +365,7 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsStringIgnoringCase('Accounts', (string) $seen['accounts']);
         self::assertStringContainsStringIgnoringCase('Budget', (string) $seen['envelopes']);
         self::assertStringContainsStringIgnoringCase('Assigned', $seen['envelopes']);
-        self::assertStringContainsStringIgnoringCase('Max', $seen['envelopes']);
+        self::assertStringContainsStringIgnoringCase('Goal', $seen['envelopes']);
         self::assertFalse($seen['assign']);
         self::assertStringContainsString('50%', $seen['envelopes']);
         self::assertStringContainsString('30%', $seen['envelopes']);
@@ -453,10 +453,9 @@ final class PlannerWidgetsTest extends TestCase
         self::assertTrue($seen['assets']['colored']);
         self::assertIsArray($seen['faces']);
         self::assertStringContainsString('Fraunces', (string) $seen['faces']['total']);
-        self::assertStringContainsString('Fraunces', (string) $seen['faces']['available']);
         self::assertStringNotContainsString('Outfit', (string) $seen['faces']['assets']);
         self::assertStringNotContainsString('Fraunces', (string) $seen['faces']['assets']);
-        foreach (['liabilities', 'interest', 'payday', 'assigned', 'accounts'] as $face) {
+        foreach (['available', 'liabilities', 'interest', 'payday', 'assigned', 'accounts'] as $face) {
             self::assertSame($seen['faces']['assets'], $seen['faces'][$face]);
         }
         self::assertIsArray($seen['liabilities']);

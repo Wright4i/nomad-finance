@@ -12,7 +12,7 @@
   import { dollarClass, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
-  import { wantGaugeLevels } from '../lib/wantGauge';
+  import { wantGaugeGoalPercent, wantGaugeLevels } from '../lib/wantGauge';
   import type { CalendarEntry, Dashboard, DuePie, EnvelopeCategory, EnvelopeGroup, PlannerStay, PlannerWidget } from '../lib/types';
 
   const WIDGETS = ['income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'] as const;
@@ -509,13 +509,13 @@
           </span>
         </p>
         <div class="planner-interest">
-          <p class="planner-interest-lost m-0" data-interest="lost">
-            <span class="planner-interest-label">Interest lost</span>
-            <span class="planner-interest-amount"><Dollars minor={data.interestLostMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} owe suffix="/mn" /></span>
-          </p>
           <p class="planner-interest-gained m-0" data-interest="gained">
             <span class="planner-interest-label">Interest gained</span>
             <span class="planner-interest-amount"><Dollars minor={data.interestGainedMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} suffix="/mn" /></span>
+          </p>
+          <p class="planner-interest-lost m-0" data-interest="lost">
+            <span class="planner-interest-label">Interest lost</span>
+            <span class="planner-interest-amount"><Dollars minor={data.interestLostMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} owe suffix="/mn" /></span>
           </p>
         </div>
       </section>
@@ -695,6 +695,7 @@
                 <div class="planner-gauges">
                   {#each data.envelopes.groups as item (item.group)}
                     {@const levels = wantGaugeLevels(item.assignedMinor, item.targetMinor, 0)}
+                    {@const goalPercent = wantGaugeGoalPercent(item.assignedMinor, item.targetMinor)}
                     <button
                       class="want-gauge"
                       class:over={levels.over}
@@ -704,6 +705,9 @@
                       onclick={() => openGauge(item.group)}
                     >
                       <div class="want-gauge-meter">
+                        <p class="want-gauge-current m-0" aria-hidden="true">
+                          {#if goalPercent === null}—{:else}{goalPercent}%{/if}
+                        </p>
                         <div class="want-gauge-track">
                           <span class="want-gauge-assigned"></span>
                         </div>
@@ -714,7 +718,7 @@
                       <div class="want-gauge-readout">
                         <p class="want-gauge-name m-0">{groupLabel[item.group]} · {item.targetPercent}%</p>
                         <p class="want-gauge-line m-0"><span>Assigned</span> <Dollars minor={item.assignedMinor} currency={data.baseCurrency} exponent={data.exponent} /></p>
-                        <p class="want-gauge-line m-0"><span>Max</span> <Dollars minor={item.targetMinor} currency={data.baseCurrency} exponent={data.exponent} /></p>
+                        <p class="want-gauge-line m-0"><span>Goal</span> <Dollars minor={item.targetMinor} currency={data.baseCurrency} exponent={data.exponent} /></p>
                         {#if levels.over}
                           <p class="want-gauge-warning m-0">Over <Dollars minor={levels.overMinor} currency={data.baseCurrency} exponent={data.exponent} owe /></p>
                         {/if}
@@ -727,9 +731,9 @@
                 {:else}
                 <p class="envelope-available">
                   <span>Available to assign</span>
-                  <Dollars minor={data.envelopes.availableMinor} currency={data.baseCurrency} exponent={data.exponent} />
+                  <Dollars minor={data.envelopes.availableMinor} currency={data.baseCurrency} exponent={data.exponent} plain />
                   <span class="muted" title="Income still coming in this period, plus every asset marked Include in Budget.">
-                    <Dollars minor={data.envelopes.assignedMinor} currency={data.baseCurrency} exponent={data.exponent} /> assigned of <Dollars minor={data.envelopes.poolMinor} currency={data.baseCurrency} exponent={data.exponent} />
+                    <Dollars minor={data.envelopes.assignedMinor} currency={data.baseCurrency} exponent={data.exponent} plain /> assigned of <Dollars minor={data.envelopes.poolMinor} currency={data.baseCurrency} exponent={data.exponent} plain />
                   </span>
                 </p>
                 {/if}
