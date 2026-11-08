@@ -292,14 +292,14 @@ final class CategoriesTest extends TestCase
                 else rows.push({ top: tile.top, tiles: [tile] });
             }
             const board = document.querySelector('.account-board');
-            const rules = board ? [...board.querySelectorAll('.account-star-rule')] : [];
+            const rules = [...document.querySelectorAll('.account-star-rule')];
             const rule = rules[0] || null;
             const ruleBox = rule ? rule.getBoundingClientRect() : null;
             const ruleStyle = rule ? getComputedStyle(rule) : null;
             const boardBox = board ? board.getBoundingClientRect() : null;
             const firstLink = document.querySelector('a.bucket-tile');
             return {
-                first: tiles.slice(0, 2),
+                first: [rows[0] ? rows[0].tiles[0] : null, rows[1] ? rows[1].tiles[0] : null],
                 boardWidth: boardBox ? boardBox.width : 0,
                 line: firstLink ? getComputedStyle(firstLink).borderTopColor : '',
                 ruleCount: rules.length,
@@ -324,8 +324,8 @@ final class CategoriesTest extends TestCase
         $first = $cards['first'];
         self::assertIsArray($first);
         self::assertCount(2, $first);
-        self::assertSame('Everyday checking', $first[0]['name']);
-        self::assertSame(1, $cards['rows'][0]['count']);
+        self::assertSame('Fuel card', $first[0]['name']);
+        self::assertSame(3, $cards['rows'][0]['count']);
         self::assertGreaterThan($first[0]['bottom'], $first[1]['top']);
         self::assertEqualsWithDelta($first[0]['left'], $first[1]['left'], 2);
         self::assertEqualsWithDelta($first[0]['width'], $first[1]['width'], 2);

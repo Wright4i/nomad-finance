@@ -7,6 +7,8 @@
   import { formatDate, formatMinor, minorToInput, parseMajor } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import type { Vehicle, VehicleReading } from '../lib/types';
+  import { fieldTips } from '../lib/fieldTips';
+  import { tip } from '../lib/tip';
   import { vehicleKinds, vehicleTone, type VehicleKind } from '../lib/vehicleKinds';
 
   let { id = null }: { id?: string | null } = $props();
@@ -41,7 +43,6 @@
   let message = $state('');
   let saving = $state(false);
   let ready = $state(false);
-  let rangeHelp: HTMLDialogElement | undefined = $state();
   let fuelDialog: HTMLDialogElement | undefined = $state();
   let editBillId = $state<number | null>(null);
   let editDate = $state('');
@@ -232,12 +233,12 @@
     </div>
   </div>
   <label class="field">
-    <span>Current odometer</span>
+    <span use:tip={fieldTips.odometer}>Current odometer</span>
     <input name="currentOdometer" inputmode="numeric" bind:value={currentOdometer} />
     {#if fields.currentOdometerMiles}<em>{fields.currentOdometerMiles}</em>{/if}
   </label>
   <label class="field">
-    <span>Fallback price per gallon</span>
+    <span use:tip={fieldTips.fuelFallback}>Fallback price per gallon</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
       <input name="fuelPrice" inputmode="decimal" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
@@ -246,21 +247,18 @@
   </label>
   <div class="grid grid-cols-2 gap-3">
     <label class="field">
-      <span class="inline-flex items-center gap-2">
-        Minimum mpg
-        <button class="icon-btn" type="button" aria-label="How the range is used" onclick={() => rangeHelp?.showModal()}>?</button>
-      </span>
+      <span use:tip={fieldTips.mpgMin}>Minimum mpg</span>
       <input name="mpgMin" inputmode="decimal" bind:value={mpgMin} />
       {#if fields.mpgMinTenths}<em>{fields.mpgMinTenths}</em>{/if}
     </label>
     <label class="field">
-      <span>Maximum mpg</span>
+      <span use:tip={fieldTips.mpgMax}>Maximum mpg</span>
       <input name="mpgMax" inputmode="decimal" bind:value={mpgMax} />
       {#if fields.mpgMaxTenths}<em>{fields.mpgMaxTenths}</em>{/if}
     </label>
   </div>
   {#if showStar}
-    <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} onclick={() => (starred = !starred)}>{starred ? '★ Default vehicle' : '☆ Make this the default'}</button>
+    <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} use:tip={fieldTips.vehicleStar} onclick={() => (starred = !starred)}>{starred ? '★ Default vehicle' : '☆ Make this the default'}</button>
   {/if}
   <div class="flex flex-wrap gap-2">
     <button class="btn primary" type="submit" disabled={saving} aria-busy={saving}>{saving ? 'Saving…' : 'Save vehicle'}</button>
@@ -331,16 +329,6 @@
   </section>
 {/if}
 
-<dialog class="modal" bind:this={rangeHelp} aria-labelledby="range-help-title">
-  <div class="modal-body">
-    <h2 id="range-help-title" class="m-0 text-2xl">How the range is used</h2>
-    <p class="m-0">The min/max range is to throw out outlier mpg readings from missed odometer entries and fill-ups while not towing</p>
-  </div>
-  <div class="modal-actions">
-    <button class="btn" type="button" onclick={() => rangeHelp?.close()}>Close</button>
-  </div>
-</dialog>
-
 <dialog class="modal" bind:this={fuelDialog} aria-labelledby="fuel-edit-title">
   <form onsubmit={saveFuel}>
     <div class="modal-body">
@@ -348,12 +336,12 @@
       {#if editDate}<p class="m-0 muted">{editDate}</p>{/if}
       <Note bind:message={editMessage} />
       <label class="field">
-        <span>Odometer</span>
+        <span use:tip={fieldTips.fuelEditOdometer}>Odometer</span>
         <input name="fuelOdometer" inputmode="numeric" bind:value={editOdometer} />
         {#if editFields.odometerMiles}<em>{editFields.odometerMiles}</em>{/if}
       </label>
       <label class="field">
-        <span>Amount</span>
+        <span use:tip={fieldTips.fuelEditAmount}>Amount</span>
         <span class="money-input">
           <span class="money-mark" aria-hidden="true">$</span>
           <input name="fuelAmount" inputmode="decimal" bind:value={editAmount} />
@@ -361,7 +349,7 @@
         {#if editFields.amountMinor}<em>{editFields.amountMinor}</em>{/if}
       </label>
       <label class="field">
-        <span>Price per gallon</span>
+        <span use:tip={fieldTips.fuelEditPrice}>Price per gallon</span>
         <span class="money-input">
           <span class="money-mark" aria-hidden="true">$</span>
           <input name="fuelPricePerGallon" inputmode="decimal" bind:value={editPrice} />

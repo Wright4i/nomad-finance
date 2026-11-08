@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { balanceGoalMinor, fillFor, type FillBucket } from './bucketFill.ts';
+import { balanceGoalMinor, bucketMark, fillFor, type FillBucket } from './bucketFill.ts';
 
 const balance: FillBucket = {
   role: 'goal',
@@ -53,6 +53,17 @@ test('locked buckets rise together with the category and split the overage', () 
     assert.equal(fill.overBy, share);
   }
   assert.equal(share, 3208);
+});
+
+test('a goal with no target is marked none, and a target balance is marked balance', () => {
+  const plain: FillBucket = { role: 'goal', amountMinor: 0, envelopeMinor: 0, target: null };
+  const balance: FillBucket = { role: 'goal', amountMinor: 0, envelopeMinor: 0, target: { kind: 'balance', amountMinor: 50000 } };
+  const needed: FillBucket = { role: 'goal', amountMinor: 0, envelopeMinor: 0, target: { kind: 'needed', amountMinor: 120000 } };
+  const locked: FillBucket = { role: 'locked', amountMinor: 100, envelopeMinor: 0, target: null };
+  assert.equal(bucketMark(plain), 'none');
+  assert.equal(bucketMark(balance), 'balance');
+  assert.equal(bucketMark(needed), 'auto');
+  assert.equal(bucketMark(locked), 'auto');
 });
 
 test('a manual bucket with no goal maps zero through $1000 onto the fill', () => {

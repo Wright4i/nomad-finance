@@ -8,6 +8,8 @@
   import { formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
+  import { fieldTips } from '../lib/fieldTips';
+  import { tip } from '../lib/tip';
 import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from '../lib/types';
   import { lockedBucketMaxMinor, wantGaugeLevels } from '../lib/wantGauge';
 
@@ -21,10 +23,9 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
       'restaurants', 'entertainment', 'subscriptions', 'shopping', 'travel',
       'memberships', 'software', 'pets', 'misc',
     ],
-    saving: ['debt', 'emergency', 'repairs', 'investments', 'liquidities'],
   };
 
-  let kind = $state<'fuel' | 'need' | 'want' | 'saving'>('fuel');
+  let kind = $state<'fuel' | 'need' | 'want'>('fuel');
   let accounts = $state<Account[]>([]);
   let vehicles = $state<Vehicle[]>([]);
   let categories = $state<Category[]>([]);
@@ -54,7 +55,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
   let mpg = $derived(liveMpg(miles, amount, price));
   let sheet = $state<EnvelopeSheet | null>(null);
 
-  let spendTypes = $derived(kind === 'need' ? typesByKind.need : kind === 'saving' ? typesByKind.saving : typesByKind.want);
+  let spendTypes = $derived(kind === 'need' ? typesByKind.need : typesByKind.want);
   let wantBucket = $derived.by((): EnvelopeCategory | null => {
     if (!sheet) return null;
     const match = categories.find((item) => item.locked && item.billType === spendType);
@@ -115,26 +116,29 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
         vehicleId = String(starred.id);
         applyVehicle(starred);
       }
-      const fuel = accounts.find((item) => item.type === 'fuel');
-      if (fuel) accountId = String(fuel.id);
+      pickAccount('fuel');
       sheet = await api<EnvelopeSheet>(`/api/budget?today=${todayISO()}`).catch(() => null);
     } catch (err) {
       message = explain(err).message;
     }
   });
 
-  function chooseKind(next: 'fuel' | 'need' | 'want' | 'saving'): void {
+  function chooseKind(next: 'fuel' | 'need' | 'want'): void {
     kind = next;
     if (next === 'need') spendType = 'groceries';
     if (next === 'want') spendType = 'restaurants';
-    if (next === 'saving') spendType = 'debt';
+    pickAccount(next);
+  }
+
+  function pickAccount(next: 'fuel' | 'need' | 'want'): void {
     if (next === 'fuel') {
-      const fuel = accounts.find((item) => item.type === 'fuel');
-      if (fuel) accountId = String(fuel.id);
+      const gas = accounts.find((item) => item.gasFavorite && item.type === 'fuel' && item.archivedAt === null)
+        ?? accounts.find((item) => item.type === 'fuel' && item.archivedAt === null);
+      accountId = gas ? String(gas.id) : '';
       return;
     }
-    const starred = accounts.find((item) => item.starred);
-    if (starred) accountId = String(starred.id);
+    const shopping = accounts.find((item) => item.shoppingFavorite && item.type === 'credit' && item.archivedAt === null);
+    accountId = shopping ? String(shopping.id) : '';
   }
 
   function bucketName(): string {
@@ -195,10 +199,9 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">New log</h1>
-  <p class="muted m-0">A log is a one-time bill left unpaid. It does not change a bucket. Recalculate on Budget counts that bill. Mark it paid later. Logged to a liability, the amount owed rises by that amount. An asset balance stays as you typed it.</p>
   <Note bind:message />
   <div class="field">
-    <span>Kind</span>
+    <span use:tip={fieldTips.logKind}>Kind</span>
     <div class="flex gap-2">
       <button class="choice" class:on={kind === 'fuel'} type="button" onclick={() => chooseKind('fuel')}>
         <Glyph name="fuel" mini /> Fuel
@@ -209,13 +212,10 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
       <button class="choice" class:on={kind === 'want'} type="button" onclick={() => chooseKind('want')}>
         <Glyph name="wants" mini /> Want
       </button>
-      <button class="choice" class:on={kind === 'saving'} type="button" onclick={() => chooseKind('saving')}>
-        <Glyph name="savings" mini /> Saving
-      </button>
     </div>
   </div>
   <label class="field">
-    <span>Account</span>
+    <span use:tip={fieldTips.logAccount}>Account</span>
     <select name="accountId" bind:value={accountId}>
       <option value="">Choose an account</option>
       {#each (kind === 'fuel' && fuelAccounts.length > 0 ? fuelAccounts : accounts) as item}
@@ -236,7 +236,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
       {#if fields.vehicleId}<em>{fields.vehicleId}</em>{/if}
     </label>
     <label class="field">
-      <span>Odometer</span>
+      <span use:tip={fieldTips.logOdometer}>Odometer</span>
       <input name="odometer" inputmode="numeric" bind:value={odometer} oninput={() => (odometerTouched = true)} />
       {#if fields.odometerMiles}<em>{fields.odometerMiles}</em>{/if}
     </label>
@@ -255,7 +255,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
       </div>
     {/if}
     <label class="field">
-      <span>Price per gallon</span>
+      <span use:tip={fieldTips.logPrice}>Price per gallon</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
         <input name="price" inputmode="decimal" bind:value={price} oninput={() => (priceTouched = true)} />
@@ -264,7 +264,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     </label>
   {:else}
     <div class="field">
-      <span>Type</span>
+      <span use:tip={fieldTips.logType}>Type</span>
       <div class="flex flex-wrap gap-2">
         {#each spendTypes as option}
           <button class="choice" class:on={spendType === option} type="button" data-log-type={option} style={`--tone: var(--tone-${option})`} onclick={() => (spendType = option)}>
@@ -316,7 +316,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     {/if}
   {/if}
   <label class="field">
-    <span>Amount</span>
+    <span use:tip={fieldTips.logAmount}>Amount</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
       <input name="amount" inputmode="decimal" bind:value={amount} />
@@ -324,7 +324,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
   </label>
   <label class="field">
-    <span>Date</span>
+    <span use:tip={fieldTips.logDate}>Date</span>
     <DateField name="date" bind:value={postedOn} />
     {#if fields.date}<em>{fields.date}</em>{/if}
   </label>

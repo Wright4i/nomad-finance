@@ -89,12 +89,12 @@ final class LogRulesTest extends TestCase
             'date' => '2026-11-05',
             'today' => '2026-11-05',
         ]);
-        self::assertSame('active', $logged['status']);
-        self::assertNull($logged['lastPaidOn']);
+        self::assertSame('paid', $logged['status']);
+        self::assertSame('2026-11-05', $logged['lastPaidOn']);
         self::assertSame('Fuel', $logged['name']);
         self::assertSame('fuel', $logged['type']);
         self::assertFalse($logged['locked']);
-        self::assertSame($before, $this->balance());
+        self::assertSame($before - 4000, $this->balance());
         $fed = $this->vehicles->get($vehicle['id']);
         self::assertSame(1100, $fed['currentOdometerMiles']);
         self::assertSame(400, $fed['suggestedPricePerGallonMinor']);
@@ -102,10 +102,13 @@ final class LogRulesTest extends TestCase
         self::assertSame(1100, $fed['readings'][0]['odometerMiles']);
         self::assertSame(100, $fed['readings'][0]['miles']);
         self::assertSame('10.0', $fed['readings'][0]['milesPerGallon']);
-        $paid = $this->bills->markPaid($logged['id'], ['paidOn' => '2026-11-05']);
-        self::assertSame('paid', $paid['status']);
-        self::assertSame('2026-11-05', $paid['lastPaidOn']);
-        self::assertSame($before, $this->balance());
+        try {
+            $this->bills->markPaid($logged['id'], ['paidOn' => '2026-11-05']);
+            self::fail('A paid log was marked paid again.');
+        } catch (ApiException $e) {
+            self::assertSame(409, $e->status);
+        }
+        self::assertSame($before - 4000, $this->balance());
         self::assertSame(1100, $this->vehicles->get($vehicle['id'])['currentOdometerMiles']);
         try {
             $this->vehicles->update($vehicle['id'], [
@@ -146,7 +149,7 @@ final class LogRulesTest extends TestCase
             'currentOdometerMiles' => 1000,
         ]);
 
-        $this->bills->log([
+        $dinner = $this->bills->log([
             'kind' => 'want',
             'type' => 'restaurants',
             'name' => 'Dinner 1',
@@ -155,7 +158,7 @@ final class LogRulesTest extends TestCase
             'date' => '2026-11-05',
             'today' => '2026-11-05',
         ]);
-        $this->bills->log([
+        $fill = $this->bills->log([
             'kind' => 'fuel',
             'accountId' => $fuel['id'],
             'amountMinor' => 4000,
@@ -164,6 +167,10 @@ final class LogRulesTest extends TestCase
             'date' => '2026-11-05',
             'today' => '2026-11-05',
         ]);
+        self::assertSame('active', $dinner['status']);
+        self::assertNull($dinner['lastPaidOn']);
+        self::assertSame('active', $fill['status']);
+        self::assertNull($fill['lastPaidOn']);
 
         self::assertSame(88500, $this->accounts->get($card['id'])['balanceMinor']);
         self::assertSame(10400, $this->accounts->get($fuel['id'])['balanceMinor']);
@@ -182,13 +189,10 @@ final class LogRulesTest extends TestCase
             'date' => '2026-11-05',
             'today' => '2026-11-05',
         ]);
-        self::assertSame('active', $logged['status']);
-        self::assertNull($logged['lastPaidOn']);
+        self::assertSame('paid', $logged['status']);
+        self::assertSame('2026-11-05', $logged['lastPaidOn']);
         self::assertSame('Restaurants', $logged['categoryName']);
-        self::assertSame($before, $this->balance());
-        $paid = $this->bills->markPaid($logged['id'], ['paidOn' => '2026-11-05']);
-        self::assertSame('paid', $paid['status']);
-        self::assertSame($before, $this->balance());
+        self::assertSame($before - 2500, $this->balance());
         $active = $this->bills->create([
             'name' => 'Phone 1',
             'type' => 'cellular',
@@ -254,7 +258,7 @@ final class LogRulesTest extends TestCase
         }
     }
 
-    public function testANeedLogOmitsFuelAndASavingLogFilesOnItsBucket(): void
+    public function testANeedLogOmitsFuelAndASavingLogIsRefused(): void
     {
         $before = $this->balance();
         try {
@@ -275,17 +279,17 @@ final class LogRulesTest extends TestCase
         try {
             $this->bills->log([
                 'kind' => 'saving',
-                'type' => 'restaurants',
-                'name' => 'Dinner 2',
+                'type' => 'debt',
+                'name' => 'Payment 1',
                 'accountId' => $this->checkingId,
-                'amountMinor' => 1000,
+                'amountMinor' => 900,
                 'date' => '2026-11-05',
                 'today' => '2026-11-05',
             ]);
-            self::fail('A saving log accepted a wants type.');
+            self::fail('A saving log was stored.');
         } catch (ApiException $e) {
             self::assertSame(422, $e->status);
-            self::assertSame('Choose a savings type.', $e->fields['type']);
+            self::assertArrayHasKey('kind', $e->fields);
         }
 
         $groceries = $this->bills->log([
@@ -297,36 +301,37 @@ final class LogRulesTest extends TestCase
             'date' => '2026-11-05',
             'today' => '2026-11-05',
         ]);
-        self::assertSame('active', $groceries['status']);
-        self::assertNull($groceries['lastPaidOn']);
+        self::assertSame('paid', $groceries['status']);
+        self::assertSame('2026-11-05', $groceries['lastPaidOn']);
         self::assertSame('groceries', $groceries['type']);
         self::assertSame('Groceries', $groceries['categoryName']);
-        self::assertSame($before, $this->balance());
-
-        $debt = $this->bills->log([
-            'kind' => 'saving',
-            'type' => 'debt',
-            'name' => 'Payment 1',
-            'accountId' => $this->checkingId,
-            'amountMinor' => 900,
-            'date' => '2026-11-05',
-            'today' => '2026-11-05',
-        ]);
-        self::assertSame('active', $debt['status']);
-        self::assertNull($debt['lastPaidOn']);
-        self::assertSame('debt', $debt['type']);
-        self::assertSame('Debt', $debt['categoryName']);
-        self::assertSame($before, $this->balance());
+        self::assertSame($before - 1800, $this->balance());
+        try {
+            $this->bills->log([
+                'kind' => 'need',
+                'type' => 'groceries',
+                'name' => 'Too much',
+                'accountId' => $this->checkingId,
+                'amountMinor' => 1000000,
+                'date' => '2026-11-05',
+                'today' => '2026-11-05',
+            ]);
+            self::fail('A log spent more than the account holds.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertStringContainsString('Short', $e->getMessage());
+        }
+        self::assertSame($before - 1800, $this->balance());
     }
 
-    public function testALockedBillDrawsFromTheStarredAccount(): void
+    public function testALockedBillDrawsFromTheAssetFavorite(): void
     {
         $checking = $this->accounts->create([
             'name' => 'Everyday',
             'type' => 'checking',
             'currency' => 'USD',
             'balanceMinor' => 1000,
-            'starred' => true,
+            'assetFavorite' => true,
         ]);
         $card = $this->accounts->create([
             'name' => 'Card star',
@@ -347,7 +352,7 @@ final class LogRulesTest extends TestCase
             'type' => 'cash',
             'currency' => 'USD',
             'balanceMinor' => 100,
-            'starred' => true,
+            'assetFavorite' => true,
         ]);
         self::assertSame($wallet['id'], $this->named('Card star')['accountId']);
 
@@ -356,7 +361,7 @@ final class LogRulesTest extends TestCase
             'type' => 'cash',
             'currency' => 'USD',
             'balanceMinor' => 100,
-            'starred' => false,
+            'assetFavorite' => false,
         ]);
         self::assertSame($card['id'], $this->named('Card star')['accountId']);
     }
@@ -435,9 +440,8 @@ final class LogRulesTest extends TestCase
         self::assertSame(4000, $this->bills->get($id)['amountMinor']);
         self::assertSame(1100, $this->bills->get($id)['odometerMiles']);
         self::assertSame(400, $this->bills->get($id)['pricePerGallonMinor']);
-        self::assertSame($before, $this->balance());
+        self::assertSame($before - 4000, $this->balance());
 
-        $this->bills->markPaid($id, ['paidOn' => '2026-11-05']);
         $lowered = $this->bills->updateFuel($id, [
             'odometerMiles' => 1050,
             'amountMinor' => 2000,
@@ -448,7 +452,7 @@ final class LogRulesTest extends TestCase
         self::assertSame(1050, $lowered['odometerMiles']);
         self::assertSame(500, $lowered['pricePerGallonMinor']);
         self::assertSame('paid', $lowered['status']);
-        self::assertSame($before, $this->balance());
+        self::assertSame($before - 4000, $this->balance());
         $past = $this->vehicles->get($vehicle['id']);
         self::assertSame(1100, $past['currentOdometerMiles']);
         self::assertSame(1050, $past['readings'][0]['odometerMiles']);
@@ -468,7 +472,7 @@ final class LogRulesTest extends TestCase
         self::assertSame(1200, $advanced['currentOdometerMiles']);
         self::assertSame(200, $advanced['readings'][0]['miles']);
         self::assertSame('50.0', $advanced['readings'][0]['milesPerGallon']);
-        self::assertSame($before, $this->balance());
+        self::assertSame($before - 4000, $this->balance());
 
         $cleared = $this->bills->updateFuel($id, [
             'odometerMiles' => 1200,
@@ -518,7 +522,7 @@ final class LogRulesTest extends TestCase
         $gone = $this->vehicles->get($vehicle['id']);
         self::assertSame([], $gone['readings']);
         self::assertSame(1200, $gone['currentOdometerMiles']);
-        self::assertSame($before, $this->balance());
+        self::assertSame($before - 4000, $this->balance());
         self::assertSame('Rent 1', $this->bills->get((int) $rent['id'])['name']);
     }
 

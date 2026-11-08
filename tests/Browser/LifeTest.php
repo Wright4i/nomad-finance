@@ -337,27 +337,64 @@ final class LifeTest extends TestCase
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($vehicle))->click();
         self::waitForText('Stretch mpg');
         self::waitForText('8.0');
-        $help = WebDriverBy::cssSelector('button[aria-label="How the range is used"]');
-        $button = self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($help));
-        self::assertNull($button->getAttribute('title'));
-        $button->click();
-        $copy = 'The min/max range is to throw out outlier mpg readings from missed odometer entries and fill-ups while not towing';
-        self::wait()->until(function () use ($copy): bool {
-            $text = self::driver()->executeScript(<<<'JS'
-                const dialog = document.querySelector('dialog.modal[open]');
-                return dialog ? dialog.innerText : '';
-            JS);
-
-            return is_string($text) && str_contains($text, $copy);
-        });
-        self::click('Close');
+        self::assertCount(0, self::driver()->findElements(WebDriverBy::cssSelector('button[aria-label="How the range is used"]')));
+        $mpg = self::driver()->findElement(WebDriverBy::xpath('//label[.//input[@name="mpgMin"]]/span'));
+        self::assertSame('help', $mpg->getCssValue('cursor'));
+        self::driver()->action()->moveToElement($mpg)->perform();
         self::wait()->until(function (): bool {
-            $open = self::driver()->executeScript(<<<'JS'
-                return document.querySelector('dialog.modal[open]') !== null;
+            $text = self::driver()->executeScript(<<<'JS'
+                const tip = document.querySelector('.nav-tip');
+                return tip ? tip.textContent : '';
             JS);
 
-            return $open === false;
+            return is_string($text) && str_contains($text, 'left out of the average');
         });
+        $mpgTip = self::driver()->executeScript(<<<'JS'
+            const label = document.querySelector('input[name="mpgMin"]')?.closest('label')?.querySelector('span');
+            const tip = document.querySelector('.nav-tip');
+            if (!label || !tip) return null;
+            const box = label.getBoundingClientRect();
+            const tipBox = tip.getBoundingClientRect();
+            return {
+                open: tip.matches(':popover-open'),
+                left: Math.abs(tipBox.left - box.left),
+                above: tipBox.bottom <= box.top + 1,
+            };
+        JS);
+        self::assertIsArray($mpgTip);
+        self::assertTrue($mpgTip['open']);
+        self::assertLessThan(2, (float) $mpgTip['left']);
+        self::assertTrue($mpgTip['above']);
+        self::click('Demo');
+        self::waitForText('Name and password');
+        $period = self::driver()->findElement(WebDriverBy::xpath('//dialog[contains(@class, "modal")]//span[normalize-space()="Period starts"]'));
+        self::driver()->action()->moveToElement($period)->perform();
+        $settingsTip = self::wait()->until(function (): array|false {
+            $placed = self::driver()->executeScript(<<<'JS'
+                const label = [...document.querySelectorAll('dialog.modal span')].find((node) => node.textContent.trim() === 'Period starts');
+                const tip = document.querySelector('.nav-tip');
+                if (!label || !tip || !tip.textContent.includes('Calendar and trips')) return null;
+                const box = label.getBoundingClientRect();
+                const tipBox = tip.getBoundingClientRect();
+                const dialog = label.closest('dialog');
+                const panel = dialog ? dialog.getBoundingClientRect() : null;
+                return {
+                    open: tip.matches(':popover-open'),
+                    left: Math.abs(tipBox.left - box.left),
+                    above: tipBox.bottom <= box.top + 1,
+                    overDialog: panel ? tipBox.bottom < panel.bottom && tipBox.top < panel.top + panel.height : false,
+                    onScreen: tipBox.left >= 4 && tipBox.right <= window.innerWidth - 4 && tipBox.width > 8,
+                };
+            JS);
+
+            return is_array($placed) ? $placed : false;
+        });
+        self::assertTrue($settingsTip['open']);
+        self::assertLessThan(2, (float) $settingsTip['left']);
+        self::assertTrue($settingsTip['above']);
+        self::assertTrue($settingsTip['overDialog']);
+        self::assertTrue($settingsTip['onScreen']);
+        self::click('Cancel');
         self::assertANestedNightShowsAndCanMoveEarlier();
     }
 
@@ -568,6 +605,39 @@ final class LifeTest extends TestCase
                 nameSize: name ? getComputedStyle(name).fontSize : '',
                 letter,
                 theme: document.querySelector('.theme-toggle') ? document.querySelector('.theme-toggle').getAttribute('aria-label') : '',
+                period: nav.querySelector('.period-dates') ? nav.querySelector('.period-dates').textContent.trim() : '',
+                periodSize: nav.querySelector('.period-dates') ? Number.parseFloat(getComputedStyle(nav.querySelector('.period-dates')).fontSize) : 0,
+                periodStack: (() => {
+                    const dates = nav.querySelector('.period-dates');
+                    const step = dates ? dates.parentElement : null;
+                    if (!step) return null;
+                    const buttons = [...step.querySelectorAll('button')];
+                    if (buttons.length !== 2) return null;
+                    const line = dates.getBoundingClientRect();
+                    const previous = buttons[0].getBoundingClientRect();
+                    const next = buttons[1].getBoundingClientRect();
+                    const sample = dates.textContent;
+                    dates.textContent = '10/16-11/15';
+                    const wide = dates.getBoundingClientRect().width;
+                    dates.textContent = sample;
+                    return {
+                        datesAbove: line.bottom <= previous.top + 1 && line.bottom <= next.top + 1,
+                        stacked: previous.bottom <= next.top + 1,
+                        previousWide: previous.width >= 30,
+                        fits: wide <= nav.getBoundingClientRect().width + 1,
+                    };
+                })(),
+                moon: (() => {
+                    const button = nav.querySelector('.theme-toggle');
+                    const path = button ? button.querySelector('path') : null;
+                    if (!button || !path) return null;
+                    const box = button.getBoundingClientRect();
+                    const ink = path.getBoundingClientRect();
+                    return {
+                        x: Math.abs((ink.left + ink.width / 2) - (box.left + box.width / 2)),
+                        y: Math.abs((ink.top + ink.height / 2) - (box.top + box.height / 2)),
+                    };
+                })(),
                 logout: Boolean(nav.querySelector('.nav-logout svg')),
                 rail: columns.length ? Number.parseFloat(columns[0]) : 0,
             };
@@ -583,8 +653,18 @@ final class LifeTest extends TestCase
         self::assertSame('0px', $mini['nameSize']);
         self::assertGreaterThan(0, (float) $mini['letter']);
         self::assertSame('Night', $mini['theme']);
+        self::assertMatchesRegularExpression('/^\d{1,2}\/\d{1,2}-\d{1,2}\/\d{1,2}$/', (string) $mini['period']);
+        self::assertLessThanOrEqual(9, (float) $mini['periodSize']);
+        self::assertIsArray($mini['periodStack']);
+        self::assertTrue($mini['periodStack']['datesAbove']);
+        self::assertTrue($mini['periodStack']['stacked']);
+        self::assertTrue($mini['periodStack']['previousWide']);
+        self::assertTrue($mini['periodStack']['fits']);
+        self::assertIsArray($mini['moon']);
+        self::assertLessThan(1.5, (float) $mini['moon']['x']);
+        self::assertLessThan(1.5, (float) $mini['moon']['y']);
         self::assertTrue($mini['logout']);
-        self::assertLessThan(120, $mini['rail']);
+        self::assertLessThan(90, $mini['rail']);
 
         self::driver()->executeScript(<<<'JS'
             window.__tipAt = 0;

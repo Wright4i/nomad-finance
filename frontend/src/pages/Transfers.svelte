@@ -8,6 +8,9 @@
   import { formatBps, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { session } from '../lib/session.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
+  import { payFromAccount } from '../lib/payFrom';
+  import { fieldTips } from '../lib/fieldTips';
+  import { tip } from '../lib/tip';
   import type { Account } from '../lib/types';
 
   type Charge = {
@@ -164,6 +167,10 @@
   async function loadAccounts(): Promise<void> {
     const data = await api<{ accounts: Account[] }>('/api/accounts');
     accounts = data.accounts;
+    if (sourceId === '') {
+      const asset = payFromAccount(accounts);
+      if (asset) sourceId = String(asset.id);
+    }
   }
 
   async function loadCard(): Promise<void> {
@@ -358,7 +365,7 @@
       </span>
       {#if account.side === 'asset' && account.inBudget}
         <span class="account-budget" role="img" title={budgetLabel(account)} aria-label={budgetLabel(account)}>
-          <Glyph name="dollar" mini />
+          <Glyph name="envelope" mini />
         </span>
       {/if}
     </span>
@@ -426,7 +433,7 @@
 
     {#if mode === 'card'}
       <label class="field">
-        <span>Card</span>
+        <span use:tip={fieldTips.card}>Card</span>
         <select name="cardId" bind:value={cardId} onchange={() => void loadCard()}>
           <option value="">Choose a paid-in-full card</option>
           {#each cards as card (card.id)}
@@ -466,7 +473,7 @@
           </div>
         </section>
         <label class="field">
-          <span>Pay from</span>
+          <span use:tip={fieldTips.payFrom}>Pay from</span>
           <select name="sourceId" bind:value={sourceId} onchange={() => { message = ''; closeConfirm(); }}>
             <option value="">Choose an account</option>
             {#each assets as account (account.id)}
@@ -485,7 +492,7 @@
               disabled={beyondMinor < 1}
               onclick={() => { coverGap = !coverGap; closeConfirm(); }}
             >
-              <strong>Not covered by buckets</strong>
+              <strong use:tip={fieldTips.uncovered}>Not covered by buckets</strong>
               <span class="muted text-sm">Calculated from Total payment</span>
               <strong class="money">{money(beyondMinor)}</strong>
             </button>
@@ -522,7 +529,7 @@
           </div>
         </section>
         <label class="field">
-          <span>Total payment</span>
+          <span use:tip={fieldTips.totalPayment}>Total payment</span>
           <span class="money-input">
             <span class="money-mark" aria-hidden="true">$</span>
             <input name="amount" inputmode="decimal" bind:value={amountText} oninput={() => { fitSelection(); closeConfirm(); }} />
@@ -532,7 +539,7 @@
       {/if}
     {:else}
       <label class="field">
-        <span>From</span>
+        <span use:tip={fieldTips.transferFrom}>From</span>
         <select name="moveSource" bind:value={sourceId} onchange={() => closeConfirm()}>
           <option value="">Choose an account</option>
           {#each fundedAssets as account (account.id)}
@@ -544,7 +551,7 @@
         {@render accountCard(sourceAccount)}
       {/if}
       <label class="field">
-        <span>To</span>
+        <span use:tip={fieldTips.transferTo}>To</span>
         <select name="moveDestination" bind:value={destinationId} onchange={() => closeConfirm()}>
           <option value="">Choose an account</option>
           {#each assets as account (account.id)}
@@ -556,7 +563,7 @@
         {@render accountCard(destinationAccount)}
       {/if}
       <label class="field">
-        <span>Amount</span>
+        <span use:tip={fieldTips.transferAmount}>Amount</span>
         <span class="money-input">
           <span class="money-mark" aria-hidden="true">$</span>
           <input name="moveAmount" inputmode="decimal" bind:value={amountText} oninput={() => closeConfirm()} />

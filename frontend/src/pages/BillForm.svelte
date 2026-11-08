@@ -9,6 +9,9 @@
   import { minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go, returnToBills } from '../lib/nav.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
+  import { billAccount } from '../lib/payFrom';
+  import { fieldTips } from '../lib/fieldTips';
+  import { tip } from '../lib/tip';
 import type { Account, Bill, Category } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
@@ -92,8 +95,7 @@ import type { Account, Bill, Category } from '../lib/types';
       categories = categoryData.categories;
       accounts = data.accounts.filter((item) => item.archivedAt === null || (id && String(item.id) === accountId));
       if (!id && accounts.length > 0) {
-        const starred = accounts.find((item) => item.starred);
-        const open = starred ?? accounts[0];
+        const open = billAccount(accounts);
         if (open) accountId = String(open.id);
       }
       if (!id) return;
@@ -133,7 +135,9 @@ import type { Account, Bill, Category } from '../lib/types';
           holder: null,
           inBudget: false,
           notes: null,
-          starred: false,
+          gasFavorite: false,
+          shoppingFavorite: false,
+          assetFavorite: false,
           archivedAt: 'archived',
         }];
       }
@@ -207,7 +211,6 @@ import type { Account, Bill, Category } from '../lib/types';
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit bill' : 'New bill'}</h1>
-  <p class="muted m-0">One amount. Saving writes that amount into the bucket on the oldest pay cycle. Marking paid leaves the account and the bucket as they are.</p>
   {#if ready && accounts.length === 0 && !id}
     <p>Create an account first. <a href="/accounts/new" onclick={(event) => { event.preventDefault(); go('/accounts/new'); }}>New account</a></p>
   {/if}
@@ -219,7 +222,7 @@ import type { Account, Bill, Category } from '../lib/types';
     {#if fields.name}<em>{fields.name}</em>{/if}
   </label>
   <div class="field">
-    <span>Type</span>
+    <span use:tip={fieldTips.billType}>Type</span>
     <div class="grid gap-3">
       {#each typeGroups as band, bandIndex (band.id)}
         {#if bandIndex > 0}<hr class="m-0" />{/if}
@@ -241,13 +244,13 @@ import type { Account, Bill, Category } from '../lib/types';
   </div>
   {#if named}
     <label class="field">
-      <span>{type === 'misc' ? 'Misc name' : 'Other name'}</span>
+      <span use:tip={fieldTips.billOtherName}>{type === 'misc' ? 'Misc name' : 'Other name'}</span>
       <input name="otherLabel" bind:value={otherLabel} />
       {#if fields.otherLabel}<em>{fields.otherLabel}</em>{/if}
     </label>
   {/if}
   <label class="field">
-    <span>Draw from</span>
+    <span use:tip={fieldTips.billDrawFrom}>Draw from</span>
     <select name="accountId" bind:value={accountId}>
       <option value="">Choose an account</option>
       {#each accounts as item}
@@ -257,7 +260,7 @@ import type { Account, Bill, Category } from '../lib/types';
     {#if fields.accountId}<em>{fields.accountId}</em>{/if}
   </label>
   <label class="field">
-    <span>Amount</span>
+    <span use:tip={fieldTips.billAmount}>Amount</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
       <input name="amount" inputmode="decimal" bind:value={amount} />
@@ -270,7 +273,7 @@ import type { Account, Bill, Category } from '../lib/types';
     </p>
   {:else}
     <label class="field">
-      <span>Bucket</span>
+      <span use:tip={fieldTips.billBucket}>Bucket</span>
       <select name="categoryId" bind:value={categoryId}>
         {#each bucketChoices as category (category.id)}
           <option value={String(category.id)}>{category.name}</option>
@@ -280,7 +283,7 @@ import type { Account, Bill, Category } from '../lib/types';
     </label>
   {/if}
   <label class="field">
-    <span>Recurrence</span>
+    <span use:tip={fieldTips.billRecurrence}>Recurrence</span>
     <select name="recurrence" bind:value={recurrence}>
       {#each recurrences as option}<option value={option}>{option}</option>{/each}
     </select>
@@ -289,7 +292,7 @@ import type { Account, Bill, Category } from '../lib/types';
     <label class="span-slider" style={`--span: ${every}; --span-steps: 10`}>
       <span class="span-slider-readout">
         <strong>{every}</strong>
-        <span>{everyLabel}</span>
+          <span use:tip={fieldTips.billEvery}>{everyLabel}</span>
       </span>
       <input
         type="range"
@@ -317,13 +320,13 @@ import type { Account, Bill, Category } from '../lib/types';
     {#if fields.every}<em>{fields.every}</em>{/if}
   {/if}
   <label class="field">
-    <span>Next due date</span>
+    <span use:tip={fieldTips.billDue}>Next due date</span>
     <DateField name="nextDueDate" bind:value={nextDueDate} />
     {#if fields.nextDueDate}<em>{fields.nextDueDate}</em>{/if}
   </label>
   <label class="flex items-center gap-2">
     <input class="w-auto" type="checkbox" name="autopay" bind:checked={autopay} />
-    <span>Autopay is on at the bank</span>
+    <span use:tip={fieldTips.billAutopay}>Autopay is on at the bank</span>
   </label>
   <label class="field">
     <span>Notes</span>

@@ -87,7 +87,7 @@ final class EnvelopesTest extends TestCase
         parent::onNotSuccessfulTest($t);
     }
 
-    public function testDemoAssignsInTheOpenPeriodAndKeepsTheClosedOne(): void
+    public function testDemoKeepsOneEnvelopeAcrossPeriods(): void
     {
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
@@ -299,7 +299,7 @@ final class EnvelopesTest extends TestCase
                 const assigned = row ? row.querySelector('input[name^="amount-"]') : null;
                 const maximum = row ? row.querySelector('[data-field="target"]') : null;
                 const heading = row ? row.querySelector('strong') : null;
-                const label = row ? row.querySelector('.bucket-field > span') : null;
+                const label = row ? row.querySelector('label.bucket-field > span') : null;
                 const glyph = row ? row.querySelector('.glyph') : null;
                 return {
                     found: Boolean(row),
@@ -322,6 +322,7 @@ final class EnvelopesTest extends TestCase
                     maximumValue: maximum ? maximum.value : '',
                     water: row ? row.style.getPropertyValue('--level') : '',
                     chip: row ? (row.querySelector('.goal-chip') ? row.querySelector('.goal-chip').textContent : '') : '',
+                    bill: row ? (row.querySelector('.bill-chip:not(.status-spacer)') ? row.querySelector('.bill-chip:not(.status-spacer)').textContent : '') : '',
                     autoText: row ? (row.querySelector('[data-field="auto"]') ? row.querySelector('[data-field="auto"]').textContent : '') : '',
                     targetText: maximum ? maximum.textContent : '',
                     over: row ? row.classList.contains('over') : false,
@@ -359,6 +360,10 @@ final class EnvelopesTest extends TestCase
         self::assertHardIcon((string) $bars['rent']['glyphFilter']);
         self::assertFieldInkStaysWhiteInDay();
         self::assertFalse($bars['rent']['assignedDisabled']);
+        self::assertSame('Bill assignments', $bars['rent']['bill']);
+        self::assertSame('', $bars['needs']['bill']);
+        self::assertSame('', $bars['wants']['bill']);
+        self::assertSame('', $bars['repair']['bill']);
         self::assertSame('0.00', $bars['rent']['assignedValue']);
         self::assertGreaterThan(0, (float) $bars['rent']['water']);
         self::assertLessThanOrEqual(1, (float) $bars['rent']['water']);
@@ -375,14 +380,12 @@ final class EnvelopesTest extends TestCase
         self::assertSame('$500.00', $bars['repair']['targetText']);
         self::assertSame('0', $bars['repair']['water']);
         self::assertFalse($bars['repair']['over']);
-        self::assertSame('', $bars['needs']['chip']);
-        $cushionAuto = (int) round((float) str_replace(['$', ','], '', (string) $bars['needs']['autoText']) * 100);
-        $cushionEnvelope = (int) round((float) $bars['needs']['assignedValue'] * 100);
-        self::assertEqualsWithDelta(
-            min(1, ($cushionAuto + $cushionEnvelope) / 100000),
-            (float) $bars['needs']['water'],
-            0.000001,
-        );
+        self::assertSame('No goal', $bars['needs']['chip']);
+        self::assertSame('', $bars['needs']['autoText']);
+        self::assertSame('', $bars['needs']['targetText']);
+        self::assertSame('No goal', $bars['wants']['chip']);
+        self::assertSame('', $bars['wants']['autoText']);
+        self::assertSame('', $bars['wants']['targetText']);
         self::assertSame('absolute', $bars['needs']['positioned']);
         self::assertGreaterThan(0, (float) $bars['needs']['water']);
         self::assertGreaterThan(8, (float) $bars['needs']['height']);
@@ -425,7 +428,7 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '0.00';
+            return $value === '115.00';
         });
         self::waitForText('a plan for this period');
         self::typeAssigned('Road cushion', '700.00');
@@ -451,7 +454,7 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '115.00';
+            return $value === '700.00';
         });
         self::click('Previous period');
         self::waitForText('This period has closed.');
@@ -473,7 +476,7 @@ final class EnvelopesTest extends TestCase
             };
             return { needs: value('Road cushion'), wants: value('Fun money') };
         JS);
-        self::assertSame('200.00', $closed['needs']);
+        self::assertSame('700.00', $closed['needs']);
         self::assertSame('0.00', $closed['wants']);
         $disabled = self::driver()->executeScript(<<<'JS'
             const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -482,6 +485,8 @@ final class EnvelopesTest extends TestCase
         JS);
         self::assertTrue($disabled);
         self::click('Next period');
+        self::waitForText('Nov 1 – Nov 30');
+        self::waitForText('Available to assign');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
                 const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => node.innerText.includes('Road cushion'));
@@ -489,7 +494,7 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '115.00';
+            return $value === '700.00';
         });
         $assignedBefore = self::assignedCents();
         self::typeAssigned('Road cushion', '215.00');
@@ -502,7 +507,7 @@ final class EnvelopesTest extends TestCase
 
             return $value === '215.00';
         });
-        $raised = self::money($assignedBefore + 10000);
+        $raised = self::money($assignedBefore - 48500);
         self::waitForText($raised);
         $left = self::money(self::cents($availableText) - 10000);
         self::waitForText($left);
@@ -526,7 +531,7 @@ final class EnvelopesTest extends TestCase
         self::waitForText('Recalculate');
         self::click('Recalculate');
         self::waitForText('Recalculate this period?');
-        self::waitForText('Amounts you typed are replaced.');
+        self::waitForText('Envelope amounts stay as you typed them.');
         self::click('Cancel');
         self::wait()->until(function (): bool {
             $value = self::driver()->executeScript(<<<'JS'
@@ -549,15 +554,21 @@ final class EnvelopesTest extends TestCase
                 return input ? input.value : '';
             JS);
 
-            return $value === '0.00';
+            return $value === '215.00';
         });
         self::click('Previous period');
         self::wait()->until(function (): bool {
-            $disabled = self::driver()->executeScript(
-                'const button = document.querySelector(\'[data-action="recalculate"]\'); return button instanceof HTMLButtonElement && button.disabled;',
-            );
+            $state = self::driver()->executeScript(<<<'JS'
+                const button = document.querySelector('[data-action="recalculate"]');
+                const tile = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes('Road cushion'));
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                return {
+                    disabled: button instanceof HTMLButtonElement && button.disabled,
+                    envelope: input ? input.value : '',
+                };
+            JS);
 
-            return $disabled === true;
+            return is_array($state) && $state['disabled'] === true && $state['envelope'] === '215.00';
         });
         self::click('Next period');
         self::clickLink('Lodging');
@@ -660,19 +671,12 @@ final class EnvelopesTest extends TestCase
             $healthcare = (int) $pdo->query("SELECT COUNT(*) FROM categories WHERE name = 'Healthcare'")->fetchColumn();
             self::fail("Healthcare fill was not planted (demo {$demo}, remote cycles {$cycles}, Nov 1 periods {$periods}, healthcare {$healthcare}).");
         }
-        // The earlier method recalculates the open period and drops the typed cushion.
+        // One envelope for Road cushion. Healthcare stays empty. Auto-assigned still follows the period.
         $pdo->prepare(
-            "INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor)
-             SELECT p.id, c.id, 50000, 0
-             FROM pay_periods p
-             JOIN pay_cycles y ON y.id = p.pay_cycle_id
-             JOIN categories c ON c.user_id = p.user_id AND c.name = 'Road cushion'
-             JOIN user u ON u.id = p.user_id AND u.role = 'demo'
-             WHERE y.payor = 'Remote salary' AND p.period_start = '2026-11-01'
-             ON CONFLICT(pay_period_id, category_id) DO UPDATE SET
-                amount_minor = excluded.amount_minor,
-                filled_minor = excluded.filled_minor"
+            "UPDATE categories SET envelope_minor = 11500
+             WHERE name = 'Road cushion' AND user_id IN (SELECT id FROM user WHERE role = 'demo')"
         )->execute();
+        $pdo->prepare("UPDATE user SET envelope_adopted = 1 WHERE role = 'demo'")->execute();
 
         self::driver()->get(self::$base . '/budget');
         self::waitForText('Oct 16');
@@ -704,7 +708,9 @@ final class EnvelopesTest extends TestCase
                 return auto ? auto.innerText : '';
             JS);
 
-            return is_string($auto) && $auto !== '' && $auto !== '$0.00';
+            return is_string($auto) && $auto !== '' && $auto !== '$0.00'
+                && self::envelopeValue('Healthcare') === '0.00'
+                && self::envelopeValue('Road cushion') === '115.00';
         });
         $started = microtime(true);
         self::wait()->until(function () use ($started): bool {
@@ -771,10 +777,51 @@ final class EnvelopesTest extends TestCase
         self::assertMatchedRows($rows);
     }
 
+    private static function assertEnvelopeLinesUp(): void
+    {
+        $lined = self::driver()->executeScript(<<<'JS'
+            const boards = [...document.querySelectorAll('.bucket-board')];
+            let matched = false;
+            for (const board of boards) {
+                const groups = [];
+                for (const tile of board.querySelectorAll('.envelope-tile')) {
+                    const top = tile.getBoundingClientRect().top;
+                    const envelope = tile.querySelector('label.bucket-field');
+                    const target = tile.querySelector('[data-field="target"]');
+                    const status = tile.querySelector('.bucket-status');
+                    const entry = {
+                        name: tile.querySelector('strong') ? tile.querySelector('strong').innerText : '',
+                        envelope: envelope ? envelope.getBoundingClientRect().top : null,
+                        target: target ? target.getBoundingClientRect().top : null,
+                        status: status ? status.getBoundingClientRect().height : null,
+                        chip: tile.querySelector('.goal-chip') ? getComputedStyle(tile.querySelector('.goal-chip')).position : '',
+                    };
+                    const hit = groups.find((group) => Math.abs(group.top - top) < 2);
+                    if (hit) hit.tiles.push(entry);
+                    else groups.push({ top, tiles: [entry] });
+                }
+                for (const group of groups) {
+                    if (group.tiles.length < 2) continue;
+                    matched = true;
+                    const envelopes = group.tiles.map((tile) => tile.envelope).filter((value) => value !== null);
+                    const envelopeSpread = Math.max(...envelopes) - Math.min(...envelopes);
+                    const targets = group.tiles.map((tile) => tile.target).filter((value) => value !== null);
+                    const targetSpread = targets.length >= 2 ? Math.max(...targets) - Math.min(...targets) : 0;
+                    if (envelopeSpread >= 2 || targetSpread >= 2) {
+                        return { ok: false, envelopeSpread, targetSpread, names: group.tiles.map((tile) => tile.name + ' e' + tile.envelope + ' h' + tile.status + ' ' + tile.chip) };
+                    }
+                }
+            }
+            return { ok: matched };
+        JS);
+        self::assertTrue(is_array($lined) && ($lined['ok'] ?? false) === true, json_encode($lined));
+    }
+
     private static function assertEqualBucketRows(): void
     {
         $rows = self::tileRows('.bucket-board .bucket-tile.envelope-tile', 'strong, .bucket-field, em, input');
         self::assertMatchedRows($rows);
+        self::assertEnvelopeLinesUp();
     }
 
     /**
@@ -921,10 +968,12 @@ final class EnvelopesTest extends TestCase
     {
         self::assertSame('rgb(255, 255, 255)', $row['labelColor']);
         self::assertSame('rgb(255, 255, 255)', $row['inputColor']);
-        self::assertSame('rgb(255, 255, 255)', $row['maximumColor']);
         self::assertHardStroke((string) $row['labelStroke']);
         self::assertHardStroke((string) $row['inputStroke']);
-        self::assertHardStroke((string) $row['maximumStroke']);
+        if ($row['maximumColor'] !== '') {
+            self::assertSame('rgb(255, 255, 255)', $row['maximumColor']);
+            self::assertHardStroke((string) $row['maximumStroke']);
+        }
         self::assertSame('none', $row['labelShadow']);
         self::assertSame('none', $row['inputShadow']);
     }
@@ -954,7 +1003,7 @@ final class EnvelopesTest extends TestCase
             const name = arguments[0];
             const row = [...document.querySelectorAll('.bucket-tile.envelope-tile')].find((node) => node.innerText.includes(name));
             const heading = row ? row.querySelector('strong') : null;
-            const label = row ? row.querySelector('.bucket-field > span') : null;
+            const label = row ? row.querySelector('label.bucket-field > span') : null;
             const assigned = row ? row.querySelector('input[name^="amount-"]') : null;
             const maximum = row ? row.querySelector('[data-field="target"]') : null;
             const read = (node, stroke) => node ? getComputedStyle(node)[stroke ? 'webkitTextStroke' : 'color'] : '';

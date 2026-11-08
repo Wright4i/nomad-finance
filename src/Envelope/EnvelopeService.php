@@ -32,7 +32,7 @@ final class EnvelopeService
     ) {
     }
 
-    /** @var ?array{start:string,end:string,phase:string} */
+    /** @var ?array{start:string,end:string,length:string,phase:string} */
     private ?array $viewWindow = null;
 
     /** @return array<string, mixed> */
@@ -41,10 +41,14 @@ final class EnvelopeService
         $today = $this->day($today);
         $this->fillIfWaiting($today);
         $this->prepare($today);
+        if ($useAcctPeriod) {
+            $this->adoptEnvelopes($today);
+        }
         $acctPeriod = $useAcctPeriod ? $this->storedAcctPeriod($today) : null;
         $this->viewWindow = $acctPeriod === null ? null : [
             'start' => $acctPeriod['start'],
             'end' => $acctPeriod['end'],
+            'length' => $acctPeriod['length'],
             'phase' => $acctPeriod['phase'],
         ];
         $viewPeriodId = $periodId;
@@ -77,7 +81,10 @@ final class EnvelopeService
             if ($acctSpan['phase'] === 'closed') {
                 throw new ApiException(409, 'A closed period can be read.');
             }
-            if ($acctSpan['phase'] === 'future') {
+            if ($acctSpan['phase'] === 'current') {
+                $this->guardLockedFloors($input, $acctSpan['start'], $acctSpan['end'], $today);
+            }
+            if ($acctSpan['phase'] === 'future' || $acctSpan['phase'] === 'current') {
                 return $this->saveAcctPeriodPlan($input, $acctSpan, $today);
             }
         }
@@ -88,6 +95,9 @@ final class EnvelopeService
         }
 
         $upcoming = ($input['upcoming'] ?? false) === true || ($input['upcoming'] ?? null) === 1 || ($input['upcoming'] ?? null) === '1';
+        if ($acctSpan !== null && $acctSpan['phase'] === 'current' && !$upcoming) {
+            $cycle = $this->cycleInsideWindow($cycle, $acctSpan, $today);
+        }
         if ($upcoming) {
             $next = $this->nextSpan($cycle, $today);
             if ($next === null) {
@@ -394,6 +404,41 @@ final class EnvelopeService
         }
 
         return $spans;
+    }
+
+    /**
+     * A goal typed on this accounting period lands on a payday that has already
+     * started inside that window. The selected payday may still be ahead, and a
+     * row stored there would not come back on screen.
+     *
+     * @param array<string, mixed> $requested
+     * @param array{start:string,end:string} $window
+     * @return array<string, mixed>
+     */
+    private function cycleInsideWindow(array $requested, array $window, string $today): array
+    {
+        $open = $this->openSpan($requested, $today);
+        if ($open['start'] >= $window['start'] && $open['start'] <= $window['end'] && $open['start'] <= $today) {
+            return $requested;
+        }
+        $best = null;
+        $bestTotal = -1;
+        foreach ($this->cycles() as $cycle) {
+            if ($cycle['archived_at'] !== null) {
+                continue;
+            }
+            $span = $this->openSpan($cycle, $today);
+            if ($span['start'] < $window['start'] || $span['start'] > $window['end'] || $span['start'] > $today) {
+                continue;
+            }
+            $total = $this->periodTotal((int) $cycle['id'], $span['start']);
+            if ($total > $bestTotal) {
+                $best = $cycle;
+                $bestTotal = $total;
+            }
+        }
+
+        return $best ?? $requested;
     }
 
     /**
@@ -832,6 +877,15 @@ final class EnvelopeService
      */
     private function withMonthGoals(array $categories, ?array $period, ?int $anchorCycleId): array
     {
+        if ($this->viewWindow !== null) {
+            $stored = $this->envelopeAmounts();
+            foreach ($categories as $index => $category) {
+                $categories[$index]['amountMinor'] = $stored[(int) $category['id']] ?? 0;
+                $categories[$index]['filledMinor'] = 0;
+            }
+
+            return $categories;
+        }
         if ($period === null || $anchorCycleId === null || $categories === []) {
             return $categories;
         }
@@ -1012,6 +1066,16 @@ final class EnvelopeService
     /** @param ?array<string, mixed> $billCycle */
     private function assignedOpen(string $today, ?array $billCycle): int
     {
+        if ($this->viewWindow !== null && $this->viewWindow['phase'] === 'current') {
+            $span = $this->viewWindow;
+            $total = $this->envelopeTotal();
+            foreach ($this->windowBillSums($span['start'], $span['end'], true, $today) as $amount) {
+                $total += $amount;
+            }
+
+            return $total;
+        }
+
         $total = 0;
         foreach ($this->cycles() as $cycle) {
             $open = $this->openSpan($cycle, $today);
@@ -1141,6 +1205,17 @@ final class EnvelopeService
     /** @param array<string, mixed> $cycle */
     private function lockedExtra(array $cycle, string $today): int
     {
+        if ($this->viewWindow !== null && $this->viewWindow['phase'] === 'current') {
+            $locked = $this->lockedIds();
+            $extra = 0;
+            foreach ($this->envelopeAmounts() as $categoryId => $amount) {
+                if (isset($locked[$categoryId])) {
+                    $extra += $amount;
+                }
+            }
+
+            return $extra;
+        }
         $open = $this->openSpan($cycle, $today);
         if ($open['start'] > $today) {
             return 0;
@@ -1651,6 +1726,15 @@ final class EnvelopeService
                 $bills += (int) $bill['amountMinor'];
             }
             $categories[$index]['billMinor'] = $bills;
+            if ($this->viewWindow !== null) {
+                $envelope = (int) ($category['amountMinor'] ?? 0);
+                $categories[$index]['amountMinor'] = $bills + $envelope;
+                $categories[$index]['filledMinor'] = 0;
+                if (($category['role'] ?? '') === 'locked') {
+                    $categories[$index]['remainingMinor'] = $bills + $envelope;
+                }
+                continue;
+            }
             if (($category['role'] ?? '') === 'locked') {
                 $shown = $this->shownTarget(
                     (int) ($category['amountMinor'] ?? 0),
@@ -1758,7 +1842,6 @@ final class EnvelopeService
      */
     private function alignAcctPeriod(array $sheet, array $span, string $today): array
     {
-        $presentedStart = is_array($sheet['period'] ?? null) ? (string) $sheet['period']['start'] : '';
         if (is_array($sheet['period'] ?? null)) {
             $sheet['period']['start'] = $span['start'];
             $sheet['period']['end'] = $span['end'];
@@ -1767,29 +1850,6 @@ final class EnvelopeService
         }
         $sheet['previousPeriod'] = null;
         $sheet['stepNext'] = null;
-        if ($span['phase'] === 'current') {
-            return $sheet;
-        }
-        // A closed window that lines up with a pay period keeps that assignment.
-        // An empty plan must not wipe the amount that was already given.
-        if ($span['phase'] === 'closed' && $presentedStart === $span['start']) {
-            return $sheet;
-        }
-        $plans = $this->acctPeriodPlans($span['start'], $span['length']);
-        $categories = is_array($sheet['categories'] ?? null) ? $sheet['categories'] : [];
-        foreach ($categories as $index => $category) {
-            if (!is_array($category)) {
-                continue;
-            }
-            $planned = $plans[(int) $category['id']] ?? 0;
-            $bills = (int) ($category['billMinor'] ?? 0);
-            $categories[$index]['amountMinor'] = ($category['role'] ?? '') === 'locked'
-                ? max($planned, $bills)
-                : $planned;
-        }
-        $sheet['categories'] = $categories;
-        $pool = (int) ($sheet['poolMinor'] ?? 0);
-        $sheet['groups'] = $this->headings($this->groups($categories), $categories, $pool);
         unset($today);
 
         return $sheet;
@@ -1828,6 +1888,28 @@ final class EnvelopeService
         return AcctPeriod::describe($requested, $span['length'], $today);
     }
 
+    /**
+     * @param array<string, mixed> $input
+     */
+    private function guardLockedFloors(array $input, string $start, string $end, string $today): void
+    {
+        $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
+        $floors = $this->windowBillSums($start, $end, true, $today);
+        $lockedIds = $this->lockedIds();
+        $tooLow = [];
+        foreach ($amounts as $categoryId => $typed) {
+            if (!isset($lockedIds[$categoryId])) {
+                continue;
+            }
+            if ($typed < ($floors[$categoryId] ?? 0)) {
+                $tooLow['amount-' . $categoryId] = 'Assigned cannot be lower than the bills.';
+            }
+        }
+        if ($tooLow !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $tooLow);
+        }
+    }
+
     /** @return array<int, int> */
     private function acctPeriodPlans(string $start, string $length): array
     {
@@ -1853,20 +1935,11 @@ final class EnvelopeService
     private function saveAcctPeriodPlan(array $input, array $span, string $today): array
     {
         $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
+        $bills = $this->windowBillSums($span['start'], $span['end'], $span['phase'] === 'current', $today);
         $this->pdo->beginTransaction();
         try {
-            $this->pdo->prepare(
-                'DELETE FROM acct_period_assignments WHERE user_id = ? AND acct_period_start = ? AND acct_period_length = ?'
-            )->execute([$this->actor->id(), $span['start'], $span['length']]);
-            $insert = $this->pdo->prepare(
-                'INSERT INTO acct_period_assignments (user_id, acct_period_start, acct_period_length, category_id, amount_minor) VALUES (?, ?, ?, ?, ?)'
-            );
-            foreach ($amounts as $categoryId => $amount) {
-                if ($amount < 1) {
-                    continue;
-                }
-                $insert->execute([$this->actor->id(), $span['start'], $span['length'], $categoryId, $amount]);
-            }
+            $this->storeEnvelopes($amounts, $bills);
+            $this->pdo->prepare('UPDATE user SET envelope_adopted = 1 WHERE id = ?')->execute([$this->actor->id()]);
             $this->pdo->commit();
         } catch (Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -1876,6 +1949,155 @@ final class EnvelopeService
         }
 
         return $this->show($today, $this->asInt($input['payCycleId'] ?? null), null, false, true);
+    }
+
+    /**
+     * The typed envelope is one amount per bucket. The sent total is that envelope
+     * plus the bills in the period that was on screen.
+     *
+     * @param array<int, int> $amounts
+     * @param array<int, int> $bills
+     */
+    private function storeEnvelopes(array $amounts, array $bills): void
+    {
+        $update = $this->pdo->prepare('UPDATE categories SET envelope_minor = ? WHERE id = ? AND user_id = ?');
+        foreach ($amounts as $categoryId => $sent) {
+            $update->execute([max(0, $sent - ($bills[$categoryId] ?? 0)), $categoryId, $this->actor->id()]);
+        }
+    }
+
+    /** @return array<int, int> */
+    private function envelopeAmounts(): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id, envelope_minor FROM categories WHERE user_id = ?');
+        $stmt->execute([$this->actor->id()]);
+        $amounts = [];
+        while ($row = $stmt->fetch()) {
+            if (is_array($row)) {
+                $amounts[(int) $row['id']] = (int) $row['envelope_minor'];
+            }
+        }
+
+        return $amounts;
+    }
+
+    private function envelopeTotal(): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(envelope_minor), 0) FROM categories WHERE user_id = ? AND archived_at IS NULL'
+        );
+        $stmt->execute([$this->actor->id()]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    /**
+     * The first accounting-period view keeps the envelope already typed.
+     * A plan on the period that contains today wins. Otherwise the latest plan
+     * on or before today wins, and a future plan is used only when that is all there is.
+     */
+    private function adoptEnvelopes(string $today): void
+    {
+        $flag = $this->pdo->prepare('SELECT envelope_adopted FROM user WHERE id = ?');
+        $flag->execute([$this->actor->id()]);
+        if ((int) $flag->fetchColumn() === 1) {
+            return;
+        }
+        $current = $this->periodContainingToday($today);
+        $plans = $this->acctPeriodPlans($current['start'], $current['length']);
+        $bills = $this->windowBillSums($current['start'], $current['end'], true, $today);
+        $chosen = [];
+        foreach ($plans as $categoryId => $amount) {
+            $chosen[$categoryId] = max(0, $amount - ($bills[$categoryId] ?? 0));
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT category_id, acct_period_start, acct_period_length, amount_minor
+             FROM acct_period_assignments WHERE user_id = ?'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $fallback = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $categoryId = (int) $row['category_id'];
+            if (isset($plans[$categoryId])) {
+                continue;
+            }
+            $start = (string) $row['acct_period_start'];
+            $held = $fallback[$categoryId]['start'] ?? null;
+            if (!$this->preferFallback($start, is_string($held) ? $held : null, $today)) {
+                continue;
+            }
+            $fallback[$categoryId] = [
+                'start' => $start,
+                'length' => (string) $row['acct_period_length'],
+                'amount' => (int) $row['amount_minor'],
+            ];
+        }
+        $billCache = [];
+        foreach ($fallback as $categoryId => $row) {
+            $key = $row['start'] . '|' . $row['length'];
+            if (!isset($billCache[$key])) {
+                $span = AcctPeriod::describe($row['start'], $row['length'], $today);
+                $billCache[$key] = $this->windowBillSums(
+                    $span['start'],
+                    $span['end'],
+                    $span['phase'] === 'current',
+                    $today,
+                );
+            }
+            $chosen[$categoryId] = max(0, $row['amount'] - ($billCache[$key][$categoryId] ?? 0));
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $update = $this->pdo->prepare('UPDATE categories SET envelope_minor = ? WHERE id = ? AND user_id = ?');
+            foreach ($chosen as $categoryId => $envelope) {
+                $update->execute([$envelope, $categoryId, $this->actor->id()]);
+            }
+            $this->pdo->prepare('UPDATE user SET envelope_adopted = 1 WHERE id = ?')->execute([$this->actor->id()]);
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    private function preferFallback(string $start, ?string $held, string $today): bool
+    {
+        if ($held === null) {
+            return true;
+        }
+        $startReady = $start <= $today;
+        $heldReady = $held <= $today;
+        if ($startReady !== $heldReady) {
+            return $startReady;
+        }
+        if ($startReady) {
+            return $start > $held;
+        }
+
+        return $start < $held;
+    }
+
+    /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool,label:string} */
+    private function periodContainingToday(string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        for ($step = 0; $step < 36 && $span['phase'] !== 'current'; $step++) {
+            $dir = $span['phase'] === 'future' ? -1 : 1;
+            $span = AcctPeriod::describe(
+                AcctPeriod::shift($span['start'], $span['length'], $dir),
+                $span['length'],
+                $today,
+            );
+        }
+
+        return $span;
     }
 
     /**

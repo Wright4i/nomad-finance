@@ -19,6 +19,13 @@ export function balanceGoalMinor(bucket: FillBucket): number | null {
   return amount > 0 ? amount : null;
 }
 
+/** A target balance is Goal based. A goal with no target is No goal. Locked and needed-by-date show the Bill assignments chip. */
+export function bucketMark(bucket: FillBucket): 'balance' | 'none' | 'auto' {
+  if (balanceGoalMinor(bucket) !== null) return 'balance';
+  if (bucket.role === 'locked' || bucket.target?.kind === 'needed') return 'auto';
+  return 'none';
+}
+
 export function fillFor(bucket: FillBucket, group: { goalMinor: number; buckets: FillBucket[] }): Fill {
   const goal = balanceGoalMinor(bucket);
   if (goal !== null) {

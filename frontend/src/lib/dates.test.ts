@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatDate, formatMonth, isoToInput, maskDateInput, monthCells, monthOf, parseDateInput, shiftYearMonth } from './dates.ts';
+import { formatDate, formatMonth, formatSlashSpan, isoToInput, maskDateInput, monthCells, monthOf, parseDateInput, shiftYearMonth } from './dates.ts';
 
 test('a full date reads as a short month, a day, and a four-digit year', () => {
   assert.equal(formatDate('2026-11-05'), 'Nov 5, 2026');
   assert.equal(formatDate('2026-11-01'), 'Nov 1, 2026');
   assert.equal(formatDate('2027-02-01'), 'Feb 1, 2027');
+});
+
+test('a collapsed period reads as month/day-month/day', () => {
+  assert.equal(formatSlashSpan('2026-10-16', '2026-11-15'), '10/16-11/15');
+  assert.equal(formatSlashSpan('2026-11-01', '2026-11-30'), '11/1-11/30');
 });
 
 test('a month with no day reads as a short month and a four-digit year', () => {

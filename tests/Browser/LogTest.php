@@ -247,7 +247,7 @@ final class LogTest extends TestCase
     {
         $before = self::fuelAccount();
         self::driver()->get(self::$base . '/log');
-        self::waitForText('left unpaid');
+        self::waitForText('Save log');
         self::waitForAccount();
         self::waitForField('odometer', '10500');
         self::waitForField('price', '4.00');
@@ -257,7 +257,7 @@ final class LogTest extends TestCase
         self::waitForPath('/calendar');
 
         self::driver()->get(self::$base . '/log');
-        self::waitForText('left unpaid');
+        self::waitForText('Save log');
         self::waitForAccount();
         self::click('Want');
         self::type('name', 'Logged Dinner');
@@ -297,11 +297,15 @@ final class LogTest extends TestCase
     }
 
     #[Depends('testASavedFuelLogAndWantLogStayUnpaid')]
-    public function testANeedLogOmitsFuelAndASavingLogStaysUnpaid(): void
+    public function testANeedLogOmitsFuelAndSavingIsNotALog(): void
     {
         $before = self::fuelAccount();
         self::driver()->get(self::$base . '/log');
-        self::waitForText('left unpaid');
+        self::waitForText('Save log');
+        self::assertSame(
+            [],
+            self::driver()->findElements(WebDriverBy::xpath('//button[normalize-space()="Saving"]')),
+        );
         self::waitForAccount();
         self::click('Need');
         self::waitForText('Bucket');
@@ -316,46 +320,39 @@ final class LogTest extends TestCase
         self::click('Save log');
         self::waitForPath('/calendar');
 
-        self::driver()->get(self::$base . '/log');
-        self::waitForText('left unpaid');
-        self::waitForAccount();
-        self::click('Saving');
-        $savingTypes = self::logTypes();
-        self::assertContains('debt', $savingTypes);
-        self::assertContains('emergency', $savingTypes);
-        self::assertNotContains('fuel', $savingTypes);
-        self::assertNotContains('groceries', $savingTypes);
-        self::waitForText('Debt');
-        self::type('name', 'Logged Debt');
-        self::type('amount', '8');
-        self::click('Save log');
-        self::waitForPath('/calendar');
-
         self::driver()->get(self::$base . '/bills');
         Reveal::bill(self::driver(), 'Logged Groceries', 'active');
-        Reveal::bill(self::driver(), 'Logged Debt', 'active');
         self::waitForText('Logged Groceries');
-        self::waitForText('Logged Debt');
         $places = self::driver()->executeScript(<<<'JS'
-            const place = (name) => {
-                const article = [...document.querySelectorAll('article')].find((node) => {
-                    const title = node.querySelector('strong');
-                    return title && title.textContent.trim() === name;
-                });
-                if (!article) return null;
-                const heading = article.closest('section').getAttribute('data-label') || '';
-                const buttons = [...article.querySelectorAll('button')].map((button) => button.textContent.trim());
-                return { heading, buttons };
-            };
-            return { groceries: place('Logged Groceries'), debt: place('Logged Debt') };
+            const article = [...document.querySelectorAll('article')].find((node) => {
+                const title = node.querySelector('strong');
+                return title && title.textContent.trim() === 'Logged Groceries';
+            });
+            if (!article) return null;
+            const heading = article.closest('section').getAttribute('data-label') || '';
+            const buttons = [...article.querySelectorAll('button')].map((button) => button.textContent.trim());
+            return { heading, buttons };
         JS);
         self::assertIsArray($places);
-        self::assertSame('Active', $places['groceries']['heading']);
-        self::assertContains('Mark paid', $places['groceries']['buttons']);
-        self::assertSame('Active', $places['debt']['heading']);
-        self::assertContains('Mark paid', $places['debt']['buttons']);
+        self::assertSame('Active', $places['heading']);
+        self::assertContains('Mark paid', $places['buttons']);
         $after = self::fuelAccount();
         self::assertSame($before['balance'], $after['balance']);
+
+        $checking = self::accountBalance('Everyday checking');
+        self::driver()->get(self::$base . '/log');
+        self::waitForText('Save log');
+        self::click('Need');
+        self::waitForAccount();
+        self::chooseAccount('Everyday checking');
+        self::type('name', 'Logged Milk');
+        self::type('amount', '4');
+        self::click('Save log');
+        self::waitForPath('/calendar');
+        self::driver()->get(self::$base . '/bills');
+        Reveal::bill(self::driver(), 'Logged Milk', 'paid');
+        self::waitForText('Logged Milk');
+        self::assertSame($checking - 400, self::accountBalance('Everyday checking'));
     }
 
     /** @return list<string> */
@@ -387,6 +384,36 @@ final class LogTest extends TestCase
         self::assertIsInt($account['balance']);
 
         return ['id' => $account['id'], 'balance' => $account['balance']];
+    }
+
+    private static function chooseAccount(string $label): void
+    {
+        self::driver()->executeScript(<<<'JS'
+            const label = arguments[0];
+            const select = document.querySelector('select[name="accountId"]');
+            const option = [...select.options].find((item) => item.textContent.trim() === label);
+            const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+            setter.call(select, option.value);
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        JS, [$label]);
+    }
+
+    private static function accountBalance(string $name): int
+    {
+        $balance = self::driver()->executeAsyncScript(<<<'JS'
+            const name = arguments[0];
+            const done = arguments[arguments.length - 1];
+            fetch('/api/accounts', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+                .then((response) => response.json())
+                .then((body) => {
+                    const account = body.accounts.find((item) => item.name === name);
+                    done(account ? account.balanceMinor : -1);
+                })
+                .catch(() => done(-1));
+        JS, [$name]);
+        self::assertIsInt($balance);
+
+        return $balance;
     }
 
     private static function waitForAccount(): void

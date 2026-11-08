@@ -1,3 +1,5 @@
 # A month starts empty
 
-A new month does not keep last month's assignments. Recurring bills are the exception: they fill their buckets again. A locked bucket's assigned amount can be typed, and it cannot be lower than the bills in that month. Carrying every assignment forward kept cash in buckets the month had not earned, and locking the field hid any amount set aside above the bills.
+Superseded for the typed envelope by [the envelope is one amount](0028-envelope-is-one-amount.md). Auto-assigned still starts from the bills in that period.
+
+A new month does not keep a separate copy of last month's assignment. Recurring bills fill auto-assigned again. A locked bucket's envelope can be typed, and the target cannot be lower than the bills in that period.

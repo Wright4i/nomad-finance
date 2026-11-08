@@ -4,7 +4,9 @@
   import Spinner from '../components/Spinner.svelte';
   import Note from '../components/Note.svelte';
   import { api } from '../lib/api';
+  import { fieldTips } from '../lib/fieldTips';
   import { formatBps, formatMinor } from '../lib/money';
+  import { tip } from '../lib/tip';
   import { go } from '../lib/nav.svelte.ts';
   import type { Account } from '../lib/types';
 
@@ -12,9 +14,15 @@
   let includeArchived = $state(false);
   let message = $state('');
   let ready = $state(false);
-  let hasStar = $derived(accounts.some((account) => account.starred));
-  let starredAccount = $derived(accounts.find((account) => account.starred && account.archivedAt === null) ?? null);
-  let boardAccounts = $derived(accounts.filter((account) => account !== starredAccount));
+  let hasGas = $derived(accounts.some((account) => account.gasFavorite));
+  let hasShopping = $derived(accounts.some((account) => account.shoppingFavorite));
+  let hasAsset = $derived(accounts.some((account) => account.assetFavorite));
+  let favoriteAccounts = $derived(accounts.filter((account) => account.archivedAt === null && held(account)));
+  let boardAccounts = $derived(accounts.filter((account) => !favoriteAccounts.includes(account)));
+
+  function held(account: Account): boolean {
+    return account.gasFavorite || account.shoppingFavorite || account.assetFavorite;
+  }
 
   async function load(): Promise<void> {
     const data = await api<{ accounts: Account[] }>(`/api/accounts?includeArchived=${includeArchived ? '1' : '0'}`);
@@ -66,8 +74,31 @@
     return account.inBudget ? 'Included in available to assign' : 'Left out of available to assign';
   }
 
-  async function star(account: Account): Promise<void> {
+  function showGas(account: Account): boolean {
+    if (account.archivedAt || account.type !== 'fuel') return false;
+    if (account.gasFavorite) return true;
+    return !hasGas && !held(account);
+  }
+
+  function showShopping(account: Account): boolean {
+    if (account.archivedAt || account.type !== 'credit') return false;
+    if (account.shoppingFavorite) return true;
+    return !hasShopping && !held(account);
+  }
+
+  function showAsset(account: Account): boolean {
+    if (account.archivedAt || account.side !== 'asset') return false;
+    if (account.assetFavorite) return true;
+    return !hasAsset && !held(account);
+  }
+
+  async function mark(account: Account, kind: 'gas' | 'shopping' | 'asset'): Promise<void> {
     message = '';
+    const next = kind === 'gas'
+      ? !account.gasFavorite
+      : kind === 'shopping'
+        ? !account.shoppingFavorite
+        : !account.assetFavorite;
     try {
       await api(`/api/accounts/${account.id}`, {
         method: 'PATCH',
@@ -87,12 +118,15 @@
           institution: account.institution,
           holder: account.holder,
           notes: account.notes,
-          starred: !account.starred,
+          inBudget: account.inBudget,
+          gasFavorite: kind === 'gas' && next,
+          shoppingFavorite: kind === 'shopping' && next,
+          assetFavorite: kind === 'asset' && next,
         },
       });
       await load();
     } catch (err) {
-      message = err instanceof Error ? err.message : 'Could not star that account.';
+      message = err instanceof Error ? err.message : 'Could not change that favorite.';
     }
   }
 </script>
@@ -128,7 +162,7 @@
           </span>
           {#if account.side === 'asset' && account.inBudget}
             <span class="account-budget" role="img" title={budgetLabel(account)} aria-label={budgetLabel(account)}>
-              <Glyph name="dollar" mini />
+              <Glyph name="envelope" mini />
             </span>
           {/if}
         </span>
@@ -145,22 +179,38 @@
         {/if}
         <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
       </a>
-      {#if !account.archivedAt && (account.starred || !hasStar)}
-        <button class="btn account-star" type="button" aria-pressed={account.starred} aria-label={account.starred ? `${account.name} is the default` : `Star ${account.name}`} onclick={() => star(account)}>
-          {account.starred ? '★' : '☆'}
-        </button>
+      {#if showGas(account) || showShopping(account) || showAsset(account)}
+        <span class="account-marks">
+          {#if showGas(account)}
+            <button class="btn account-mark" class:on={account.gasFavorite} type="button" data-favorite="gas" aria-pressed={account.gasFavorite} aria-label={account.gasFavorite ? `${account.name} is the gas favorite` : `Make ${account.name} the gas favorite`} use:tip={fieldTips.accountGas} onclick={() => mark(account, 'gas')}>
+              <Glyph name="fuel" mini />
+            </button>
+          {/if}
+          {#if showShopping(account)}
+            <button class="btn account-mark" class:on={account.shoppingFavorite} type="button" data-favorite="shopping" aria-pressed={account.shoppingFavorite} aria-label={account.shoppingFavorite ? `${account.name} is the shopping favorite` : `Make ${account.name} the shopping favorite`} use:tip={fieldTips.accountShopping} onclick={() => mark(account, 'shopping')}>
+              <Glyph name="shopping" mini />
+            </button>
+          {/if}
+          {#if showAsset(account)}
+            <button class="btn account-mark" class:on={account.assetFavorite} type="button" data-favorite="asset" aria-pressed={account.assetFavorite} aria-label={account.assetFavorite ? `${account.name} is the asset favorite` : `Make ${account.name} the asset favorite`} use:tip={fieldTips.accountAsset} onclick={() => mark(account, 'asset')}>
+              <Glyph name="vault" mini />
+            </button>
+          {/if}
+        </span>
       {/if}
     </div>
   {/snippet}
+  {#if favoriteAccounts.length > 0}
+    <div class="bucket-board account-board">
+      {#each favoriteAccounts as account, index (account.id)}
+        {@render accountTile(account, index)}
+      {/each}
+    </div>
+    <hr class="account-star-rule" />
+  {/if}
   <div class="bucket-board account-board">
-    {#if starredAccount}
-      <div class="account-starred-row">
-        {@render accountTile(starredAccount, 0)}
-        <hr class="account-star-rule" />
-      </div>
-    {/if}
     {#each boardAccounts as account, index (account.id)}
-      {@render accountTile(account, starredAccount ? index + 1 : index)}
+      {@render accountTile(account, favoriteAccounts.length + index)}
     {/each}
   </div>
   {/if}
@@ -247,21 +297,7 @@
     margin-top: auto;
   }
 
-  .account-starred-row {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: subgrid;
-    row-gap: 0.55rem;
-  }
-
-  .account-starred-row > .account-tile {
-    grid-row: 1;
-    grid-column: 1;
-  }
-
   .account-star-rule {
-    grid-row: 2;
-    grid-column: 1 / -1;
     width: 100%;
     height: 0;
     margin: 0;

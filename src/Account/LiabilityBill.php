@@ -224,7 +224,7 @@ final class LiabilityBill
     private function drawFrom(int $fallback): int
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id FROM accounts WHERE user_id = ? AND starred = 1 AND archived_at IS NULL'
+            'SELECT id FROM accounts WHERE user_id = ? AND asset_favorite = 1 AND archived_at IS NULL'
         );
         $stmt->execute([$this->actor->id()]);
         $found = $stmt->fetchColumn();

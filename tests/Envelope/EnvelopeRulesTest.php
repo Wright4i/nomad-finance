@@ -359,12 +359,13 @@ final class EnvelopeRulesTest extends TestCase
             'today' => '2026-11-05',
         ]);
         self::assertSame('once', $logged['recurrence']);
-        self::assertSame('active', $logged['status']);
-        self::assertNull($logged['lastPaidOn']);
+        self::assertSame('paid', $logged['status']);
+        self::assertSame('2026-11-05', $logged['lastPaidOn']);
         self::assertSame('once', $fuel['recurrence']);
+        self::assertSame('paid', $fuel['status']);
         self::assertSame('Fuel', $fuel['name']);
         self::assertNotSame($before, $this->storedAssignments());
-        self::assertSame($balance, $this->balance('Everyday checking'));
+        self::assertSame($balance - 4300, $this->balance('Everyday checking'));
         $afterLog = $this->envelopes->show('2026-11-05');
         $groceries = $this->category($afterLog, 'Groceries');
         $market = 0;
@@ -373,7 +374,7 @@ final class EnvelopeRulesTest extends TestCase
                 $market += (int) $bill['amountMinor'];
             }
         }
-        self::assertSame(1800, $market);
+        self::assertSame(0, $market);
         self::assertGreaterThanOrEqual((int) $groceries['billMinor'], (int) $groceries['amountMinor']);
         $fuelBucket = $this->category($afterLog, 'Fuel');
         self::assertGreaterThanOrEqual((int) $fuelBucket['billMinor'], (int) $fuelBucket['amountMinor']);
@@ -402,9 +403,9 @@ final class EnvelopeRulesTest extends TestCase
                 $market += (int) $bill['amountMinor'];
             }
         }
-        self::assertSame(1800, $market);
+        self::assertSame(0, $market);
         self::assertSame((int) $groceries['billMinor'], (int) $groceries['amountMinor']);
-        self::assertSame($balance, $this->balance('Everyday checking'));
+        self::assertSame($balance - 4300, $this->balance('Everyday checking'));
         $closed = $this->envelopes->show('2026-11-03', $again['payCycleId'], $october);
         self::assertSame(20000, $this->amount($closed, 'Road cushion'));
     }
@@ -1283,8 +1284,12 @@ final class EnvelopeRulesTest extends TestCase
         }
     }
 
-    public function testAClosedAccountingPeriodKeepsTheMatchingPayPeriodAssignment(): void
+    public function testAClosedAccountingPeriodShowsTheSameEnvelope(): void
     {
+        $open = $this->envelopes->show('2026-11-07', null, null, false, true);
+        $openEnvelope = $this->amount($open, 'Road cushion') - $this->billMinor($open, 'Road cushion');
+        self::assertGreaterThan(0, $openEnvelope);
+
         $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
             ->execute(['2026-10-01', '1 month', $_SESSION['user_id']]);
 
@@ -1292,7 +1297,7 @@ final class EnvelopeRulesTest extends TestCase
 
         self::assertSame('closed', $closed['acctPeriod']['phase']);
         self::assertSame('2026-10-01', $closed['period']['start']);
-        self::assertSame(20000, $this->amount($closed, 'Road cushion') - $this->billMinor($closed, 'Road cushion'));
+        self::assertSame($openEnvelope, $this->amount($closed, 'Road cushion') - $this->billMinor($closed, 'Road cushion'));
     }
 
     public function testALaterPeriodsBillsDoNotRaiseThisPeriodsEnvelope(): void
@@ -1309,8 +1314,9 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame('2026-11-15', $earlier['acctPeriod']['end']);
         self::assertSame(0, $this->billMinor($earlier, 'Healthcare'));
         self::assertSame($this->billMinor($earlier, 'Healthcare'), $this->amount($earlier, 'Healthcare'));
-        self::assertSame(11500, $this->amount($earlier, 'Road cushion') - $this->billMinor($earlier, 'Road cushion'));
-        self::assertSame(11500, $this->group($earlier, 'needs')['envelopeMinor']);
+        $road = $this->amount($earlier, 'Road cushion') - $this->billMinor($earlier, 'Road cushion');
+        self::assertGreaterThan(0, $road);
+        self::assertSame($road, $this->group($earlier, 'needs')['envelopeMinor']);
         foreach ($earlier['categories'] as $category) {
             if (($category['role'] ?? '') !== 'locked') {
                 continue;
@@ -1325,7 +1331,8 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame('2026-11-16', $later['acctPeriod']['start']);
         self::assertGreaterThan(0, $this->billMinor($later, 'Healthcare'));
         self::assertSame($this->billMinor($later, 'Healthcare'), $this->amount($later, 'Healthcare'));
-        self::assertSame(0, $this->group($later, 'needs')['envelopeMinor']);
+        self::assertSame($road, $this->amount($later, 'Road cushion') - $this->billMinor($later, 'Road cushion'));
+        self::assertSame($road, $this->group($later, 'needs')['envelopeMinor']);
 
         $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
             ->execute(['2026-10-16', $_SESSION['user_id']]);
@@ -1349,7 +1356,8 @@ final class EnvelopeRulesTest extends TestCase
         $back = $this->envelopes->show('2026-11-07', null, null, false, true);
         self::assertSame(0, $this->billMinor($back, 'Healthcare'));
         self::assertSame(0, $this->amount($back, 'Healthcare'));
-        self::assertSame(11500, $this->group($back, 'needs')['envelopeMinor']);
+        self::assertSame($road, $this->amount($back, 'Road cushion') - $this->billMinor($back, 'Road cushion'));
+        self::assertSame($road, $this->group($back, 'needs')['envelopeMinor']);
     }
 
     public function testRecalculateNamesAndUsesTheAccountingPeriod(): void
@@ -1431,6 +1439,191 @@ final class EnvelopeRulesTest extends TestCase
         );
     }
 
+    public function testAGoalEnvelopeTypedInThisPeriodStaysWhenTheSelectedPaydayHasNotStarted(): void
+    {
+        $userId = (int) $_SESSION['user_id'];
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-16', '1 month', $userId]);
+        $trailer = $this->categories->create([
+            'name' => 'New Trailer',
+            'group' => 'savings',
+            'target' => ['kind' => 'balance', 'amountMinor' => 5000000],
+        ], '2026-11-07');
+        $now = gmdate('c');
+        $this->pdo->prepare(
+            'INSERT INTO pay_cycles (
+                user_id, payor, payday, length, pay_kind, rate_minor, hours_mode, average_on, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$userId, 'Future salary', '2026-11-16', 'monthly', 'fixed', 100000, 'typed', 0, $now, $now]);
+        $cycleId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare(
+            'INSERT INTO pay_periods (user_id, pay_cycle_id, period_start, period_end, created_at) VALUES (?, ?, ?, ?, ?)'
+        )->execute([$userId, $cycleId, '2026-11-16', '2026-12-15', $now]);
+        $periodId = (int) $this->pdo->lastInsertId();
+        $before = $this->envelopes->show('2026-11-07', null, null, false, true);
+        $this->pdo->prepare(
+            'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
+        )->execute([$periodId, $this->categoryId($before, 'Rent'), 900000, 900000]);
+
+        $sheet = $this->envelopes->show('2026-11-07', $cycleId, null, false, true);
+        self::assertSame('balance', $this->category($sheet, 'New Trailer')['target']['kind']);
+        self::assertSame(0, $this->amount($sheet, 'New Trailer'));
+        $road = $this->amount($sheet, 'Road cushion');
+        $amounts = [];
+        foreach ($sheet['categories'] as $category) {
+            if ($category['archivedAt'] !== null) {
+                continue;
+            }
+            $amount = (int) $category['amountMinor'];
+            if ($category['name'] === 'New Trailer') {
+                $amount = 4000;
+            }
+            $amounts[] = ['categoryId' => (int) $category['id'], 'amountMinor' => $amount];
+        }
+
+        $saved = $this->envelopes->save([
+            'today' => '2026-11-07',
+            'payCycleId' => $cycleId,
+            'amounts' => $amounts,
+            'acctPeriod' => '1',
+            'acctPeriodStart' => '2026-10-16',
+        ]);
+
+        self::assertSame(4000, $this->amount($saved, 'New Trailer'));
+        self::assertSame(0, $this->billMinor($saved, 'New Trailer'));
+        self::assertSame($road, $this->amount($saved, 'Road cushion'));
+        self::assertSame($sheet['availableMinor'] - 4000, $saved['availableMinor']);
+        $home = $this->pdo->prepare('SELECT envelope_minor FROM categories WHERE user_id = ? AND id = ?');
+        $home->execute([$userId, (int) $trailer['id']]);
+        self::assertSame(4000, (int) $home->fetchColumn());
+
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
+            ->execute(['2026-11-16', $userId]);
+        $later = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame(4000, $this->amount($later, 'New Trailer') - $this->billMinor($later, 'New Trailer'));
+    }
+
+    public function testAnEnvelopeTypedOnOnePeriodIsTheEnvelopeOnEveryPeriod(): void
+    {
+        $userId = (int) $_SESSION['user_id'];
+        $this->pdo->prepare('UPDATE user SET envelope_adopted = 1, acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-16', '1 month', $userId]);
+        $this->pdo->prepare('UPDATE categories SET envelope_minor = 0 WHERE user_id = ?')->execute([$userId]);
+
+        $earlier = $this->envelopes->show('2026-11-07', null, null, false, true);
+        $healthcareBills = $this->billMinor($earlier, 'Healthcare');
+        $rentBills = $this->billMinor($earlier, 'Rent');
+        self::assertSame(0, $healthcareBills);
+        self::assertSame('locked', $this->category($earlier, 'Rent')['role']);
+        self::assertSame('locked', $this->category($earlier, 'Healthcare')['role']);
+        self::assertNull($this->category($earlier, 'Fun money')['target']);
+        self::assertNotNull($this->category($earlier, 'Tires')['target']);
+        $before = $earlier['availableMinor'];
+        $amounts = $this->totalsWithEnvelopes($earlier, [
+            'Healthcare' => 4200,
+            'Rent' => 1500,
+            'Fun money' => 800,
+            'Tires' => 600,
+        ]);
+
+        $saved = $this->envelopes->save([
+            'today' => '2026-11-07',
+            'payCycleId' => $earlier['payCycleId'],
+            'amounts' => $amounts,
+            'acctPeriod' => '1',
+            'acctPeriodStart' => '2026-10-16',
+        ]);
+        self::assertSame(4200, $this->amount($saved, 'Healthcare') - $this->billMinor($saved, 'Healthcare'));
+        self::assertSame(1500, $this->amount($saved, 'Rent') - $this->billMinor($saved, 'Rent'));
+        self::assertSame(800, $this->amount($saved, 'Fun money') - $this->billMinor($saved, 'Fun money'));
+        self::assertSame(600, $this->amount($saved, 'Tires') - $this->billMinor($saved, 'Tires'));
+        self::assertSame($healthcareBills, $this->billMinor($saved, 'Healthcare'));
+        self::assertSame($rentBills, $this->billMinor($saved, 'Rent'));
+        self::assertSame($before - 4200 - 1500 - 800 - 600, $saved['availableMinor']);
+
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
+            ->execute(['2026-11-16', $userId]);
+        $later = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertGreaterThan(0, $this->billMinor($later, 'Healthcare'));
+        self::assertNotSame($healthcareBills, $this->billMinor($later, 'Healthcare'));
+        self::assertSame(4200, $this->amount($later, 'Healthcare') - $this->billMinor($later, 'Healthcare'));
+        self::assertSame(1500, $this->amount($later, 'Rent') - $this->billMinor($later, 'Rent'));
+        self::assertSame(800, $this->amount($later, 'Fun money') - $this->billMinor($later, 'Fun money'));
+        self::assertSame(600, $this->amount($later, 'Tires') - $this->billMinor($later, 'Tires'));
+
+        $changed = $this->envelopes->save([
+            'today' => '2026-11-07',
+            'payCycleId' => $later['payCycleId'],
+            'amounts' => $this->totalsWithEnvelopes($later, [
+                'Healthcare' => 900,
+                'Rent' => 1500,
+                'Fun money' => 250,
+                'Tires' => 600,
+            ]),
+            'acctPeriod' => '1',
+            'acctPeriodStart' => '2026-11-16',
+        ]);
+        self::assertSame(900, $this->amount($changed, 'Healthcare') - $this->billMinor($changed, 'Healthcare'));
+        self::assertSame($this->billMinor($later, 'Healthcare'), $this->billMinor($changed, 'Healthcare'));
+
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
+            ->execute(['2026-10-16', $userId]);
+        $back = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame(0, $this->billMinor($back, 'Healthcare'));
+        self::assertSame(900, $this->amount($back, 'Healthcare') - $this->billMinor($back, 'Healthcare'));
+        self::assertSame(1500, $this->amount($back, 'Rent') - $this->billMinor($back, 'Rent'));
+        self::assertSame(250, $this->amount($back, 'Fun money') - $this->billMinor($back, 'Fun money'));
+        self::assertSame(600, $this->amount($back, 'Tires') - $this->billMinor($back, 'Tires'));
+        self::assertSame($before - 900 - 1500 - 250 - 600, $back['availableMinor']);
+    }
+
+    public function testRecalculateRefreshesBillAssignmentsAndKeepsTheEnvelope(): void
+    {
+        $userId = (int) $_SESSION['user_id'];
+        $this->pdo->prepare('UPDATE user SET envelope_adopted = 1, acct_period_start = ?, acct_period_length = ? WHERE id = ?')
+            ->execute(['2026-10-16', '1 month', $userId]);
+        $this->pdo->prepare('UPDATE categories SET envelope_minor = 0 WHERE user_id = ?')->execute([$userId]);
+
+        $sheet = $this->envelopes->show('2026-11-07', null, null, false, true);
+        $saved = $this->envelopes->save([
+            'today' => '2026-11-07',
+            'payCycleId' => $sheet['payCycleId'],
+            'amounts' => $this->totalsWithEnvelopes($sheet, [
+                'Healthcare' => 4200,
+                'Rent' => 1500,
+                'Fun money' => 800,
+            ]),
+            'acctPeriod' => '1',
+            'acctPeriodStart' => '2026-10-16',
+        ]);
+        $healthcareBills = $this->billMinor($saved, 'Healthcare');
+        $rentBills = $this->billMinor($saved, 'Rent');
+
+        $again = $this->envelopes->recalculate([
+            'today' => '2026-11-07',
+            'payCycleId' => $saved['payCycleId'],
+            'acctPeriod' => '1',
+            'acctPeriodStart' => '2026-10-16',
+        ]);
+
+        self::assertSame(4200, $this->amount($again, 'Healthcare') - $this->billMinor($again, 'Healthcare'));
+        self::assertSame(1500, $this->amount($again, 'Rent') - $this->billMinor($again, 'Rent'));
+        self::assertSame(800, $this->amount($again, 'Fun money') - $this->billMinor($again, 'Fun money'));
+        self::assertSame($healthcareBills, $this->billMinor($again, 'Healthcare'));
+        self::assertSame($rentBills, $this->billMinor($again, 'Rent'));
+        $stored = $this->pdo->prepare('SELECT envelope_minor FROM categories WHERE user_id = ? AND name = ?');
+        $stored->execute([$userId, 'Healthcare']);
+        self::assertSame(4200, (int) $stored->fetchColumn());
+        $stored->execute([$userId, 'Fun money']);
+        self::assertSame(800, (int) $stored->fetchColumn());
+
+        $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')->execute(['2026-11-16', $userId]);
+        $later = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertGreaterThan($healthcareBills, $this->billMinor($later, 'Healthcare'));
+        self::assertSame(4200, $this->amount($later, 'Healthcare') - $this->billMinor($later, 'Healthcare'));
+        self::assertSame(800, $this->amount($later, 'Fun money') - $this->billMinor($later, 'Fun money'));
+    }
+
     public function testAPayPeriodThatHasNotStartedDoesNotReduceAvailable(): void
     {
         $userId = (int) $_SESSION['user_id'];
@@ -1461,6 +1654,27 @@ final class EnvelopeRulesTest extends TestCase
         self::assertSame($before['assignedMinor'], $after['assignedMinor']);
         self::assertSame('2026-10-16', $after['acctPeriod']['start']);
         self::assertSame('2026-11-15', $after['acctPeriod']['end']);
+    }
+
+    /**
+     * @param array<string, mixed> $sheet
+     * @param array<string, int> $envelopes
+     * @return list<array{categoryId: int, amountMinor: int}>
+     */
+    private function totalsWithEnvelopes(array $sheet, array $envelopes): array
+    {
+        $amounts = [];
+        foreach ($sheet['categories'] as $category) {
+            if (!is_array($category) || $category['archivedAt'] !== null) {
+                continue;
+            }
+            $bills = (int) ($category['billMinor'] ?? 0);
+            $name = (string) $category['name'];
+            $typed = $envelopes[$name] ?? max(0, (int) $category['amountMinor'] - $bills);
+            $amounts[] = ['categoryId' => (int) $category['id'], 'amountMinor' => $bills + $typed];
+        }
+
+        return $amounts;
     }
 
     private function balance(string $name): int

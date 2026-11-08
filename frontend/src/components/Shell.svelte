@@ -6,7 +6,9 @@
   import type { User } from '../lib/types';
   import DateField from './DateField.svelte';
   import Glyph from './Glyph.svelte';
-  import { formatChipDate } from '../lib/dates';
+  import { formatChipDate, formatSlashSpan } from '../lib/dates';
+  import { fieldTips } from '../lib/fieldTips';
+  import { tip } from '../lib/tip';
   import { PERIOD_LENGTHS, periodEnd, periodShift, type PeriodLength } from '../lib/acctPeriod';
 
   let { children }: { children: Snippet } = $props();
@@ -30,6 +32,11 @@
   let spanLabel = $derived(
     session.user?.acctPeriodStart && session.user.acctPeriodEnd
       ? `${formatChipDate(session.user.acctPeriodStart)} – ${formatChipDate(session.user.acctPeriodEnd)}`
+      : '',
+  );
+  let compactSpan = $derived(
+    session.user?.acctPeriodStart && session.user.acctPeriodEnd
+      ? formatSlashSpan(session.user.acctPeriodStart, session.user.acctPeriodEnd)
       : '',
   );
   let draftEnd = $derived(acctPeriodStart ? periodEnd(acctPeriodStart, acctPeriodLength) : '');
@@ -210,55 +217,6 @@
     open = false;
   });
 
-  function tip(node: HTMLElement, label: string): { update: (next: string) => void; destroy: () => void } {
-    let current = label;
-    let timer = 0;
-    let bubble: HTMLDivElement | null = null;
-    const hide = (): void => {
-      window.clearTimeout(timer);
-      timer = 0;
-      bubble?.remove();
-      bubble = null;
-    };
-    const show = (): void => {
-      hide();
-      if (!current) return;
-      timer = window.setTimeout(() => {
-        if (!current) return;
-        const el = document.createElement('div');
-        el.className = 'nav-tip';
-        el.setAttribute('role', 'tooltip');
-        el.textContent = current;
-        document.body.appendChild(el);
-        const box = node.getBoundingClientRect();
-        const tipBox = el.getBoundingClientRect();
-        let left = box.right + 8;
-        if (left + tipBox.width > window.innerWidth - 8) {
-          left = Math.max(8, box.left - tipBox.width - 8);
-        }
-        el.style.left = `${left}px`;
-        el.style.top = `${box.top + box.height / 2}px`;
-        bubble = el;
-      }, 100);
-    };
-    node.addEventListener('mouseenter', show);
-    node.addEventListener('mouseleave', hide);
-    node.addEventListener('focus', show);
-    node.addEventListener('blur', hide);
-    return {
-      update(next: string) {
-        current = next;
-        if (!current) hide();
-      },
-      destroy() {
-        hide();
-        node.removeEventListener('mouseenter', show);
-        node.removeEventListener('mouseleave', hide);
-        node.removeEventListener('focus', show);
-        node.removeEventListener('blur', hide);
-      },
-    };
-  }
 </script>
 
 <a class="skip" href="#main">Skip to content</a>
@@ -331,7 +289,7 @@
           <button type="button" aria-label="Previous" disabled={savingSpan} onclick={() => void nudgeSpan(-1)}>
             <Glyph name="collapse" mini />
           </button>
-          <span class="period-dates">{spanLabel}</span>
+          <span class="period-dates">{collapsed ? compactSpan : spanLabel}</span>
           <button type="button" aria-label="Next" disabled={savingSpan} onclick={() => void nudgeSpan(1)}>
             <Glyph name="expand" mini />
           </button>
@@ -411,12 +369,12 @@
           {#if accountFields.password}<em>{accountFields.password}</em>{/if}
         </label>
         <label class="field">
-          <span>Period starts</span>
+          <span use:tip={fieldTips.periodStart}>Period starts</span>
           <DateField name="acctPeriodStart" bind:value={acctPeriodStart} />
           {#if accountFields.acctPeriodStart}<em>{accountFields.acctPeriodStart}</em>{/if}
         </label>
         <label class="field">
-          <span>{acctPeriodLength}</span>
+          <span use:tip={fieldTips.periodLength}>{acctPeriodLength}</span>
           <input
             name="acctPeriodLength"
             type="range"

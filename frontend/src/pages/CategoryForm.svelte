@@ -5,7 +5,9 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { exponentOf, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { fieldTips } from '../lib/fieldTips';
   import { go } from '../lib/nav.svelte.ts';
+  import { tip } from '../lib/tip';
   import { session } from '../lib/session.svelte.ts';
   import type { Category } from '../lib/types';
 
@@ -18,8 +20,8 @@
   ] as const;
 
   const targetKinds = [
-    { id: 'none', label: 'None', title: 'This bucket has no target.' },
-    { id: 'balance', label: 'Target balance', title: 'An amount with no end date.' },
+    { id: 'none', label: 'None' },
+    { id: 'balance', label: 'Target balance' },
   ] as const;
 
   let name = $state('');
@@ -126,7 +128,6 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit bucket' : 'New bucket'}</h1>
-  <p class="muted m-0">Name the bucket and put it in Needs, Wants, or Savings. This screen does not assign money.</p>
   <Note bind:message />
   <div class="form-body grid gap-4" aria-busy={id != null && !ready} inert={id != null && !ready}>
   {#if locked}
@@ -140,7 +141,7 @@
   {/if}
   {#if !locked}
   <div class="field">
-    <span>Group</span>
+    <span use:tip={fieldTips.bucketGroup}>Group</span>
     <div class="flex flex-wrap gap-2">
       {#each groups as option}
         <button
@@ -161,7 +162,7 @@
   {/if}
   {#if !locked}
   <div class="field">
-    <span>Target</span>
+    <span use:tip={fieldTips.bucketTarget}>Target</span>
     <div class="flex flex-wrap gap-2">
       {#each targetKinds as option}
         <button
@@ -169,7 +170,6 @@
           class:on={targetKind === option.id}
           type="button"
           aria-pressed={targetKind === option.id}
-          title={option.title}
           onclick={() => (targetKind = option.id)}
         >{option.label}</button>
       {/each}
@@ -179,7 +179,7 @@
   {/if}
   {#if !locked && targetKind === 'balance'}
     <label class="field">
-      <span>Amount</span>
+      <span use:tip={fieldTips.bucketAmount}>Amount</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
         <input name="targetAmount" inputmode="decimal" bind:value={targetAmount} />

@@ -5,7 +5,7 @@
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
   import { periodShift, type PeriodLength } from '../lib/acctPeriod';
-  import { balanceGoalMinor, fillFor, type FillBucket } from '../lib/bucketFill';
+  import { balanceGoalMinor, bucketMark, fillFor, type FillBucket } from '../lib/bucketFill';
   import { formatChipDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
@@ -241,9 +241,6 @@
     <h1 class="text-3xl m-0">Budget</h1>
     <a class="btn primary" href="/buckets/new" onclick={(event) => { event.preventDefault(); go('/buckets/new'); }}>Add bucket</a>
   </div>
-  {#if !closed}
-    <p class="muted m-0">Available to assign is income still coming in this month, plus every asset marked Include in Budget, minus what the buckets already hold, minus uncovered float on a paid-in-full card. An assignment does not change an account balance.</p>
-  {/if}
   <Note bind:message />
   {#if !ready}
     <Spinner />
@@ -341,7 +338,7 @@
       <dialog class="modal" bind:this={recalculateDialog} aria-labelledby="recalculate-title">
         <div class="modal-body">
           <h2 id="recalculate-title" class="m-0 text-2xl">Recalculate this period?</h2>
-          <p class="m-0">This replaces every bucket's assignment for {sheet.acctPeriod?.label ?? 'this period'} with the bills that occur in that period. Fuel also includes the estimate for each stay that is still open and arrives in the period. Amounts you typed are replaced. Account balances stay as you typed them.</p>
+          <p class="m-0">This sets Bill assignments for {sheet.acctPeriod?.label ?? 'this period'} to the bills in that period. Fuel also includes the estimate for each stay that is still open and arrives in the period. Envelope amounts stay as you typed them. Account balances stay as you typed them.</p>
         </div>
         <div class="modal-actions">
           <button class="btn danger" type="button" disabled={saving} aria-busy={saving} onclick={() => void confirmRecalculate()}>Recalculate this period</button>
@@ -372,7 +369,7 @@
             </h2>
             <div class="bucket-board" class:celebrate-ease={celebrateEase}>
             {#each rows as category, index (category.id)}
-              {@const goal = balanceGoalMinor(asFill(category))}
+              {@const mark = bucketMark(asFill(category))}
               {@const fill = fillFor(asFill(category), {
                 goalMinor: heading?.targetMinor ?? 0,
                 buckets: rows.map((row) => asFill(row)),
@@ -395,12 +392,18 @@
                   <Glyph name={category.role === 'locked' ? 'lock' : group.id} mini />
                   <strong>{category.name}</strong>
                 </a>
-                <div class="bucket-field">
-                  {#if goal !== null}
+                <div class="bucket-field bucket-status" class:marked={mark !== 'auto'}>
+                  {#if mark === 'balance'}
                     <span class="goal-chip">Goal based</span>
-                  {:else}
-                    <span>Auto-assigned</span>
+                  {:else if mark === 'none'}
+                    <span class="goal-chip plain">No goal</span>
+                  {/if}
+                  {#if mark === 'auto'}
+                    <span class="bill-chip">Bill assignments</span>
                     <strong class="bucket-locked" data-field="auto">{formatMinor(autoOf(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                  {:else}
+                    <span class="bill-chip status-spacer" aria-hidden="true">Bill assignments</span>
+                    <strong class="bucket-locked status-spacer" aria-hidden="true">$0.00</strong>
                   {/if}
                 </div>
                 <label class="bucket-field">
@@ -420,12 +423,14 @@
                       onkeydown={saveNow}
                     />
                   </span>
+                  {#if fields[`amount-${category.id}`]}<em>{fields[`amount-${category.id}`]}</em>{/if}
                 </label>
-                <div class="bucket-field">
-                  <span>Target</span>
-                  <strong class="bucket-locked" data-field="target">{formatMinor(shownTarget(category), sheet.baseCurrency, sheet.exponent)}</strong>
-                </div>
-                {#if fields[`amount-${category.id}`]}<em>{fields[`amount-${category.id}`]}</em>{/if}
+                {#if mark !== 'none'}
+                  <div class="bucket-field">
+                    <span>Target</span>
+                    <strong class="bucket-locked" data-field="target">{formatMinor(shownTarget(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                  </div>
+                {/if}
               </article>
               {#if fill.over && fill.overBy > 0}
                 <p class="bucket-overage">Over by {formatMinor(fill.overBy, sheet.baseCurrency, sheet.exponent)}</p>

@@ -196,6 +196,17 @@ final class BillsTest extends TestCase
         self::clickLink('Planner');
         self::clickLink('Bills');
         self::clickLink('New bill');
+        $amount = self::driver()->findElement(WebDriverBy::xpath('//label[.//input[@name="amount"]]/span'));
+        self::assertSame('help', $amount->getCssValue('cursor'));
+        self::driver()->action()->moveToElement($amount)->perform();
+        self::wait()->until(function (): bool {
+            $text = self::driver()->executeScript(<<<'JS'
+                const tip = document.querySelector('.nav-tip');
+                return tip ? tip.textContent : '';
+            JS);
+
+            return is_string($text) && str_contains($text, 'Adds this to the bucket');
+        });
         self::click('other');
         self::waitForText('Other name');
         self::click('cellular');
@@ -260,33 +271,33 @@ final class BillsTest extends TestCase
     }
 
     #[Depends('testTheBucketPickerFollowsTheTypeAndFuelIsLocked')]
-    public function testTheStarredAccountIsTheDrawFromForANewBillAndALockedBill(): void
+    public function testTheAssetFavoriteIsTheDrawFromForANewBillAndALockedBill(): void
     {
         self::clickLink('Accounts');
-        self::waitForText('Everyday checking');
-        $starred = self::driver()->executeScript(<<<'JS'
-            const button = document.querySelector('button[aria-label="Everyday checking is the default"]');
+        self::waitForText('Emergency fund');
+        $favorite = self::driver()->executeScript(<<<'JS'
+            const button = document.querySelector('button[aria-label="Emergency fund is the asset favorite"]');
             return Boolean(button && button.getAttribute('aria-pressed') === 'true');
         JS);
-        self::assertTrue($starred === true);
+        self::assertTrue($favorite === true);
         self::clickLink('Bills');
         self::clickLink('New bill');
-        self::assertSame('Everyday checking', self::selectedAccount());
+        self::assertSame('Emergency fund', self::selectedAccount());
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Travel card', 'active');
         self::clickLinkContaining('Travel card');
-        self::assertSame('Everyday checking', self::selectedAccount());
+        self::assertSame('Emergency fund', self::selectedAccount());
 
         self::clickLink('Accounts');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
-            WebDriverBy::cssSelector('button[aria-label="Everyday checking is the default"]'),
+            WebDriverBy::cssSelector('button[aria-label="Emergency fund is the asset favorite"]'),
         ))->click();
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
-            WebDriverBy::cssSelector('button[aria-label="Star Wallet"]'),
+            WebDriverBy::cssSelector('button[aria-label="Make Wallet the asset favorite"]'),
         ))->click();
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(
-                'return document.querySelector(\'button[aria-label="Wallet is the default"]\') !== null;',
+                'return document.querySelector(\'button[aria-label="Wallet is the asset favorite"]\') !== null;',
             );
 
             return $ready === true;

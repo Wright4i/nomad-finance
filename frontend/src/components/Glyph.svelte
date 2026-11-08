@@ -180,7 +180,9 @@
       <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
       <path d="M12 3.4v2.1M12 18.5v2.1M3.4 12h2.1M18.5 12h2.1M5.8 5.8l1.5 1.5M16.7 16.7l1.5 1.5M18.2 5.8l-1.5 1.5M7.3 16.7l-1.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {:else if mark === 'moon'}
-      <path d="M15.8 16.2A6.4 6.4 0 0 1 8 6.4 6.6 6.6 0 1 0 15.8 16.2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+      <g transform="translate(2.26 -0.8)">
+        <path d="M15.8 16.2A6.4 6.4 0 0 1 8 6.4 6.6 6.6 0 1 0 15.8 16.2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+      </g>
     {:else if mark === 'settings'}
       <path d="M4 8h3.2M10.8 8H20M4 16h9.2M16.8 16H20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
       <circle cx="9" cy="8" r="1.7" stroke="currentColor" stroke-width="1.8" />

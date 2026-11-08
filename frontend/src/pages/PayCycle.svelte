@@ -7,7 +7,9 @@
   import { api, explain } from '../lib/api';
   import { priorMonthWeekdays, readDateInput } from '../lib/dates';
   import { exponentOf, formatDate, formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { fieldTips } from '../lib/fieldTips';
   import { go } from '../lib/nav.svelte.ts';
+  import { tip } from '../lib/tip';
   import { session } from '../lib/session.svelte.ts';
   import type { HoursMode, PayCycle, PayKind } from '../lib/types';
 
@@ -206,7 +208,6 @@
 
 <form class="grid gap-4 max-w-xl" onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? payor || 'Edit pay cycle' : 'New pay cycle'}</h1>
-  <p class="muted m-0">One payor, one cycle. There is no close button.</p>
   <Note bind:message />
   <div class="form-body grid gap-4" aria-busy={id != null && !ready} inert={id != null && !ready}>
   {#if cycle}
@@ -227,17 +228,17 @@
     </div>
   {/if}
   <label class="field">
-    <span>Payor</span>
+    <span use:tip={fieldTips.payor}>Payor</span>
     <input name="payor" bind:value={payor} />
     {#if fields.payor}<em>{fields.payor}</em>{/if}
   </label>
   <label class="field">
-    <span>Payday</span>
+    <span use:tip={fieldTips.payday}>Payday</span>
     <DateField name="payday" bind:value={payday} />
     {#if fields.payday}<em>{fields.payday}</em>{/if}
   </label>
   <div class="field">
-    <span>Length</span>
+    <span use:tip={fieldTips.payLength}>Length</span>
     <div class="flex flex-wrap gap-2">
       {#each lengths as option}
         <button
@@ -262,20 +263,20 @@
   </div>
   {#if length === 'semimonthly'}
     <label class="field">
-      <span>Second day</span>
+      <span use:tip={fieldTips.paySecondDay}>Second day</span>
       <input name="secondDay" inputmode="numeric" bind:value={secondDay} />
       {#if fields.secondDay}<em>{fields.secondDay}</em>{/if}
     </label>
   {/if}
   {#if length === 'irregular'}
     <label class="field">
-      <span>Next payday</span>
+      <span use:tip={fieldTips.payNext}>Next payday</span>
       <DateField name="nextPayday" bind:value={nextPayday} />
       {#if fields.nextPayday}<em>{fields.nextPayday}</em>{/if}
     </label>
   {/if}
   <div class="field">
-    <span>Pay</span>
+    <span use:tip={fieldTips.payKind}>Pay</span>
     <div class="flex flex-wrap gap-2">
       {#each kinds as option}
         <button
@@ -290,7 +291,7 @@
     {#if fields.payKind}<em>{fields.payKind}</em>{/if}
   </div>
   <label class="field">
-    <span>
+    <span use:tip={payKind === 'salary' ? fieldTips.paySalary : payKind === 'hourly' ? fieldTips.payHourly : fieldTips.payFixed}>
       {#if payKind === 'salary'}Annual salary{:else if payKind === 'hourly'}Hourly rate{:else}Paycheck{/if}
     </span>
     <span class="money-input">
@@ -301,7 +302,7 @@
   </label>
   {#if payKind === 'hourly'}
     <div class="field">
-      <span>Hours</span>
+      <span use:tip={fieldTips.payHoursMode}>Hours</span>
       <div class="flex flex-wrap gap-2">
         <button class="choice" class:on={hoursMode === 'typed'} type="button" aria-pressed={hoursMode === 'typed'} onclick={() => (hoursMode = 'typed')}>Typed</button>
         {#if length === 'semimonthly'}
@@ -317,7 +318,7 @@
       <p class="muted m-0">Weekdays in the month before the payday, eight hours a day, split across the two paydays.</p>
     {:else}
       <label class="field">
-        <span>{length === 'monthly' && hoursMode === 'weekdays' ? 'Hours per weekday' : 'Hours in the period'}</span>
+        <span use:tip={length === 'monthly' && hoursMode === 'weekdays' ? fieldTips.payHoursWeekday : fieldTips.payHoursTyped}>{length === 'monthly' && hoursMode === 'weekdays' ? 'Hours per weekday' : 'Hours in the period'}</span>
         <input name="hours" inputmode="decimal" bind:value={hours} />
         {#if fields.hours}<em>{fields.hours}</em>{/if}
       </label>
@@ -325,7 +326,7 @@
   {/if}
   <label class="flex items-center gap-2">
     <input class="w-auto" name="averageOn" type="checkbox" bind:checked={averageOn} />
-    <span>Average payroll</span>
+    <span use:tip={fieldTips.payAverage}>Average payroll</span>
   </label>
   {#if payKind === 'hourly' && length === 'semimonthly' && hoursMode === 'weekdays' && cycle?.weekdayPay}
     <p class="m-0">

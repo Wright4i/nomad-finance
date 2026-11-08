@@ -5,7 +5,9 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { formatBps, minorToInput, parseMajor, parsePercent } from '../lib/money';
+  import { fieldTips } from '../lib/fieldTips';
   import { go } from '../lib/nav.svelte.ts';
+  import { tip } from '../lib/tip';
   import type { Account } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
@@ -27,10 +29,14 @@
   let bankAutopay = $state(false);
   let billRecurrence = $state<'daily' | 'monthly' | 'yearly'>('monthly');
   let billEvery = $state(1);
-  let starred = $state(false);
+  let gasFavorite = $state(false);
+  let shoppingFavorite = $state(false);
+  let assetFavorite = $state(false);
   let inBudget = $state(true);
   let budgetTouched = $state(false);
-  let othersStarred = $state(false);
+  let othersGas = $state(false);
+  let othersShopping = $state(false);
+  let othersAsset = $state(false);
   let archivedAt = $state<string | null>(null);
   let fields = $state<Record<string, string>>({});
   let message = $state('');
@@ -41,7 +47,10 @@
   let showLimit = $derived(type === 'credit' || type === 'fuel');
   let showSide = $derived(type === 'other');
   let showBudget = $derived(type === 'checking' || type === 'savings' || type === 'cash' || (type === 'other' && side === 'asset'));
-  let showStar = $derived(starred || !othersStarred);
+  let markFree = $derived(!gasFavorite && !shoppingFavorite && !assetFavorite);
+  let showGas = $derived(type === 'fuel' && (gasFavorite || (markFree && !othersGas)));
+  let showShopping = $derived(type === 'credit' && (shoppingFavorite || (markFree && !othersShopping)));
+  let showAsset = $derived((type === 'checking' || type === 'savings' || type === 'cash' || (type === 'other' && side === 'asset')) && (assetFavorite || (markFree && !othersAsset)));
   const everyWord: Record<string, [string, string]> = {
     daily: ['day', 'days'],
     monthly: ['month', 'months'],
@@ -57,7 +66,10 @@
   onMount(async () => {
     try {
       const listed = await api<{ accounts: Account[] }>('/api/accounts');
-      othersStarred = listed.accounts.some((account) => account.starred && String(account.id) !== (id ?? ''));
+      const others = listed.accounts.filter((account) => String(account.id) !== (id ?? ''));
+      othersGas = others.some((account) => account.gasFavorite);
+      othersShopping = others.some((account) => account.shoppingFavorite);
+      othersAsset = others.some((account) => account.assetFavorite);
       if (!id) return;
       const data = await api<{ account: Account }>(`/api/accounts/${id}`);
       const account = data.account;
@@ -77,7 +89,9 @@
       bankAutopay = account.bankAutopay;
       billRecurrence = account.billRecurrence === 'daily' || account.billRecurrence === 'yearly' ? account.billRecurrence : 'monthly';
       billEvery = account.billEvery >= 1 && account.billEvery <= 11 ? account.billEvery : 1;
-      starred = account.starred;
+      gasFavorite = account.gasFavorite;
+      shoppingFavorite = account.shoppingFavorite;
+      assetFavorite = account.assetFavorite;
       budgetTouched = true;
       inBudget = account.inBudget;
     } catch (err) {
@@ -89,13 +103,25 @@
 
   function chooseType(option: string): void {
     type = option;
+    if (option !== 'fuel') gasFavorite = false;
+    if (option !== 'credit') shoppingFavorite = false;
+    if (option !== 'checking' && option !== 'savings' && option !== 'cash' && option !== 'other') assetFavorite = false;
     if (budgetTouched) return;
     const asset = option === 'checking' || option === 'savings' || option === 'cash' || (option === 'other' && side === 'asset');
     inBudget = asset && option !== 'savings';
   }
 
+  function chooseFavorite(kind: 'gas' | 'shopping' | 'asset'): void {
+    const current = kind === 'gas' ? gasFavorite : kind === 'shopping' ? shoppingFavorite : assetFavorite;
+    const next = !current;
+    gasFavorite = kind === 'gas' && next;
+    shoppingFavorite = kind === 'shopping' && next;
+    assetFavorite = kind === 'asset' && next;
+  }
+
   function chooseSide(next: string): void {
     side = next;
+    if (next !== 'asset') assetFavorite = false;
     if (budgetTouched) return;
     inBudget = next === 'asset' && type !== 'savings';
   }
@@ -143,7 +169,9 @@
       institution,
       holder,
       notes,
-      starred,
+      gasFavorite,
+      shoppingFavorite,
+      assetFavorite,
       inBudget: showBudget && inBudget,
     };
     saving = true;
@@ -192,7 +220,6 @@
 
 <form class="grid gap-4 max-w-xl" aria-busy={loading} onsubmit={submit}>
   <h1 class="text-3xl m-0">{id ? name || 'Edit account' : 'New account'}</h1>
-  <p class="muted m-0">The balance is the amount on deposit, or the amount owed on a card or loan. It stays until you type a new one.</p>
   <Note bind:message />
   <div class="form-body grid gap-4" aria-busy={loading} inert={loading}>
     {#if loading}
@@ -201,8 +228,23 @@
       </div>
     {/if}
     <div class="grid gap-4">
-  {#if showStar}
-    <button class="choice w-fit" class:on={starred} type="button" aria-pressed={starred} disabled={archivedAt !== null} onclick={() => (starred = !starred)}>{starred ? '★ Default account' : '☆ Make this the default'}</button>
+  {#if showGas}
+    <button class="choice w-fit" class:on={gasFavorite} type="button" data-favorite="gas" aria-pressed={gasFavorite} disabled={archivedAt !== null} use:tip={fieldTips.accountGas} onclick={() => chooseFavorite('gas')}>
+      <Glyph name="fuel" mini />
+      {gasFavorite ? 'Gas favorite' : 'Make this the gas favorite'}
+    </button>
+  {/if}
+  {#if showShopping}
+    <button class="choice w-fit" class:on={shoppingFavorite} type="button" data-favorite="shopping" aria-pressed={shoppingFavorite} disabled={archivedAt !== null} use:tip={fieldTips.accountShopping} onclick={() => chooseFavorite('shopping')}>
+      <Glyph name="shopping" mini />
+      {shoppingFavorite ? 'Shopping favorite' : 'Make this the shopping favorite'}
+    </button>
+  {/if}
+  {#if showAsset}
+    <button class="choice w-fit" class:on={assetFavorite} type="button" data-favorite="asset" aria-pressed={assetFavorite} disabled={archivedAt !== null} use:tip={fieldTips.accountAsset} onclick={() => chooseFavorite('asset')}>
+      <Glyph name="vault" mini />
+      {assetFavorite ? 'Asset favorite' : 'Make this the asset favorite'}
+    </button>
   {/if}
   <label class="field">
     <span>Name</span>
@@ -210,7 +252,7 @@
     {#if fields.name}<em>{fields.name}</em>{/if}
   </label>
   <div class="field">
-    <span>Type</span>
+    <span use:tip={fieldTips.accountType}>Type</span>
     <div class="flex flex-wrap gap-2">
       {#each types as option}
         <button class="choice" class:on={type === option} type="button" style={`--tone: var(--tone-${option})`} onclick={() => chooseType(option)}>
@@ -223,7 +265,7 @@
   </div>
   {#if showSide}
     <div class="field">
-      <span>Side</span>
+      <span use:tip={fieldTips.accountSide}>Side</span>
       <div class="flex gap-2">
         <button class="choice" class:on={side === 'asset'} type="button" onclick={() => chooseSide('asset')}>asset</button>
         <button class="choice" class:on={side === 'liability'} type="button" onclick={() => chooseSide('liability')}>liability</button>
@@ -232,7 +274,7 @@
     </div>
   {/if}
   <label class="field">
-    <span>Balance</span>
+    <span use:tip={fieldTips.accountBalance}>Balance</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
       <input name="balance" inputmode="decimal" bind:value={balance} />
@@ -242,22 +284,22 @@
   {#if showBudget}
     <label class="flex items-center gap-2">
       <input class="w-auto" type="checkbox" name="inBudget" bind:checked={inBudget} onchange={() => (budgetTouched = true)} />
-      <span>Include in Budget</span>
+      <span use:tip={fieldTips.accountBudget}>Include in Budget</span>
     </label>
   {/if}
   <label class="field">
-    <span>Annual interest percent</span>
+    <span use:tip={fieldTips.accountInterest}>Annual interest percent</span>
     <input name="interest" inputmode="decimal" placeholder="19.99" bind:value={interest} />
     {#if fields.interestBps}<em>{fields.interestBps}</em>{/if}
   </label>
   {#if showLiability}
     <label class="flex items-center gap-2">
       <input class="w-auto" type="checkbox" name="bankAutopay" bind:checked={bankAutopay} onchange={(event) => { if (event.currentTarget.checked && autopayChoice === 'none') autopayChoice = 'minimum'; }} />
-      <span>Autopay is on at the bank</span>
+      <span use:tip={fieldTips.accountBankAutopay}>Autopay is on at the bank</span>
     </label>
     {#if bankAutopay}
       <label class="field">
-        <span>Recurrence</span>
+        <span use:tip={fieldTips.accountRecurrence}>Recurrence</span>
         <select name="billRecurrence" bind:value={billRecurrence}>
           <option value="daily">daily</option>
           <option value="monthly">monthly</option>
@@ -267,7 +309,7 @@
       <label class="span-slider" style={`--span: ${billEvery}; --span-steps: 10`}>
         <span class="span-slider-readout">
           <strong>{billEvery}</strong>
-          <span>{everyLabel}</span>
+          <span use:tip={fieldTips.accountBillEvery}>{everyLabel}</span>
         </span>
         <input
           type="range"
@@ -290,7 +332,7 @@
       </label>
       {#if fields.billEvery}<em>{fields.billEvery}</em>{/if}
       <label class="field">
-        <span>Bill amount</span>
+        <span use:tip={fieldTips.accountBillAmount}>Bill amount</span>
         <select name="autopayChoice" bind:value={autopayChoice}>
           <option value="minimum">Minimum</option>
           <option value="balance">Current balance</option>
@@ -299,7 +341,7 @@
       </label>
     {/if}
     <label class="field">
-      <span>Minimum due</span>
+      <span use:tip={fieldTips.accountMinimum}>Minimum due</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
         <input name="minimumDue" inputmode="decimal" bind:value={minimumDue} />
@@ -308,7 +350,7 @@
     </label>
     {#if bankAutopay && billRecurrence !== 'daily'}
       <label class="field">
-        <span>Due day</span>
+        <span use:tip={fieldTips.accountDueDay}>Due day</span>
         <input name="dueDay" inputmode="numeric" placeholder="1–31" bind:value={dueDay} />
         {#if fields.dueDay}<em>{fields.dueDay}</em>{/if}
       </label>
@@ -330,7 +372,7 @@
     {#if fields.institution}<em>{fields.institution}</em>{/if}
   </label>
   <label class="field">
-    <span>Holder</span>
+    <span use:tip={fieldTips.accountHolder}>Holder</span>
     <input name="holder" bind:value={holder} />
     {#if fields.holder}<em>{fields.holder}</em>{/if}
   </label>

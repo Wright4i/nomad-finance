@@ -9,6 +9,9 @@
   import { minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
+  import { payFromAccount } from '../lib/payFrom';
+  import { fieldTips } from '../lib/fieldTips';
+  import { tip } from '../lib/tip';
 import type { Account, Trip } from '../lib/types';
 
   let { id = null }: { id?: string | null } = $props();
@@ -53,7 +56,8 @@ import type { Account, Trip } from '../lib/types';
     try {
       const accountData = await api<{ accounts: Account[] }>('/api/accounts');
       accounts = accountData.accounts;
-      if (!id && accounts[0]) accountId = String(accounts[0].id);
+      const open = payFromAccount(accounts) ?? accounts[0];
+      if (!id && open) accountId = String(open.id);
       if (!id) return;
       const data = await api<{ trip: Trip }>(`/api/trips/${id}?today=${todayISO()}`);
       const trip = data.trip;
@@ -233,18 +237,18 @@ import type { Account, Trip } from '../lib/types';
   </label>
   <div class="flex gap-2">
     <label class="field flex-1">
-      <span>Arrival</span>
+      <span use:tip={fieldTips.stayArrival}>Arrival</span>
       <DateField name="arriveOn" bind:value={arriveOn} oninput={() => { if (!id) departFollows = true; }} />
       {#if fields.arriveOn}<em>{fields.arriveOn}</em>{/if}
     </label>
     <label class="field flex-1">
-      <span>Departure</span>
+      <span use:tip={fieldTips.stayDeparture}>Departure</span>
       <DateField name="departOn" bind:value={departOn} oninput={() => (departFollows = false)} />
       {#if fields.departOn}<em>{fields.departOn}</em>{/if}
     </label>
   </div>
   <div class="field">
-    <span>Travel</span>
+    <span use:tip={fieldTips.stayTravel}>Travel</span>
     <div class="flex gap-2" role="group" aria-label="Travel">
       <button class="choice" class:on={travel === 'drive'} type="button" onclick={() => (travel = 'drive')}>drive</button>
       <button class="choice" class:on={travel === 'fly'} type="button" onclick={() => (travel = 'fly')}>fly</button>
@@ -252,7 +256,7 @@ import type { Account, Trip } from '../lib/types';
     {#if fields.travel}<em>{fields.travel}</em>{/if}
   </div>
   <label class="field">
-    <span>Balance due</span>
+    <span use:tip={fieldTips.stayBalanceDue}>Balance due</span>
     <DateField name="balanceDueOn" bind:value={balanceDueOn} oninput={() => (balanceDueTouched = true)} />
     {#if fields.balanceDueOn}<em>{fields.balanceDueOn}</em>{/if}
   </label>
@@ -292,7 +296,7 @@ import type { Account, Trip } from '../lib/types';
     />
   {/if}
   <label class="field">
-    <span>Account</span>
+    <span use:tip={fieldTips.stayAccount}>Account</span>
     <select name="accountId" bind:value={accountId}>
       <option value="">None</option>
       {#each accounts as item (item.id)}
@@ -302,7 +306,7 @@ import type { Account, Trip } from '../lib/types';
     {#if fields.accountId}<em>{fields.accountId}</em>{/if}
   </label>
   <label class="field">
-    <span>Total</span>
+    <span use:tip={fieldTips.stayTotal}>Total</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
       <input
@@ -317,7 +321,7 @@ import type { Account, Trip } from '../lib/types';
     {#if fields.totalMinor}<em>{fields.totalMinor}</em>{/if}
   </label>
   <label class="field">
-    <span>Amount due</span>
+    <span use:tip={fieldTips.stayAmountDue}>Amount due</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
       <input name="amountDue" inputmode="decimal" bind:value={amountDue} />

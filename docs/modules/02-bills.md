@@ -5,8 +5,8 @@ A bill is a reminder drawn from one account. The list shows one status at a time
 | Field | Rule |
 | --- | --- |
 | Name | Required, trimmed, 1–80 characters |
-| Type | A needs, wants, or savings kind. Fuel homes on the locked Fuel bucket. Other and misc each store a name you type |
-| Draw-from account | Required, not archived. A new bill starts on the starred account. A locked bill draws from the starred account. With none starred, a new bill starts on the first open account and a locked bill draws from the account that keeps it |
+| Type | A needs, wants, or savings kind. Fuel homes on the locked Fuel bucket. Other and misc each store a name you type. New log offers Fuel, Need, and Want. A log on a liability stays open and adds the amount owed. A log on an asset is paid and that balance falls by the amount. A savings amount is a bill or a transfer |
+| Draw-from account | Required, not archived. A new bill starts on the asset favorite, or on the first open account when none is set. A locked bill draws from the asset favorite. With none set, a locked bill draws from the account that keeps it |
 | Amount | Integer cents, greater than zero |
 | Recurrence | once, weekly, monthly, yearly |
 | Every | 1 to 11. Shown under Recurrence when the bill repeats. Weekly counts weeks, monthly counts months, yearly counts years. Once stores 1 and hides the slider |

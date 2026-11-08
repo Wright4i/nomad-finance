@@ -6,7 +6,9 @@
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { formatChipDate, formatDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { fieldTips } from '../lib/fieldTips';
   import { go } from '../lib/nav.svelte.ts';
+  import { tip } from '../lib/tip';
   import { session } from '../lib/session.svelte.ts';
   import type { PayCycle } from '../lib/types';
 
@@ -148,7 +150,6 @@
       onclick={(event) => { event.preventDefault(); go('/pay-cycles/new'); }}
     >New pay cycle</a>
   </div>
-  <p class="muted m-0">Each payor has one pay cycle. A second paycheck from that payor stays in the same period.</p>
   <button
     class="btn w-fit"
     type="button"
@@ -196,7 +197,7 @@
     <p class="m-0">One amount per payday. A blank amount is not keyed. A keyed amount is the paycheck on that date.</p>
     {#each payrollRows as row (row.payday)}
       <label class="field">
-        <span>{formatDate(row.payday)}{row.projectedMinor !== null ? ` · ${formatMinor(row.projectedMinor, session.user?.baseCurrency ?? 'USD')}` : ''}</span>
+        <span use:tip={fieldTips.payrollDay}>{formatDate(row.payday)}{row.projectedMinor !== null ? ` · ${formatMinor(row.projectedMinor, session.user?.baseCurrency ?? 'USD')}` : ''}</span>
         {#if payrollCycle?.payKind === 'hourly'}
           <input
             name={`hours-${row.payday}`}

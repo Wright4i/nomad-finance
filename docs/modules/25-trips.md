@@ -13,7 +13,7 @@ A trip is one place: a name, an optional note, an arrival, a departure, and one 
 | Arrival, departure | Calendar dates. Departure is on or after arrival. A new stay sets departure to the day after arrival whenever arrival changes |
 | Travel | Drive or fly. Fly draws a dashed line and does not ask for a road route. Drive asks for the road route and stays a dashed line with no airplane when that route is missing |
 | Coordinates | Required. Search, a dragged pin, or typed latitude and longitude |
-| Draw-from account | Required when the total is greater than zero. One account for the deposit and the amount due |
+| Draw-from account | Required when the total is greater than zero. One account for the deposit and the amount due. A new stay starts on the asset favorite |
 | Total | Integer cents, zero or greater |
 | Amount due | Integer cents, zero or greater, and not above the total. The form copies the total into this field when the total changes |
 | Balance-due date | Optional. Prefilled with arrival. Saving it does not change a balance |

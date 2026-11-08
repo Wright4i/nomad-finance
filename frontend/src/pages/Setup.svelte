@@ -5,6 +5,8 @@
   import { parseMajor } from '../lib/money';
   import { adoptUser } from '../lib/session.svelte.ts';
   import type { User } from '../lib/types';
+  import { fieldTips } from '../lib/fieldTips';
+  import { tip } from '../lib/tip';
   import { vehicleKinds, vehicleTone, type VehicleKind } from '../lib/vehicleKinds';
 
   let { additional = false, onBack }: { additional?: boolean; onBack?: () => void } = $props();
@@ -117,23 +119,23 @@
     </div>
     <div class="grid grid-cols-2 gap-3">
       <label class="field">
-        <span>Minimum mpg</span>
+        <span use:tip={fieldTips.mpgMin}>Minimum mpg</span>
         <input name="mpgMin" inputmode="decimal" bind:value={mpgMin} />
         {#if fields.mpgMinTenths}<em>{fields.mpgMinTenths}</em>{/if}
       </label>
       <label class="field">
-        <span>Maximum mpg</span>
+        <span use:tip={fieldTips.mpgMax}>Maximum mpg</span>
         <input name="mpgMax" inputmode="decimal" bind:value={mpgMax} />
         {#if fields.mpgMaxTenths}<em>{fields.mpgMaxTenths}</em>{/if}
       </label>
     </div>
     <label class="field">
-      <span>Current odometer</span>
+      <span use:tip={fieldTips.odometer}>Current odometer</span>
       <input name="currentOdometer" inputmode="numeric" bind:value={currentOdometer} />
       {#if fields.currentOdometerMiles}<em>{fields.currentOdometerMiles}</em>{/if}
     </label>
     <label class="field">
-      <span>Fallback price per gallon</span>
+      <span use:tip={fieldTips.fuelFallback}>Fallback price per gallon</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
         <input name="fuelPrice" inputmode="decimal" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />

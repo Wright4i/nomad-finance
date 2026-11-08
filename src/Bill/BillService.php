@@ -841,11 +841,11 @@ final class BillService
     }
 
     /**
-     * A fuel, need, want, or saving log is an unpaid one-time bill.
-     * Drawn from a liability, it adds the amount to the amount owed. An asset balance stays as typed.
-     * It raises that bucket's auto-assigned amount, and the envelope shrinks by the same
-     * amount when it has room, so the target stays. An unpaid fuel log still advances the odometer.
-     * A need log does not accept Fuel.
+     * A fuel, need, or want log moves the account balance by the same amount.
+     * On a liability the amount owed rises and the bill stays open. On an asset the balance falls and the bill is paid.
+     * An open log raises that bucket's auto-assigned amount, and the envelope shrinks by the same
+     * amount when it has room, so the target stays. A fuel log still advances the odometer.
+     * A need log does not accept Fuel. Savings is a bill or a transfer, not a log.
      *
      * @param array<string, mixed> $input
      * @return array<string, mixed>
@@ -856,11 +856,11 @@ final class BillService
         if ($kind === 'fuel') {
             return $this->logFuel($input);
         }
-        if ($kind === 'need' || $kind === 'want' || $kind === 'saving') {
+        if ($kind === 'need' || $kind === 'want') {
             return $this->logSpend($input, $kind);
         }
 
-        throw new ApiException(422, 'Check the highlighted fields.', ['kind' => 'Choose Fuel, Need, Want, or Saving.']);
+        throw new ApiException(422, 'Check the highlighted fields.', ['kind' => 'Choose Fuel, Need, or Want.']);
     }
 
     /** @param array<string, mixed> $input */
@@ -1003,6 +1003,7 @@ final class BillService
         }
         $categoryId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'fuel');
         $now = gmdate('c');
+        $paid = $this->assetLog($accountId, $amount);
         $this->pdo->beginTransaction();
         try {
             $this->advanceOdometer($vehicleId, $odometer);
@@ -1011,13 +1012,14 @@ final class BillService
                     name, type, account_id, category_id, amount_minor, currency,
                     recurrence, anchor_date, next_due_date, last_paid_on, autopay, notes, status,
                     created_at, updated_at, vehicle_id, odometer_miles, price_per_gallon_minor
-                 ) VALUES (\'Fuel\', \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, NULL, 0, ?, \'active\', ?, ?, ?, ?, ?)'
+                 ) VALUES (\'Fuel\', \'fuel\', ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
-                $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
+                $accountId, $categoryId, $amount, $date, $date, $paid ? $date : null, $notes,
+                $paid ? 'paid' : 'active', $now, $now,
                 $vehicleId, $odometer, $price,
             ]);
             $id = (int) $this->pdo->lastInsertId();
-            $this->chargeLiability($accountId, $amount);
+            $this->moveLogBalance($accountId, $amount);
             $this->pdo->commit();
         } catch (\Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -1040,12 +1042,10 @@ final class BillService
         $today = $this->today($input);
         $date = $this->logDate($input, $today, $errors);
         $accountId = $this->logAccount($input, $errors);
-        $group = $kind === 'need' ? 'needs' : ($kind === 'saving' ? 'savings' : 'wants');
+        $group = $kind === 'need' ? 'needs' : 'wants';
         $type = is_string($input['type'] ?? null) ? $input['type'] : '';
         if (BillTypes::group($type) !== $group || ($kind === 'need' && $type === 'fuel')) {
-            $errors['type'] = $kind === 'need'
-                ? 'Choose a needs type.'
-                : ($kind === 'saving' ? 'Choose a savings type.' : 'Choose a wants type.');
+            $errors['type'] = $kind === 'need' ? 'Choose a needs type.' : 'Choose a wants type.';
         }
         $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
         if ($name === '' || mb_strlen($name) > 80) {
@@ -1070,6 +1070,7 @@ final class BillService
         }
         $categoryId = SystemBuckets::idForType($this->pdo, $this->actor->id(), $type);
         $now = gmdate('c');
+        $paid = $this->assetLog($accountId, $amount);
         $this->pdo->beginTransaction();
         try {
             $this->pdo->prepare(
@@ -1077,12 +1078,13 @@ final class BillService
                     name, type, other_label, account_id, category_id, amount_minor, currency,
                     recurrence, anchor_date, next_due_date, last_paid_on, autopay, notes, status,
                     created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, \'USD\', \'once\', ?, ?, NULL, 0, ?, \'active\', ?, ?)'
+                 ) VALUES (?, ?, ?, ?, ?, ?, \'USD\', \'once\', ?, ?, ?, 0, ?, ?, ?, ?)'
             )->execute([
-                $name, $type, $other, $accountId, $categoryId, $amount, $date, $date, $notes, $now, $now,
+                $name, $type, $other, $accountId, $categoryId, $amount, $date, $date,
+                $paid ? $date : null, $notes, $paid ? 'paid' : 'active', $now, $now,
             ]);
             $id = (int) $this->pdo->lastInsertId();
-            $this->chargeLiability($accountId, $amount);
+            $this->moveLogBalance($accountId, $amount);
             $this->pdo->commit();
         } catch (\Throwable $e) {
             if ($this->pdo->inTransaction()) {
@@ -1150,16 +1152,49 @@ final class BillService
         return $text === '' ? null : $text;
     }
 
-    private function chargeLiability(int $accountId, int $amount): void
+    private function assetLog(int $accountId, int $amount): bool
+    {
+        $row = $this->logBalance($accountId);
+        if ($row === null || (string) $row['side'] !== 'asset') {
+            return false;
+        }
+        $balance = (int) $row['balance_minor'];
+        if ($balance < $amount) {
+            $short = $amount - $balance;
+            throw new ApiException(422, 'Short ' . $this->dollars($short) . '. You are asking for more than this account holds.');
+        }
+
+        return true;
+    }
+
+    private function moveLogBalance(int $accountId, int $amount): void
+    {
+        $row = $this->logBalance($accountId);
+        if ($row === null) {
+            return;
+        }
+        $balance = (int) $row['balance_minor'];
+        $next = (string) $row['side'] === 'asset' ? $balance - $amount : $balance + $amount;
+        $this->pdo->prepare('UPDATE accounts SET balance_minor = ?, updated_at = ? WHERE id = ? AND user_id = ?')
+            ->execute([$next, gmdate('c'), $accountId, $this->actor->id()]);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function logBalance(int $accountId): ?array
     {
         $stmt = $this->pdo->prepare('SELECT side, balance_minor FROM accounts WHERE id = ? AND user_id = ?');
         $stmt->execute([$accountId, $this->actor->id()]);
         $row = $stmt->fetch();
-        if (!is_array($row) || (string) $row['side'] !== 'liability') {
-            return;
-        }
-        $this->pdo->prepare('UPDATE accounts SET balance_minor = ?, updated_at = ? WHERE id = ? AND user_id = ?')
-            ->execute([(int) $row['balance_minor'] + $amount, gmdate('c'), $accountId, $this->actor->id()]);
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function dollars(int $minor): string
+    {
+        $whole = intdiv($minor, 100);
+        $cents = $minor % 100;
+
+        return '$' . number_format($whole, 0, '.', ',') . '.' . str_pad((string) $cents, 2, '0', STR_PAD_LEFT);
     }
 
     private function advanceOdometer(int $vehicleId, int $reading): void

@@ -44,6 +44,7 @@ final class DemoLibrary
 
         $this->pdo->beginTransaction();
         try {
+            $this->pdo->prepare('DELETE FROM acct_period_assignments WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare(
                 'DELETE FROM assignments WHERE pay_period_id IN (SELECT id FROM pay_periods WHERE user_id = ?)'
             )->execute([$id]);
@@ -62,7 +63,7 @@ final class DemoLibrary
             )->execute([$id]);
             $this->pdo->prepare('DELETE FROM pay_cycles WHERE user_id = ?')->execute([$id]);
             $this->pdo->prepare(
-                'UPDATE user SET name = ?, password_hash = ?, base_currency = ?, theme = ? WHERE id = ? AND role = \'demo\''
+                'UPDATE user SET name = ?, password_hash = ?, base_currency = ?, theme = ?, envelope_adopted = 0 WHERE id = ? AND role = \'demo\''
             )->execute([self::NAME, password_hash(self::PASSWORD, PASSWORD_DEFAULT), 'USD', 'dark', $id]);
             $this->seed($id);
             $this->pdo->commit();
@@ -108,13 +109,13 @@ final class DemoLibrary
         )->execute([gmdate('Y-m-01'), $userId]);
         // Solo full-timer in a Class C. Three paychecks are live. The other pay lengths stay archived so Show archived still has one of each.
         $checking = $this->account($userId, [
-            'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000, 'starred' => true,
+            'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000,
         ], $now);
         $this->account($userId, [
             'name' => 'Closed checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 1840, 'archived' => true,
         ], $now);
         $savings = $this->account($userId, [
-            'name' => 'Emergency fund', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 860000, 'interest' => 450,
+            'name' => 'Emergency fund', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 860000, 'interest' => 450, 'assetFavorite' => true,
         ], $now);
         $this->account($userId, [
             'name' => 'Rig fund', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 145000,
@@ -129,7 +130,7 @@ final class DemoLibrary
             'name' => 'Glovebox', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 4500,
         ], $now);
         $card = $this->account($userId, [
-            'name' => 'Travel card', 'type' => 'credit', 'side' => 'liability', 'currency' => 'USD', 'balance' => 86000,
+            'name' => 'Travel card', 'type' => 'credit', 'side' => 'liability', 'currency' => 'USD', 'balance' => 86000, 'shoppingFavorite' => true,
             'interest' => 1999, 'minimum' => 3500, 'dueDay' => 15, 'limit' => 600000, 'autopay' => 'minimum', 'bankAutopay' => true,
         ], $now);
         $loan = $this->account($userId, [
@@ -137,7 +138,7 @@ final class DemoLibrary
             'interest' => 699, 'minimum' => 8500, 'dueDay' => 1, 'autopay' => 'balance', 'bankAutopay' => true,
         ], $now);
         $fuelCard = $this->account($userId, [
-            'name' => 'Fuel card', 'type' => 'fuel', 'side' => 'liability', 'currency' => 'USD', 'balance' => 6400,
+            'name' => 'Fuel card', 'type' => 'fuel', 'side' => 'liability', 'currency' => 'USD', 'balance' => 6400, 'gasFavorite' => true,
             'interest' => 0, 'minimum' => 2500, 'dueDay' => 20, 'limit' => 50000,
             'autopay' => 'minimum', 'bankAutopay' => true, 'billRecurrence' => 'daily', 'billEvery' => 2,
         ], $now);
@@ -212,17 +213,17 @@ final class DemoLibrary
             'name' => 'Old meal kit', 'type' => 'groceries', 'amount' => 1200,
             'recurrence' => 'once', 'anchor' => '2026-10-02', 'next' => '2026-10-02', 'status' => 'archived',
         ], $now);
-        $this->bill($checking, [
+        $this->bill($savings, [
             'name' => 'Travel card', 'type' => 'debt', 'amount' => 3500,
             'recurrence' => 'monthly', 'anchor' => '2026-11-15', 'next' => '2026-11-15', 'status' => 'active',
             'sourceAccountId' => $card,
         ], $now);
-        $this->bill($checking, [
+        $this->bill($savings, [
             'name' => 'Solar loan', 'type' => 'debt', 'amount' => 245000,
             'recurrence' => 'monthly', 'anchor' => '2026-12-01', 'next' => '2026-12-01', 'status' => 'active',
             'sourceAccountId' => $loan,
         ], $now);
-        $this->bill($checking, [
+        $this->bill($savings, [
             'name' => 'Fuel card', 'type' => 'fuel', 'amount' => 2500,
             'recurrence' => 'daily', 'every' => 2, 'anchor' => '2027-06-15', 'next' => '2027-06-15', 'status' => 'active', 'autopay' => true,
             'sourceAccountId' => $fuelCard,
@@ -463,6 +464,8 @@ final class DemoLibrary
         $cycleId = (int) $cycle->fetchColumn();
         $this->period($userId, $cycleId, '2026-10-01', '2026-10-31', $categoryId, 20000, $now);
         $this->period($userId, $cycleId, '2026-11-01', '2026-11-30', $categoryId, 50000, $now);
+        $this->acctAssignment($userId, '2026-10-01', $categoryId, 20000);
+        $this->acctAssignment($userId, '2026-11-01', $categoryId, 50000);
         $this->pdo->prepare('UPDATE categories SET amount_minor = 50000 WHERE id = ?')->execute([$categoryId]);
         $this->pdo->prepare(
             'UPDATE bills SET category_id = ?
@@ -491,7 +494,16 @@ final class DemoLibrary
         return $periodId;
     }
 
-    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool,autopay?:string,starred?:bool,bankAutopay?:bool,billRecurrence?:string,billEvery?:int} $row */
+    private function acctAssignment(int $userId, string $start, int $categoryId, int $amount): void
+    {
+        $this->pdo->prepare(
+            'INSERT INTO acct_period_assignments (user_id, acct_period_start, acct_period_length, category_id, amount_minor)
+             VALUES (?, ?, \'1 month\', ?, ?)
+             ON CONFLICT(user_id, acct_period_start, acct_period_length, category_id) DO UPDATE SET amount_minor = excluded.amount_minor'
+        )->execute([$userId, $start, $categoryId, $amount]);
+    }
+
+    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool,autopay?:string,gasFavorite?:bool,shoppingFavorite?:bool,assetFavorite?:bool,bankAutopay?:bool,billRecurrence?:string,billEvery?:int} $row */
     private function account(int $userId, array $row, string $now): int
     {
         $this->currencies->assert($row['currency']);
@@ -499,8 +511,8 @@ final class DemoLibrary
             'INSERT INTO accounts (
                 user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                 due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
-                archived_at, starred, in_budget, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                archived_at, gas_favorite, shopping_favorite, asset_favorite, in_budget, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId,
             $row['name'],
@@ -517,7 +529,9 @@ final class DemoLibrary
             $row['billRecurrence'] ?? 'monthly',
             $row['billEvery'] ?? 1,
             !empty($row['archived']) ? $now : null,
-            !empty($row['starred']) ? 1 : 0,
+            !empty($row['gasFavorite']) ? 1 : 0,
+            !empty($row['shoppingFavorite']) ? 1 : 0,
+            !empty($row['assetFavorite']) ? 1 : 0,
             $row['side'] === 'asset' && $row['type'] !== 'savings' ? 1 : 0,
             $now,
             $now,

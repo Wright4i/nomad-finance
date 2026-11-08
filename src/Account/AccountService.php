@@ -38,7 +38,12 @@ final class AccountService
         if (!$includeArchived) {
             $sql .= ' AND archived_at IS NULL';
         }
-        $sql .= " ORDER BY starred DESC, type COLLATE NOCASE, name COLLATE NOCASE, id";
+        $sql .= " ORDER BY CASE
+            WHEN gas_favorite = 1 THEN 0
+            WHEN shopping_favorite = 1 THEN 1
+            WHEN asset_favorite = 1 THEN 2
+            ELSE 3
+        END, type COLLATE NOCASE, name COLLATE NOCASE, id";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$this->actor->id()]);
         $rows = $stmt->fetchAll();
@@ -62,25 +67,26 @@ final class AccountService
     /** @param array<string, mixed> $input */
     public function create(array $input): array
     {
-        $data = $this->validate($input, 0);
+        $data = $this->validate($input);
         $now = gmdate('c');
         $this->pdo->beginTransaction();
         try {
-            if ($data['starred'] === 1) {
-                $this->clearStars($now, null);
-            }
+            $this->claim($data, $now, null);
             $this->pdo->prepare(
                 'INSERT INTO accounts (
                     user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                     due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
-                    institution, holder, notes, starred, in_budget, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    institution, holder, notes, gas_favorite, shopping_favorite, asset_favorite,
+                    in_budget, created_at, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $this->actor->id(),
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
-                $data['institution'], $data['holder'], $data['notes'], $data['starred'], $data['inBudget'], $now, $now,
+                $data['institution'], $data['holder'], $data['notes'],
+                $data['gasFavorite'], $data['shoppingFavorite'], $data['assetFavorite'],
+                $data['inBudget'], $now, $now,
             ]);
             $id = (int) $this->pdo->lastInsertId();
             $this->pdo->commit();
@@ -100,30 +106,33 @@ final class AccountService
     public function update(int $id, array $input): array
     {
         $existing = $this->get($id);
-        $data = $this->validate($input, $existing['starred'] === true ? 1 : 0, $existing);
-        if ($data['starred'] === 1 && $existing['archivedAt'] !== null) {
+        $data = $this->validate($input, $existing);
+        if ($existing['archivedAt'] !== null && ($data['gasFavorite'] === 1 || $data['shoppingFavorite'] === 1 || $data['assetFavorite'] === 1)) {
+            $key = $data['gasFavorite'] === 1 ? 'gasFavorite' : ($data['shoppingFavorite'] === 1 ? 'shoppingFavorite' : 'assetFavorite');
             throw new ApiException(422, 'Check the highlighted fields.', [
-                'starred' => 'Unarchive this account before starring it.',
+                $key => 'Unarchive this account before choosing a favorite.',
             ]);
         }
         $now = gmdate('c');
         $this->pdo->beginTransaction();
         try {
-            if ($data['starred'] === 1) {
-                $this->clearStars($now, $id);
-            }
+            $this->claim($data, $now, $id);
             $this->pdo->prepare(
                 'UPDATE accounts SET
                     name = ?, type = ?, side = ?, currency = ?, balance_minor = ?, interest_bps = ?,
                     minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, autopay_choice = ?,
                     bank_autopay = ?, bill_recurrence = ?, bill_every = ?,
-                    institution = ?, holder = ?, notes = ?, starred = ?, in_budget = ?, updated_at = ?
+                    institution = ?, holder = ?, notes = ?,
+                    gas_favorite = ?, shopping_favorite = ?, asset_favorite = ?,
+                    in_budget = ?, updated_at = ?
                  WHERE id = ? AND user_id = ?'
             )->execute([
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
-                $data['institution'], $data['holder'], $data['notes'], $data['starred'], $data['inBudget'], $now,
+                $data['institution'], $data['holder'], $data['notes'],
+                $data['gasFavorite'], $data['shoppingFavorite'], $data['assetFavorite'],
+                $data['inBudget'], $now,
                 $id, $this->actor->id(),
             ]);
             $this->pdo->commit();
@@ -149,7 +158,7 @@ final class AccountService
         }
         $now = gmdate('c');
         $this->pdo->prepare(
-            'UPDATE accounts SET archived_at = COALESCE(archived_at, ?), starred = 0, updated_at = ? WHERE id = ? AND user_id = ?'
+            'UPDATE accounts SET archived_at = COALESCE(archived_at, ?), gas_favorite = 0, shopping_favorite = 0, asset_favorite = 0, updated_at = ? WHERE id = ? AND user_id = ?'
         )->execute([$now, $now, $id, $this->actor->id()]);
         $this->aimLockedBills();
 
@@ -174,10 +183,11 @@ final class AccountService
      *    name:string,type:string,side:string,currency:string,balanceMinor:int,
      *    interestBps:?int,minimumDueMinor:?int,dueDay:?int,creditLimitMinor:?int,
      *    autopayChoice:string,bankAutopay:int,billRecurrence:string,billEvery:int,
-     *    institution:?string,holder:?string,notes:?string,starred:int,inBudget:int
+     *    institution:?string,holder:?string,notes:?string,
+     *    gasFavorite:int,shoppingFavorite:int,assetFavorite:int,inBudget:int
      *  }
      */
-    private function validate(array $input, int $starredFallback, ?array $existing = null): array
+    private function validate(array $input, ?array $existing = null): array
     {
         $errors = [];
         $name = trim(is_string($input['name'] ?? null) ? $input['name'] : '');
@@ -293,6 +303,27 @@ final class AccountService
             $notes = null;
         }
 
+        $gasFavorite = $this->flag($input, 'gasFavorite', $existing);
+        $shoppingFavorite = $this->flag($input, 'shoppingFavorite', $existing);
+        $assetFavorite = $this->flag($input, 'assetFavorite', $existing);
+        $chosen = array_keys(array_filter([
+            'gasFavorite' => $gasFavorite === 1,
+            'shoppingFavorite' => $shoppingFavorite === 1,
+            'assetFavorite' => $assetFavorite === 1,
+        ]));
+        if (count($chosen) > 1) {
+            $errors[$chosen[1]] = 'An account can hold only one favorite.';
+        }
+        if ($gasFavorite === 1 && $type !== 'fuel') {
+            $errors['gasFavorite'] = 'A gas favorite is a fuel account.';
+        }
+        if ($shoppingFavorite === 1 && $type !== 'credit') {
+            $errors['shoppingFavorite'] = 'A shopping favorite is a credit account.';
+        }
+        if ($assetFavorite === 1 && $side !== 'asset') {
+            $errors['assetFavorite'] = 'An asset favorite is an asset account.';
+        }
+
         if ($errors !== []) {
             throw new ApiException(422, 'Check the highlighted fields.', $errors);
         }
@@ -329,29 +360,68 @@ final class AccountService
             'institution' => is_string($institution) ? $institution : null,
             'holder' => is_string($holder) ? $holder : null,
             'notes' => is_string($notes) ? $notes : null,
-            'starred' => array_key_exists('starred', $input) ? (!empty($input['starred']) ? 1 : 0) : $starredFallback,
+            'gasFavorite' => $gasFavorite,
+            'shoppingFavorite' => $shoppingFavorite,
+            'assetFavorite' => $assetFavorite,
             'inBudget' => $inBudget,
         ];
     }
 
-    private function clearStars(string $now, ?int $exceptId): void
+    /** @param array<string, mixed>|null $existing */
+    private function flag(array $input, string $key, ?array $existing): int
     {
+        if (array_key_exists($key, $input)) {
+            return !empty($input[$key]) ? 1 : 0;
+        }
+
+        return is_array($existing) && !empty($existing[$key]) ? 1 : 0;
+    }
+
+    /** @param array{gasFavorite:int,shoppingFavorite:int,assetFavorite:int} $data */
+    private function claim(array &$data, string $now, ?int $exceptId): void
+    {
+        if ($data['gasFavorite'] === 1) {
+            $this->clearFlag('gas_favorite', $now, $exceptId);
+            $data['shoppingFavorite'] = 0;
+            $data['assetFavorite'] = 0;
+
+            return;
+        }
+        if ($data['shoppingFavorite'] === 1) {
+            $this->clearFlag('shopping_favorite', $now, $exceptId);
+            $data['gasFavorite'] = 0;
+            $data['assetFavorite'] = 0;
+
+            return;
+        }
+        if ($data['assetFavorite'] === 1) {
+            $this->clearFlag('asset_favorite', $now, $exceptId);
+            $data['gasFavorite'] = 0;
+            $data['shoppingFavorite'] = 0;
+        }
+    }
+
+    private function clearFlag(string $column, string $now, ?int $exceptId): void
+    {
+        if (!in_array($column, ['gas_favorite', 'shopping_favorite', 'asset_favorite'], true)) {
+            return;
+        }
         if ($exceptId === null) {
             $this->pdo->prepare(
-                'UPDATE accounts SET starred = 0, updated_at = ? WHERE user_id = ? AND starred = 1'
+                "UPDATE accounts SET {$column} = 0, updated_at = ? WHERE user_id = ? AND {$column} = 1"
             )->execute([$now, $this->actor->id()]);
 
             return;
         }
         $this->pdo->prepare(
-            'UPDATE accounts SET starred = 0, updated_at = ? WHERE user_id = ? AND starred = 1 AND id != ?'
+            "UPDATE accounts SET {$column} = 0, updated_at = ? WHERE user_id = ? AND {$column} = 1 AND id != ?"
         )->execute([$now, $this->actor->id(), $exceptId]);
     }
 
     private function aimLockedBills(): void
     {
         $star = $this->pdo->prepare(
-            'SELECT id FROM accounts WHERE user_id = ? AND starred = 1 AND archived_at IS NULL'
+            'SELECT id FROM accounts WHERE user_id = ? AND asset_favorite = 1 AND archived_at IS NULL'
         );
         $star->execute([$this->actor->id()]);
         $found = $star->fetchColumn();
@@ -493,7 +563,9 @@ final class AccountService
             'institution' => $row['institution'],
             'holder' => $row['holder'],
             'notes' => $row['notes'],
-            'starred' => (int) ($row['starred'] ?? 0) === 1,
+            'gasFavorite' => (int) ($row['gas_favorite'] ?? 0) === 1,
+            'shoppingFavorite' => (int) ($row['shopping_favorite'] ?? 0) === 1,
+            'assetFavorite' => (int) ($row['asset_favorite'] ?? 0) === 1,
             'inBudget' => (int) ($row['in_budget'] ?? 0) === 1,
             'archivedAt' => $row['archived_at'],
             'createdAt' => $row['created_at'],

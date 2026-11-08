@@ -75,29 +75,29 @@ final class FieldRulesTest extends TestCase
         self::assertSame(200000, $account['creditLimitMinor']);
     }
 
-    public function testStarringOneAccountClearsTheOther(): void
+    public function testTheAssetFavoriteClearsTheOtherAndSortsFirst(): void
     {
         $first = $this->accounts->create([
             'name' => 'Checking',
             'type' => 'checking',
             'currency' => 'USD',
             'balanceMinor' => 100,
-            'starred' => true,
+            'assetFavorite' => true,
         ]);
         $second = $this->accounts->create([
             'name' => 'Wallet',
             'type' => 'cash',
             'currency' => 'USD',
             'balanceMinor' => 50,
-            'starred' => true,
+            'assetFavorite' => true,
         ]);
 
-        self::assertTrue($second['starred']);
-        self::assertFalse($this->accounts->get($first['id'])['starred']);
+        self::assertTrue($second['assetFavorite']);
+        self::assertFalse($this->accounts->get($first['id'])['assetFavorite']);
         self::assertSame($second['id'], $this->accounts->list(false)[0]['id']);
     }
 
-    public function testTheListPutsTheStarFirstThenTypeThenName(): void
+    public function testTheListPutsFavoritesFirstThenTypeThenName(): void
     {
         $this->accounts->create([
             'name' => 'Wallet',
@@ -122,7 +122,7 @@ final class FieldRulesTest extends TestCase
             'type' => 'checking',
             'currency' => 'USD',
             'balanceMinor' => 100,
-            'starred' => true,
+            'assetFavorite' => true,
         ]);
         $this->accounts->create([
             'name' => 'Emergency',
@@ -141,7 +141,7 @@ final class FieldRulesTest extends TestCase
             'type' => 'checking',
             'currency' => 'USD',
             'balanceMinor' => 100,
-            'starred' => false,
+            'assetFavorite' => false,
         ]);
 
         self::assertSame(
@@ -150,17 +150,17 @@ final class FieldRulesTest extends TestCase
         );
     }
 
-    public function testAnArchivedAccountCannotBeStarred(): void
+    public function testAnArchivedAccountCannotBeTheAssetFavorite(): void
     {
         $account = $this->accounts->create([
             'name' => 'Old checking',
             'type' => 'checking',
             'currency' => 'USD',
             'balanceMinor' => 100,
-            'starred' => true,
+            'assetFavorite' => true,
         ]);
         $archived = $this->accounts->archive($account['id']);
-        self::assertFalse($archived['starred']);
+        self::assertFalse($archived['assetFavorite']);
 
         try {
             $this->accounts->update($account['id'], [
@@ -168,12 +168,12 @@ final class FieldRulesTest extends TestCase
                 'type' => 'checking',
                 'currency' => 'USD',
                 'balanceMinor' => 100,
-                'starred' => true,
+                'assetFavorite' => true,
             ]);
-            self::fail('An archived account was starred.');
+            self::fail('An archived account became the asset favorite.');
         } catch (ApiException $e) {
             self::assertSame(422, $e->status);
-            self::assertArrayHasKey('starred', $e->fields);
+            self::assertArrayHasKey('assetFavorite', $e->fields);
         }
     }
 
@@ -294,5 +294,87 @@ final class FieldRulesTest extends TestCase
             self::assertSame(422, $e->status);
             self::assertArrayHasKey('side', $e->fields);
         }
+    }
+
+    public function testEachFavoriteIsOneAccountAndAnAccountHoldsOnlyOne(): void
+    {
+        $checking = $this->accounts->create([
+            'name' => 'Everyday',
+            'type' => 'checking',
+            'balanceMinor' => 100,
+        ]);
+        $savings = $this->accounts->create([
+            'name' => 'Emergency',
+            'type' => 'savings',
+            'balanceMinor' => 80,
+            'assetFavorite' => true,
+        ]);
+        $card = $this->accounts->create([
+            'name' => 'Travel card',
+            'type' => 'credit',
+            'balanceMinor' => 40,
+            'shoppingFavorite' => true,
+        ]);
+        $fuel = $this->accounts->create([
+            'name' => 'Fuel card',
+            'type' => 'fuel',
+            'balanceMinor' => 20,
+            'gasFavorite' => true,
+        ]);
+        $wallet = $this->accounts->create([
+            'name' => 'Wallet',
+            'type' => 'cash',
+            'balanceMinor' => 10,
+        ]);
+
+        self::assertSame(
+            ['Fuel card', 'Travel card', 'Emergency', 'Wallet', 'Everyday'],
+            array_column($this->accounts->list(false), 'name'),
+        );
+        self::assertFalse($checking['assetFavorite']);
+        self::assertTrue($fuel['gasFavorite']);
+        self::assertTrue($card['shoppingFavorite']);
+        self::assertTrue($savings['assetFavorite']);
+
+        $moved = $this->accounts->update($wallet['id'], [
+            'name' => 'Wallet',
+            'type' => 'cash',
+            'balanceMinor' => 10,
+            'assetFavorite' => true,
+        ]);
+        self::assertTrue($moved['assetFavorite']);
+        self::assertFalse($this->accounts->get($savings['id'])['assetFavorite']);
+        self::assertFalse($this->accounts->get($checking['id'])['assetFavorite']);
+
+        try {
+            $this->accounts->update($fuel['id'], [
+                'name' => 'Fuel card',
+                'type' => 'fuel',
+                'balanceMinor' => 20,
+                'gasFavorite' => true,
+                'shoppingFavorite' => true,
+            ]);
+            self::fail('One account held two favorites.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertArrayHasKey('shoppingFavorite', $e->fields);
+        }
+
+        try {
+            $this->accounts->create([
+                'name' => 'Checking gas',
+                'type' => 'checking',
+                'balanceMinor' => 1,
+                'gasFavorite' => true,
+            ]);
+            self::fail('A checking account became the gas favorite.');
+        } catch (ApiException $e) {
+            self::assertSame(422, $e->status);
+            self::assertArrayHasKey('gasFavorite', $e->fields);
+        }
+
+        $archived = $this->accounts->archive($fuel['id']);
+        self::assertFalse($archived['gasFavorite']);
+        self::assertFalse($archived['assetFavorite']);
     }
 }

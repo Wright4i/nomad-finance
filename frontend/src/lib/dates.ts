@@ -17,6 +17,14 @@ export function formatChipDate(iso: string): string {
   return `${MONTHS[parts.month - 1]} ${parts.day}`;
 }
 
+/** Month/day through month/day, as in 10/16-11/15. */
+export function formatSlashSpan(start: string, end: string): string {
+  const from = dateParts(start);
+  const to = dateParts(end);
+  if (!from || !to) return '';
+  return `${from.month}/${from.day}-${to.month}/${to.day}`;
+}
+
 export function formatMonth(iso: string): string {
   const match = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(iso);
   if (!match) return iso;

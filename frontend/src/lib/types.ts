@@ -29,7 +29,9 @@ export type Account = {
   institution: string | null;
   holder: string | null;
   notes: string | null;
-  starred: boolean;
+  gasFavorite: boolean;
+  shoppingFavorite: boolean;
+  assetFavorite: boolean;
   inBudget: boolean;
   archivedAt: string | null;
 };

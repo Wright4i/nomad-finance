@@ -76,7 +76,11 @@ final class ResetTest extends TestCase
         $checking = $this->named($seeded, 'Everyday checking');
         self::assertSame('checking', $checking['type']);
         self::assertSame(318000, $checking['balanceMinor']);
-        self::assertTrue($checking['starred']);
+        self::assertFalse($checking['assetFavorite']);
+        self::assertFalse($checking['gasFavorite']);
+        self::assertTrue($this->named($seeded, 'Fuel card')['gasFavorite']);
+        self::assertTrue($this->named($seeded, 'Travel card')['shoppingFavorite']);
+        self::assertTrue($this->named($seeded, 'Emergency fund')['assetFavorite']);
         $draw = $this->pdo->query(
             "SELECT draw.name FROM bills b
              JOIN accounts draw ON draw.id = b.account_id
@@ -84,7 +88,7 @@ final class ResetTest extends TestCase
              JOIN user u ON u.id = source.user_id
              WHERE u.role = 'demo' AND source.name = 'Travel card'"
         )->fetchColumn();
-        self::assertSame('Everyday checking', $draw);
+        self::assertSame('Emergency fund', $draw);
 
         $accounts->create([
             'name' => 'Scratch',
