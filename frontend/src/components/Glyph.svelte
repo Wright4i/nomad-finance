@@ -111,6 +111,8 @@
       <path d="M4.6 17.2c.5-2.5 2-3.7 3.6-3.7s3.1 1.2 3.6 3.7M12.2 17.2c.4-2.1 1.6-3.1 2.9-3.1s2.4 1 2.8 3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     {:else if mark === 'travel'}
       <path d="M4 14.5 20 9.5l-7 1.2L10 16.5l1.4-4.2L4 14.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+    {:else if mark === 'fly'}
+      <path d="M3.5 12.5 18 7.5l-6 1 2.5-4.5M12 8.5v8.5l1.5-2 2.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
     {:else if mark === 'insurance'}
       <path d="M12 3.5 19 6.5v5.2c0 4.2-2.8 7-7 8.8-4.2-1.8-7-4.6-7-8.8V6.5L12 3.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
     {:else if mark === 'propane'}

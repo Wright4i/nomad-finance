@@ -9,18 +9,28 @@
   import { paintLeg } from '../lib/legPaint';
   import { formatStaySpan, monthCells } from '../lib/dates';
   import { exponentOf, formatChipDate, formatDate, formatMonth, todayISO } from '../lib/money';
-  import { PAST_MONTHS_DEFAULT, pastMonthChoices, stayDrawn } from '../lib/pastMonths';
+  import { forwardMonthChoices, pastMonthChoices, stayDrawn } from '../lib/pastMonths';
+  import { tripsView } from '../lib/tripsView.svelte.ts';
+  import { showStayBalanceDue, showStayFlight, showStayFuelCost, stayLocality } from '../lib/stayChips';
+  import { nestedStay } from '../lib/stayCalendar';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { DriveLeg, Trip } from '../lib/types';
 
   let trips = $state<Trip[]>([]);
   let legs = $state<DriveLeg[]>([]);
-  let pastMonths = $state(PAST_MONTHS_DEFAULT);
+  let pastMonths = $derived(tripsView.pastMonths);
+  let forwardMonths = $derived(tripsView.forwardMonths);
+  let hideGlobeNames = $derived(tripsView.hideGlobeNames);
+  let hideGlobeLocations = $derived(tripsView.hideGlobeLocations);
+  let hideGlobeMiles = $derived(tripsView.hideGlobeMiles);
   let index = $state(0);
   let message = $state('');
   let loading = $state(true);
   let month = $state(todayISO().slice(0, 7));
+  $effect(() => {
+    tripsView.calendarMonth = month;
+  });
   let days = $derived.by(() => {
     const [year, mon] = month.split('-').map(Number);
     return monthCells(year, mon);
@@ -46,7 +56,9 @@
 
   let selected = $derived(trips[index] ?? null);
   let selectedLeg = $derived(selected ? legs.find((item) => item.toId === selected.id) : undefined);
-  let drawnTrips = $derived(trips.filter((trip) => stayDrawn(trip.departOn, todayISO(), pastMonths)));
+  let drawnTrips = $derived(
+    trips.filter((trip) => stayDrawn(trip.arriveOn, trip.departOn, month, pastMonths, forwardMonths)),
+  );
   let drawnIds = $derived(new Set(drawnTrips.map((trip) => trip.id)));
   let drawnLegs = $derived(
     legs
@@ -81,13 +93,8 @@
         color: stayColor(trip, tripIndex),
       });
     });
-    let ongoing: string | null = null;
-    for (const stay of covering) {
-      if (date !== stay.arriveOn && date !== stay.departOn) {
-        ongoing = stay.color;
-        break;
-      }
-    }
+    const nested = nestedStay(covering, date);
+    const ongoing = nested?.color ?? null;
     let arrive: string | null = null;
     let depart: string | null = null;
     for (const stay of covering) {
@@ -114,7 +121,13 @@
    */
   function stayOn(date: string): Trip | undefined {
     const covering = trips.filter((trip) => trip.arriveOn <= date && trip.departOn >= date);
-    return covering.find((trip) => trip.arriveOn === date) ?? covering[0];
+    const arriving = covering.find((trip) => trip.arriveOn === date);
+    if (arriving) return arriving;
+    const departing = covering.find((trip) => trip.departOn === date);
+    if (departing) return departing;
+    const nestedPick = nestedStay(covering, date);
+    if (nestedPick) return nestedPick;
+    return covering[0];
   }
 
   function pickInitial(rows: Trip[]): number {
@@ -379,17 +392,23 @@
     >
       <button class="stay-card-hit" type="button" aria-label="Edit stay" onclick={() => editStay(selected.id)}></button>
       <p class="m-0 text-2xl">{selected.placeName}</p>
-      {#if selected.note}<p class="m-0 text-xl">{selected.note}</p>{/if}
-      <p class="muted m-0">{formatDate(selected.arriveOn)} – {formatDate(selected.departOn)} · {selected.status}</p>
-      {#if selected.balanceDueOn || selected.fuel?.milesPerGallon || selected.fuel?.miles != null || (selected.fuel && (selected.fuel.costMinor !== null || selected.fuel.priceMinor != null))}
+      <p class="stay-card-note m-0 text-xl" aria-hidden={!selected.note}>{selected.note ?? ''}</p>
+      <p class="muted m-0">{formatDate(selected.arriveOn)} – {formatDate(selected.departOn)}</p>
+      {#if showStayFlight(selected) || showStayBalanceDue(selected) || selected.fuel?.milesPerGallon || selected.fuel?.miles != null || showStayFuelCost(selected) || (selected.fuel && selected.fuel.priceMinor != null)}
         <div class="stay-amount-chips">
-          {#if selected.balanceDueOn}
-            <span class="stay-amount-chip balance-due-chip">
-              <Glyph name="balance" mini />
-              <span><Dollars minor={selected.amountDueMinor} currency={selected.currency ?? baseCurrency} exponent={selected.exponent} owe /> Due {formatChipDate(selected.balanceDueOn)}</span>
+          {#if showStayFlight(selected)}
+            <span class="stay-amount-chip flight-chip">
+              <Glyph name="fly" mini />
+              <span>Flight</span>
             </span>
           {/if}
-          {#if selected.fuel && selected.fuel.costMinor !== null}
+          {#if showStayBalanceDue(selected)}
+            <span class="stay-amount-chip balance-due-chip">
+              <Glyph name="balance" mini />
+              <span><Dollars minor={selected.amountDueMinor} currency={selected.currency ?? baseCurrency} exponent={selected.exponent} owe /> Due {formatChipDate(selected.balanceDueOn!)}</span>
+            </span>
+          {/if}
+          {#if showStayFuelCost(selected)}
             <span class="stay-amount-chip fuel-amount-chip">
               <Glyph name="fuel" mini />
               <span>Fuel <Dollars minor={selected.fuel.costMinor} currency={baseCurrency} exponent={baseExponent} owe /></span>
@@ -496,22 +515,78 @@
   </div>
 
   <div class="globe-stage">
-    <label class="globe-past">
-      <span>Past months</span>
-      <select
-        name="pastMonths"
-        aria-label="Past months"
-        value={pastMonths}
-        onchange={(event) => {
-          pastMonths = Number(event.currentTarget.value);
-        }}
-      >
-        {#each pastMonthChoices as months (months)}
-          <option value={months}>{months}</option>
-        {/each}
-      </select>
-    </label>
+    <div class="globe-window">
+      <label class="globe-window-row">
+        <span>Past months</span>
+        <select
+          name="pastMonths"
+          aria-label="Past months"
+          value={pastMonths}
+          onchange={(event) => {
+            tripsView.pastMonths = Number(event.currentTarget.value);
+          }}
+        >
+          {#each pastMonthChoices as months (months)}
+            <option value={months}>{months}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="globe-window-row">
+        <span>Forward months</span>
+        <select
+          name="forwardMonths"
+          aria-label="Forward months"
+          value={forwardMonths}
+          onchange={(event) => {
+            tripsView.forwardMonths = Number(event.currentTarget.value);
+          }}
+        >
+          {#each forwardMonthChoices as months (months)}
+            <option value={months}>{months}</option>
+          {/each}
+        </select>
+      </label>
+      <label class="globe-window-row globe-window-toggle">
+        <span>Hide Names</span>
+        <input
+          type="checkbox"
+          name="hideGlobeNames"
+          aria-label="Hide names"
+          checked={hideGlobeNames}
+          onchange={(event) => {
+            tripsView.hideGlobeNames = event.currentTarget.checked;
+          }}
+        />
+      </label>
+      <label class="globe-window-row globe-window-toggle">
+        <span>Hide Locations</span>
+        <input
+          type="checkbox"
+          name="hideGlobeLocations"
+          aria-label="Hide locations"
+          checked={hideGlobeLocations}
+          onchange={(event) => {
+            tripsView.hideGlobeLocations = event.currentTarget.checked;
+          }}
+        />
+      </label>
+      <label class="globe-window-row globe-window-toggle">
+        <span>Hide Miles</span>
+        <input
+          type="checkbox"
+          name="hideGlobeMiles"
+          aria-label="Hide miles"
+          checked={hideGlobeMiles}
+          onchange={(event) => {
+            tripsView.hideGlobeMiles = event.currentTarget.checked;
+          }}
+        />
+      </label>
+    </div>
     <Globe
+      hideNames={hideGlobeNames}
+      hideLocations={hideGlobeLocations}
+      hideMiles={hideGlobeMiles}
       pins={drawnTrips.map((trip) => {
         const tripIndex = trips.findIndex((item) => item.id === trip.id);
         return {
@@ -591,16 +666,51 @@
         <div class="stay-list-copy">
           <div class="bill-detail-chips items-center">
             <span data-stay-dates>{formatStaySpan(trip.arriveOn, trip.departOn)}</span>
-            <strong class="bill-detail-chip" data-chip="place">{trip.placeName}</strong>
-            {#if trip.note}<span class="bill-detail-chip" data-chip="note">{trip.note}</span>{/if}
-            {#if trip.city}<span class="bill-detail-chip" data-chip="city">{trip.city}</span>{/if}
-            {#if trip.region}<span class="bill-detail-chip" data-chip="state">{trip.region}</span>{/if}
-            <span class="bill-detail-chip" data-chip="status">{trip.status}</span>
-            {#if trip.balanceDueOn}<span class="bill-detail-chip" data-chip="due">balance due {formatChipDate(trip.balanceDueOn)}</span>{/if}
-            {#if listedMiles !== null}<span class="bill-detail-chip" data-chip="miles">{listedMiles} miles from previous stay</span>{/if}
-            {#if trip.fuel?.milesPerGallon}<span class="bill-detail-chip" data-chip="mpg">{trip.fuel.milesPerGallon} mpg</span>{/if}
-            {#if trip.fuel && trip.fuel.costMinor !== null}
-              <span class="bill-detail-chip" data-chip="fuel">Fuel <Dollars minor={trip.fuel.costMinor} currency={baseCurrency} exponent={baseExponent} owe /></span>
+            <strong class="bill-detail-chip" data-chip="place">
+              <Glyph name="tree" mini />
+              <span>{trip.placeName}</span>
+            </strong>
+            {#if trip.note}
+              <span class="bill-detail-chip" data-chip="note">
+                <Glyph name="entry" mini />
+                <span>{trip.note}</span>
+              </span>
+            {/if}
+            {#if stayLocality(trip)}
+              <span class="bill-detail-chip" data-chip="locality">
+                <Glyph name="crosshair" mini />
+                <span>{stayLocality(trip)}</span>
+              </span>
+            {/if}
+            {#if showStayFlight(trip)}
+              <span class="bill-detail-chip" data-chip="flight">
+                <Glyph name="fly" mini />
+                <span>Flight</span>
+              </span>
+            {/if}
+            {#if showStayBalanceDue(trip)}
+              <span class="bill-detail-chip" data-chip="due">
+                <Glyph name="balance" mini />
+                <span>balance due {formatChipDate(trip.balanceDueOn!)}</span>
+              </span>
+            {/if}
+            {#if listedMiles !== null}
+              <span class="bill-detail-chip" data-chip="miles">
+                <Glyph name="travel" mini />
+                <span>{listedMiles} miles</span>
+              </span>
+            {/if}
+            {#if trip.fuel?.milesPerGallon}
+              <span class="bill-detail-chip" data-chip="mpg">
+                <Glyph name="vehicle" mini />
+                <span>{trip.fuel.milesPerGallon} mpg</span>
+              </span>
+            {/if}
+            {#if showStayFuelCost(trip)}
+              <span class="bill-detail-chip" data-chip="fuel">
+                <Glyph name="fuel" mini />
+                <span>Fuel <Dollars minor={trip.fuel.costMinor!} currency={baseCurrency} exponent={baseExponent} owe /></span>
+              </span>
             {/if}
           </div>
         </div>

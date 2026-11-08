@@ -108,6 +108,34 @@ final class StayColorTest extends TestCase
         );
     }
 
+    public function testADayInsideOverlappingStaysShowsTheNestedStay(): void
+    {
+        $host = ['id' => 1, 'arriveOn' => '2026-07-21', 'departOn' => '2026-07-26', 'color' => 'fern'];
+        $nested = ['id' => 2, 'arriveOn' => '2026-07-23', 'departOn' => '2026-07-25', 'color' => 'tide'];
+        $stays = [$host, $nested];
+
+        self::assertSame(
+            ['arrive' => 'fern', 'depart' => 'fern'],
+            StayDayFill::halves($stays, '2026-07-22'),
+        );
+        self::assertSame(
+            ['arrive' => 'tide', 'depart' => 'fern'],
+            StayDayFill::halves($stays, '2026-07-23'),
+        );
+        self::assertSame(
+            ['arrive' => 'tide', 'depart' => 'tide'],
+            StayDayFill::halves($stays, '2026-07-24'),
+        );
+        self::assertSame(
+            ['arrive' => 'fern', 'depart' => 'tide'],
+            StayDayFill::halves($stays, '2026-07-25'),
+        );
+        self::assertSame(1, StayDayChoice::id($stays, '2026-07-22'));
+        self::assertSame(2, StayDayChoice::id($stays, '2026-07-23'));
+        self::assertSame(2, StayDayChoice::id($stays, '2026-07-24'));
+        self::assertSame(2, StayDayChoice::id($stays, '2026-07-25'));
+    }
+
     public function testAnArrivalDuringAStayShowsThatNight(): void
     {
         $stays = [

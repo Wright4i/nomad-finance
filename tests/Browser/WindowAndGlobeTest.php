@@ -186,11 +186,20 @@ final class WindowAndGlobeTest extends TestCase
         $choice = self::wait(40)->until(function (): array|false {
             $value = self::driver()->executeScript(<<<'JS'
                 const select = document.querySelector('select[name="pastMonths"]');
+                const forward = document.querySelector('select[name="forwardMonths"]');
+                const hideNames = document.querySelector('input[name="hideGlobeNames"]');
+                const hideLocations = document.querySelector('input[name="hideGlobeLocations"]');
+                const hideMiles = document.querySelector('input[name="hideGlobeMiles"]');
                 const labels = [...document.querySelectorAll('.globe button.map-pin')].map((node) => node.getAttribute('aria-label') || '');
-                if (!select || labels.length === 0) return null;
+                if (!select || !forward || !hideNames || !hideLocations || !hideMiles || labels.length === 0) return null;
                 return {
                     value: select.value,
+                    forwardValue: forward.value,
+                    hideNames: hideNames.checked,
+                    hideLocations: hideLocations.checked,
+                    hideMiles: hideMiles.checked,
                     options: [...select.options].map((option) => option.value),
+                    forwardOptions: [...forward.options].map((option) => option.value),
                     labels,
                     basemap: document.querySelector('.globe')?.dataset.basemap || '',
                 };
@@ -202,7 +211,12 @@ final class WindowAndGlobeTest extends TestCase
             return $value;
         });
         self::assertSame('0', $choice['value']);
+        self::assertSame('12', $choice['forwardValue']);
+        self::assertFalse($choice['hideNames']);
+        self::assertFalse($choice['hideLocations']);
+        self::assertFalse($choice['hideMiles']);
         self::assertSame(array_map('strval', range(0, 12)), $choice['options']);
+        self::assertSame(array_map('strval', range(0, 12)), $choice['forwardOptions']);
         self::assertSame('positron', $choice['basemap']);
         self::assertFalse(self::labeled($choice['labels'], 'Devils Garden'));
         self::assertFalse(self::labeled($choice['labels'], 'Catalina'));

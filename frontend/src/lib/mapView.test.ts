@@ -2,20 +2,60 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { basemapId } from './basemap.ts';
 import { paintLeg } from './legPaint.ts';
-import { PAST_MONTHS_DEFAULT, pastMonthChoices, stayDrawn } from './pastMonths.ts';
-import { locateZoom, stayZoom, tripFrame, worldZoom } from './tripFrame.ts';
+import {
+  FORWARD_MONTHS_DEFAULT,
+  HIDE_GLOBE_LOCATIONS_DEFAULT,
+  HIDE_GLOBE_MILES_DEFAULT,
+  HIDE_GLOBE_NAMES_DEFAULT,
+  PAST_MONTHS_DEFAULT,
+  forwardMonthChoices,
+  pastMonthChoices,
+  stayDrawn,
+} from './pastMonths.ts';
+import { globeFlyMs, locateZoom, stayZoom, tripFrame, worldZoom } from './tripFrame.ts';
 
-test('the globe past-month control defaults to 0 and includes a stay only when the choice reaches it', () => {
+test('the globe month controls default to 0 past and 12 forward', () => {
   assert.equal(PAST_MONTHS_DEFAULT, 0);
+  assert.equal(FORWARD_MONTHS_DEFAULT, 12);
+  assert.equal(HIDE_GLOBE_NAMES_DEFAULT, false);
+  assert.equal(HIDE_GLOBE_LOCATIONS_DEFAULT, false);
+  assert.equal(HIDE_GLOBE_MILES_DEFAULT, false);
   assert.deepEqual(pastMonthChoices, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  const today = '2026-11-05';
-  assert.equal(stayDrawn('2026-08-15', today, 0), false);
-  assert.equal(stayDrawn('2026-08-15', today, 2), false);
-  assert.equal(stayDrawn('2026-08-15', today, 3), true);
-  assert.equal(stayDrawn('2026-10-30', today, 0), false);
-  assert.equal(stayDrawn('2026-10-30', today, 1), true);
-  assert.equal(stayDrawn('2026-11-13', today, 0), true);
-  assert.equal(stayDrawn('2027-01-08', today, 0), true);
+  assert.deepEqual(forwardMonthChoices, pastMonthChoices);
+});
+
+test('past and forward months anchor on the month shown on the trip calendar', () => {
+  const viewMonth = '2026-11';
+  const draw = (arrive: string, depart: string, month: string, past: number, forward: number) =>
+    stayDrawn(arrive, depart, month, past, forward);
+  assert.equal(draw('2026-08-01', '2026-08-15', viewMonth, 0, 0), false);
+  assert.equal(draw('2026-08-01', '2026-08-15', viewMonth, 2, 0), false);
+  assert.equal(draw('2026-08-01', '2026-08-15', viewMonth, 3, 0), true);
+  assert.equal(draw('2026-10-01', '2026-10-30', viewMonth, 0, 0), false);
+  assert.equal(draw('2026-10-01', '2026-10-30', viewMonth, 1, 0), true);
+  assert.equal(draw('2026-11-13', '2026-11-20', viewMonth, 0, 0), true);
+  assert.equal(draw('2027-01-02', '2027-01-08', viewMonth, 0, 0), false);
+  assert.equal(draw('2027-01-02', '2027-01-08', viewMonth, 0, 12), true);
+  assert.equal(draw('2027-12-01', '2027-12-15', viewMonth, 0, 12), false);
+});
+
+test('forward months clip stays after the window', () => {
+  const draw = (arrive: string, depart: string, month: string, past: number, forward: number) =>
+    stayDrawn(arrive, depart, month, past, forward);
+  assert.equal(draw('2026-05-20', '2026-05-31', '2026-06', 0, 0), false);
+  assert.equal(draw('2026-06-01', '2026-06-15', '2026-06', 0, 0), true);
+  assert.equal(draw('2026-06-28', '2026-07-05', '2026-06', 0, 0), true);
+  assert.equal(draw('2026-11-20', '2026-11-24', '2026-06', 0, 0), false);
+  assert.equal(draw('2026-11-20', '2026-11-24', '2026-06', 0, 5), true);
+  assert.equal(draw('2026-05-01', '2026-05-15', '2026-06', 3, 0), true);
+  assert.equal(draw('2026-07-20', '2026-07-31', '2026-08', 0, 0), false);
+  assert.equal(draw('2026-08-01', '2026-08-10', '2026-08', 0, 0), true);
+  assert.equal(draw('2026-05-01', '2026-05-15', '2026-08', 2, 0), false);
+  assert.equal(draw('2026-05-01', '2026-05-15', '2026-08', 3, 0), true);
+});
+
+test('the globe flight between stays lasts one second', () => {
+  assert.equal(globeFlyMs, 1000);
 });
 
 test('a drive with no road route is dashed with no miles and no airplane, and a flight keeps the airplane', () => {

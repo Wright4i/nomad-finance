@@ -140,7 +140,7 @@ final class LifeTest extends TestCase
 
             return str_contains($text, 'Lost Dutchman') && str_contains($text, '-$140.00 Due Nov 22');
         });
-        $balanceColor = self::assertBalanceChipOnStayOne();
+        $balanceIcon = self::assertBalanceChipOnStayOne();
         self::click('Next');
         self::waitForText('Cattail Cove');
         self::assertSame('2026-11', self::tripMonth());
@@ -155,7 +155,7 @@ final class LifeTest extends TestCase
         self::click('Next');
         self::waitForText('Cottonwood');
         self::waitForText('Site 4');
-        self::assertFuelChipOnStayTwo($balanceColor);
+        self::assertFuelChipOnStayTwo($balanceIcon);
         self::clickLink('Add a stay');
         self::type('placeName', 'Park 1');
         self::replace('note', 'SITE #34');
@@ -511,7 +511,8 @@ final class LifeTest extends TestCase
             const cattail = row('Cattail Cove');
             const names = [...document.querySelectorAll('.stay-list strong')].map((node) => node.textContent.trim());
             const miles = (node) => {
-                const match = node && node.textContent ? node.textContent.match(/(\d+) miles from previous stay/) : null;
+                const chip = node && node.querySelector('[data-chip="miles"]');
+                const match = chip && chip.textContent ? chip.textContent.match(/(\d+)\s+miles/) : null;
                 return match ? match[1] : '';
             };
             return {
@@ -556,7 +557,8 @@ final class LifeTest extends TestCase
         $moved = self::driver()->executeScript(<<<'JS'
             const row = (name) => [...document.querySelectorAll('.stay-list')].find((node) => node.textContent.includes(name));
             const miles = (node) => {
-                const match = node && node.textContent ? node.textContent.match(/(\d+) miles from previous stay/) : null;
+                const chip = node && node.querySelector('[data-chip="miles"]');
+                const match = chip && chip.textContent ? chip.textContent.match(/(\d+)\s+miles/) : null;
                 return match ? match[1] : '';
             };
             return { dad: miles(row('Dad house')), lost: miles(row('Lost Dutchman')) };
@@ -890,62 +892,55 @@ final class LifeTest extends TestCase
         self::assertStringNotContainsString('2026', $chip['text']);
         self::assertTrue($chip['icon']);
         self::assertStringContainsString('M12 5v13.5', $chip['path']);
-        self::assertSame('rgb(31,95,147)', $chip['color']);
-        self::assertSame($chip['ink'], $chip['iconInk']);
+        self::assertSame('rgb(51,57,65)', $chip['color']);
+        self::assertSame('rgb(244,255,252)', $chip['ink']);
+        self::assertSame('rgb(142,200,255)', $chip['iconInk']);
         self::assertSame(0, $chip['stray']);
         $card = self::stayCardFacts();
         self::assertStringContainsString('Nov 20, 2026', $card['text']);
         self::assertStringContainsString('Lost Dutchman', $card['text']);
 
-        return $chip['color'];
+        return $chip['iconInk'];
     }
 
-    private static function assertFuelChipOnStayTwo(string $balanceColor): void
+    private static function assertFuelChipOnStayTwo(string $balanceIcon): void
     {
         $chip = self::chipOnCard('.fuel-amount-chip');
         self::assertMatchesRegularExpression('/^Fuel -\$\d[\d,]*\.\d{2}$/', $chip['text']);
         self::assertTrue($chip['moneyFollows']);
         self::assertTrue($chip['icon']);
         self::assertStringContainsString('M12 19.5c2.6', $chip['path']);
-        self::assertSame('rgb(154,103,9)', $chip['color']);
-        self::assertNotSame($balanceColor, $chip['color']);
-        self::assertSame($chip['ink'], $chip['iconInk']);
+        self::assertSame('rgb(51,57,65)', $chip['color']);
+        self::assertSame('rgb(244,255,252)', $chip['ink']);
+        self::assertSame('rgb(245,185,66)', $chip['iconInk']);
         self::assertSame(0, $chip['stray']);
         $balance = self::chipOnCard('.balance-due-chip');
         self::assertSame('-$75.00 Due Dec 1', $balance['text']);
         self::assertTrue($balance['moneyFollows']);
         self::assertStringNotContainsString('2026', $balance['text']);
         self::assertStringNotContainsString('$100.00', $balance['text']);
-        self::assertSame('rgb(31,95,147)', $balance['color']);
+        self::assertSame('rgb(51,57,65)', $balance['color']);
+        self::assertSame($balanceIcon, $balance['iconInk']);
         $mpg = self::chipOnCard('.mpg-chip');
         self::assertMatchesRegularExpression('/^\d+\.\d mpg$/', $mpg['text']);
         self::assertTrue($mpg['icon']);
         self::assertStringContainsString('M6 16.5V9.5', $mpg['path']);
-        self::assertSame('rgb(106,75,178)', $mpg['color']);
+        self::assertSame('rgb(191,163,255)', $mpg['iconInk']);
         self::assertSame(0, $mpg['stray']);
         $price = self::chipOnCard('.fuel-price-chip');
         self::assertSame('$4.00/gal', $price['text']);
         self::assertTrue($price['moneyFollows']);
         self::assertTrue($price['icon']);
         self::assertSame('rect', $price['drawn']);
-        self::assertSame('rgb(194,65,85)', $price['color']);
+        self::assertSame('rgb(255,139,152)', $price['iconInk']);
         self::assertSame(0, $price['stray']);
-        self::assertNotSame($chip['color'], $mpg['color']);
-        self::assertNotSame($chip['color'], $price['color']);
-        self::assertNotSame($mpg['color'], $price['color']);
-        self::assertNotSame($balance['color'], $mpg['color']);
-        self::assertNotSame($balance['color'], $price['color']);
         $miles = self::chipOnCard('.miles-chip');
         self::assertMatchesRegularExpression('/^\d+ miles$/', $miles['text']);
         self::assertStringNotContainsString('from previous stay', $miles['text']);
         self::assertTrue($miles['icon']);
         self::assertStringContainsString('M4 14.5', $miles['path']);
-        self::assertSame('rgb(45,107,64)', $miles['color']);
+        self::assertSame('rgb(132,219,158)', $miles['iconInk']);
         self::assertSame(0, $miles['stray']);
-        self::assertNotSame($balance['color'], $miles['color']);
-        self::assertNotSame($chip['color'], $miles['color']);
-        self::assertNotSame($mpg['color'], $miles['color']);
-        self::assertNotSame($price['color'], $miles['color']);
         $card = self::stayCardFacts();
         self::assertStringContainsString('Dec 1, 2026', $card['text']);
         self::assertStringNotContainsString('miles from previous stay', $card['text']);

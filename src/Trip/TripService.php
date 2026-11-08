@@ -80,7 +80,7 @@ final class TripService
     {
         $data = $this->validate($input, null);
         $place = $this->locality($input, null, $data);
-        $routeOrder = $this->routeSlot($data['arriveOn']);
+        $routeOrder = $this->allocateRouteSlot($data['arriveOn'], $data['departOn'], $data['placeName'], null);
         $today = $this->dayOrToday(is_string($input['today'] ?? null) ? $input['today'] : '');
         $now = gmdate('c');
         $this->pdo->prepare(
@@ -162,6 +162,12 @@ final class TripService
                 $id,
                 $this->actor->id(),
             ]);
+        if (
+            (string) $existing['arrive_on'] !== $data['arriveOn']
+            || (string) $existing['depart_on'] !== $data['departOn']
+        ) {
+            $this->reseatRoute($id, $data['arriveOn'], $data['departOn'], $data['placeName']);
+        }
         $this->syncDueBill($id, $data, $today);
 
         return $this->get($id, $today);
@@ -745,32 +751,101 @@ final class TripService
         return Stretch::fillUps($rows, $originMiles === false || $originMiles === null ? null : (int) $originMiles);
     }
 
-    private function routeSlot(string $arriveOn): int
+    private function reseatRoute(int $id, string $arriveOn, string $departOn, string $placeName): void
+    {
+        $stmt = $this->pdo->prepare('SELECT route_order FROM trips WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $this->actor->id()]);
+        $oldOrder = $stmt->fetchColumn();
+        if ($oldOrder === false || $oldOrder === null) {
+            return;
+        }
+        $oldOrder = (int) $oldOrder;
+        $this->pdo->prepare('UPDATE trips SET route_order = -1 WHERE id = ? AND user_id = ?')->execute([
+            $id,
+            $this->actor->id(),
+        ]);
+        $this->pdo->prepare(
+            'UPDATE trips SET route_order = route_order - 1 WHERE user_id = ? AND route_order > ?'
+        )->execute([$this->actor->id(), $oldOrder]);
+        $newOrder = $this->allocateRouteSlot($arriveOn, $departOn, $placeName, $id);
+        $this->pdo->prepare('UPDATE trips SET route_order = ? WHERE id = ? AND user_id = ?')->execute([
+            $newOrder,
+            $id,
+            $this->actor->id(),
+        ]);
+    }
+
+    private function allocateRouteSlot(string $arriveOn, string $departOn, string $placeName, ?int $exceptId): int
     {
         $stmt = $this->pdo->prepare(
-            'SELECT route_order, arrive_on FROM trips WHERE user_id = ? ORDER BY route_order, id'
+            'SELECT id, route_order, arrive_on, depart_on, place_name FROM trips WHERE user_id = ? AND route_order >= 0'
         );
         $stmt->execute([$this->actor->id()]);
-        $slot = 0;
-        $insertAt = null;
+        $rows = [];
         while ($row = $stmt->fetch()) {
             if (!is_array($row)) {
                 break;
             }
-            $order = (int) $row['route_order'];
-            if ($insertAt === null && (string) $row['arrive_on'] > $arriveOn) {
-                $insertAt = $order;
+            $tripId = (int) $row['id'];
+            if ($exceptId !== null && $tripId === $exceptId) {
+                continue;
             }
-            $slot = $order + 1;
+            $rows[] = [
+                'id' => $tripId,
+                'route_order' => (int) $row['route_order'],
+                'arrive_on' => (string) $row['arrive_on'],
+                'depart_on' => (string) $row['depart_on'],
+                'place_name' => (string) $row['place_name'],
+            ];
+        }
+        usort($rows, fn (array $a, array $b): int => $this->compareRouteRows($a, $b));
+        $candidate = [
+            'id' => PHP_INT_MAX,
+            'arrive_on' => $arriveOn,
+            'depart_on' => $departOn,
+            'place_name' => $placeName,
+        ];
+        $insertAt = null;
+        foreach ($rows as $row) {
+            if ($this->compareRouteRows($candidate, $row) < 0) {
+                $insertAt = $row['route_order'];
+                break;
+            }
+        }
+        $slot = 0;
+        foreach ($rows as $row) {
+            $slot = max($slot, $row['route_order'] + 1);
         }
         if ($insertAt === null) {
             return $slot;
         }
         $this->pdo->prepare(
-            'UPDATE trips SET route_order = route_order + 1 WHERE user_id = ? AND route_order >= ?'
+            'UPDATE trips SET route_order = route_order + 1 WHERE user_id = ? AND route_order >= ? AND route_order >= 0'
         )->execute([$this->actor->id(), $insertAt]);
 
         return $insertAt;
+    }
+
+    /**
+     * @param array{id?:int,arrive_on:string,depart_on:string,place_name:string} $a
+     * @param array{id?:int,arrive_on:string,depart_on:string,place_name:string} $b
+     */
+    private function compareRouteRows(array $a, array $b): int
+    {
+        $cmp = strcmp($a['arrive_on'], $b['arrive_on']);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        $cmp = strcmp($a['depart_on'], $b['depart_on']);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        $cmp = strcasecmp($a['place_name'], $b['place_name']);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return ($a['id'] ?? PHP_INT_MAX) <=> ($b['id'] ?? PHP_INT_MAX);
     }
 
     /** @return array{moveEarlier:bool,moveLater:bool} */

@@ -13,7 +13,7 @@
   } from '../lib/carto';
   import type { LngLat } from '../lib/route';
   import { session } from '../lib/session.svelte.ts';
-  import { locateZoom, stayZoom, tripFrame, worldZoom } from '../lib/tripFrame';
+  import { globeFlyMs, locateZoom, stayZoom, tripFrame, worldZoom } from '../lib/tripFrame';
 
   setWorkerUrl(maplibreWorker);
 
@@ -46,6 +46,9 @@
     compact = false,
     locateToken = 0,
     stepToken = 0,
+    hideNames = false,
+    hideLocations = false,
+    hideMiles = false,
     onSelect = () => {},
     onMarker = () => {},
   }: {
@@ -65,6 +68,9 @@
     locateToken?: number;
     /** Bumps when Previous or Next should fly to that stay at city zoom. */
     stepToken?: number;
+    hideNames?: boolean;
+    hideLocations?: boolean;
+    hideMiles?: boolean;
     onSelect?: (id: number) => void;
     onMarker?: (latitude: string, longitude: string) => void;
   } = $props();
@@ -143,7 +149,7 @@
     if (!map) return;
     const camera = { center: [longitude, latitude] as LngLat, zoom };
     if (reduced()) map.jumpTo(camera);
-    else map.flyTo({ ...camera, essential: true, duration: 400 });
+    else map.flyTo({ ...camera, essential: true, duration: globeFlyMs });
   }
 
   function drawPins(): void {
@@ -162,24 +168,36 @@
       button.setAttribute('aria-label', where === '' ? title : `${title}, ${where}`);
       const dot = document.createElement('span');
       dot.className = 'map-pin-dot';
-      const label = document.createElement('span');
-      label.className = 'map-pin-label';
-      const name = document.createElement('strong');
-      name.textContent = title;
-      label.append(name);
-      if (where !== '') {
-        const place = document.createElement('span');
-        place.textContent = where;
-        label.append(place);
+      const showName = !hideNames;
+      const showLocality = !hideLocations && where !== '';
+      const showLabel = showName || showLocality;
+      button.append(dot);
+      if (showLabel) {
+        const label = document.createElement('span');
+        label.className = 'map-pin-label';
+        if (showName) {
+          const name = document.createElement('strong');
+          name.className = 'map-pin-name';
+          name.textContent = title;
+          label.append(name);
+        }
+        if (showLocality) {
+          const place = document.createElement('span');
+          place.className = 'map-pin-locality';
+          place.textContent = where;
+          label.append(place);
+        }
+        button.append(label);
       }
-      button.append(dot, label);
       if (!quiet) {
         button.addEventListener('click', (event) => {
           event.stopPropagation();
           onSelect(item.id);
         });
       }
-      stayPins.push(new Marker({ element: button, anchor: 'left', offset: [-7, 0] }).setLngLat([lng, lat]).addTo(map));
+      const anchor = showLabel ? 'left' : 'center';
+      const offset: [number, number] = showLabel ? [-7, 0] : [0, 0];
+      stayPins.push(new Marker({ element: button, anchor, offset }).setLngLat([lng, lat]).addTo(map));
     }
   }
 
@@ -201,7 +219,7 @@
         legPins.push(new Marker({ element: badge, anchor: 'center' }).setLngLat(at).addTo(map));
         continue;
       }
-      if (leg.miles == null) continue;
+      if (leg.miles == null || hideMiles) continue;
       const label = document.createElement('span');
       label.className = 'map-leg';
       label.textContent = `${leg.miles} mi`;
@@ -458,6 +476,17 @@
     satellite;
     locateToken;
     stepToken;
+    hideNames;
+    hideLocations;
+    hideMiles;
+    if (host) {
+      if (hideNames) host.dataset.hideNames = 'true';
+      else delete host.dataset.hideNames;
+      if (hideLocations) host.dataset.hideLocations = 'true';
+      else delete host.dataset.hideLocations;
+      if (hideMiles) host.dataset.hideMiles = 'true';
+      else delete host.dataset.hideMiles;
+    }
     if (map) {
       drawPins();
       drawLegLabels();

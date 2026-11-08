@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import Glyph from './Glyph.svelte';
   import { formatDate, formatMonth, isoToInput, maskDateInput, monthCells, monthOf, parseDateInput, shiftYearMonth } from '../lib/dates';
 
   let {
@@ -170,9 +171,27 @@
   {#if open}
     <div id={panelId} class="date-picker" role="dialog" aria-label="Choose date" aria-modal="false" tabindex="-1" onpointerdown={inside}>
       <div class="date-picker-nav">
-        <button class="btn" type="button" onmousedown={quiet} onpointerdown={inside} onclick={(event) => { inside(event); move(-1); }}>Previous month</button>
-        <p class="m-0">{heading}</p>
-        <button class="btn" type="button" onmousedown={quiet} onpointerdown={inside} onclick={(event) => { inside(event); move(1); }}>Next month</button>
+        <button
+          class="icon-btn"
+          type="button"
+          aria-label="Previous month"
+          onmousedown={quiet}
+          onpointerdown={inside}
+          onclick={(event) => { inside(event); move(-1); }}
+        >
+          <Glyph name="collapse" mini />
+        </button>
+        <p class="date-picker-heading m-0">{heading}</p>
+        <button
+          class="icon-btn"
+          type="button"
+          aria-label="Next month"
+          onmousedown={quiet}
+          onpointerdown={inside}
+          onclick={(event) => { inside(event); move(1); }}
+        >
+          <Glyph name="expand" mini />
+        </button>
       </div>
       <div class="date-picker-week" aria-hidden="true">
         {#each weekdays as weekday (weekday)}

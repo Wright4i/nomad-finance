@@ -2,6 +2,9 @@
 export const worldZoom = 3.4;
 export const locateZoom = 15;
 
+/** MapLibre flyTo duration when the globe recenters on a stay. */
+export const globeFlyMs = 1000;
+
 /** Halfway from the world view to the locate zoom. Previous and Next use this. */
 export function stayZoom(): number {
   return (worldZoom + locateZoom) / 2;

@@ -1031,15 +1031,16 @@ a.planner-stay:active {
 }
 
 .date-picker-nav {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.35rem;
 }
 
-.date-picker-nav .btn {
-  padding: 0.4rem 0.75rem;
+.date-picker-heading {
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .date-picker-week,
@@ -1204,6 +1205,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   transition: border-color 160ms var(--ease-out);
 }
 
+.stay-card-note {
+  min-height: 1.75em;
+}
+
 .stay-card-hit {
   position: absolute;
   inset: 0;
@@ -1245,7 +1250,47 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.2;
+  background: #333941;
+  color: #f4fffc;
+  --stay-chip-icon: var(--teal);
 }
+
+.stay-card .stay-amount-chip {
+  background: #333941;
+  color: #f4fffc;
+  --stay-chip-icon: var(--teal);
+}
+
+.stay-list .bill-detail-chip .glyph,
+.stay-card .stay-amount-chip .glyph {
+  width: 0.85rem;
+  height: 0.85rem;
+  background: none;
+  border-radius: 0;
+  color: var(--stay-chip-icon);
+  flex-shrink: 0;
+}
+
+.stay-list .bill-detail-chip .glyph svg,
+.stay-card .stay-amount-chip .glyph svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.stay-list .bill-detail-chip[data-chip='place'] { --stay-chip-icon: var(--fern); }
+.stay-list .bill-detail-chip[data-chip='note'] { --stay-chip-icon: var(--stone); }
+.stay-list .bill-detail-chip[data-chip='locality'] { --stay-chip-icon: var(--teal); }
+.stay-list .bill-detail-chip[data-chip='flight'],
+.stay-card .flight-chip { --stay-chip-icon: var(--tide); }
+.stay-list .bill-detail-chip[data-chip='due'],
+.stay-card .balance-due-chip { --stay-chip-icon: var(--sky); }
+.stay-list .bill-detail-chip[data-chip='miles'],
+.stay-card .miles-chip { --stay-chip-icon: var(--fern); }
+.stay-list .bill-detail-chip[data-chip='mpg'],
+.stay-card .mpg-chip { --stay-chip-icon: var(--violet); }
+.stay-list .bill-detail-chip[data-chip='fuel'],
+.stay-card .fuel-amount-chip { --stay-chip-icon: var(--amber); }
+.stay-card .fuel-price-chip { --stay-chip-icon: var(--coral); }
 
 .stay-list [data-stay-dates] {
   flex: none;
@@ -1307,68 +1352,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   color: inherit;
 }
 
-.stay-amount-chip .glyph {
-  width: 0.85rem;
-  height: 0.85rem;
-  background: none;
-  border-radius: 0;
-  color: currentColor;
-}
-
-.stay-amount-chip .glyph svg {
-  width: 0.85rem;
-  height: 0.85rem;
-}
-
-/* Sky and amber, in the other theme's shade, so a chip still contrasts when the card is that hue. */
-.stay-card .balance-due-chip {
-  background: #1f5f93;
-  color: #f4fffc;
-}
-
-.stay-card .fuel-amount-chip {
-  background: #9a6709;
-  color: #f4fffc;
-}
-
-:root.light .stay-card .balance-due-chip {
-  background: #8ec8ff;
-  color: #04211c;
-}
-
-:root.light .stay-card .fuel-amount-chip {
-  background: #f5b942;
-  color: #04211c;
-}
-
-.stay-card .mpg-chip {
-  background: #6a4bb2;
-  color: #f4fffc;
-}
-
-.stay-card .fuel-price-chip {
-  background: #c24155;
-  color: #f4fffc;
-}
-
-:root.light .stay-card .mpg-chip {
-  background: #bfa3ff;
-  color: #04211c;
-}
-
-:root.light .stay-card .fuel-price-chip {
-  background: #ff8b98;
-  color: #04211c;
-}
-
-.stay-card .miles-chip {
-  background: #2d6b40;
-  color: #f4fffc;
-}
-
-:root.light .stay-card .miles-chip {
-  background: #84db9e;
-  color: #04211c;
+.stay-list .bill-detail-chip .money,
+.stay-list .bill-detail-chip .money-pos,
+.stay-list .bill-detail-chip .money-neg,
+.stay-list .bill-detail-chip .money-zero,
+.stay-card .stay-amount-chip .money,
+.stay-card .stay-amount-chip .money-pos,
+.stay-card .stay-amount-chip .money-neg,
+.stay-card .stay-amount-chip .money-zero {
+  color: inherit;
 }
 
 .stay-fill .muted {
@@ -1595,14 +1587,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   position: relative;
 }
 
-.globe-past {
+.globe-window {
   position: absolute;
   z-index: 3;
   top: 0.75rem;
   right: 0.75rem;
   display: flex;
-  align-items: center;
-  gap: 0.45rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
   margin: 0;
   padding: 0.35rem 0.55rem 0.35rem 0.75rem;
   border-radius: 0.85rem;
@@ -1612,12 +1605,35 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   font-size: 0.92rem;
 }
 
-.globe-past select {
+.globe-window-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.globe-window select {
   border-radius: 0.55rem;
   border: 1px solid var(--line);
   background: var(--bg-raise);
   color: var(--text);
   padding: 0.25rem 0.4rem;
+}
+
+.globe-window-toggle input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--teal);
+}
+
+.globe[data-hide-names] .map-pin-name {
+  display: none;
+}
+
+.globe[data-hide-locations] .map-pin-locality {
+  display: none;
 }
 
 .globe {

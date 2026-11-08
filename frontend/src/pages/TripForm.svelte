@@ -9,6 +9,7 @@
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
   import { minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
+  import { tripsView } from '../lib/tripsView.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
   import { payFromAccount } from '../lib/payFrom';
   import { fieldTips } from '../lib/fieldTips';
@@ -25,10 +26,16 @@ import type { Account, Trip } from '../lib/types';
     return date.toISOString().slice(0, 10);
   }
 
+  function newStayArriveOn(): string {
+    const month = tripsView.calendarMonth;
+    if (/^\d{4}-\d{2}$/.test(month)) return `${month}-01`;
+    return todayISO();
+  }
+
   let placeName = $state('');
   let note = $state('');
-  let arriveOn = $state(todayISO());
-  let departOn = $state(id == null ? dayAfter(todayISO()) : todayISO());
+  let arriveOn = $state(id == null ? newStayArriveOn() : todayISO());
+  let departOn = $state(id == null ? dayAfter(newStayArriveOn()) : todayISO());
   let departFollows = $state(id == null);
   let balanceDueOn = $state(todayISO());
   let balanceDueTouched = $state(false);

@@ -99,7 +99,7 @@ final class ChipSizingTest extends TestCase
         JS);
         self::waitForText('Lost Dutchman');
 
-        $bill = self::chipHostMetrics('Lost Dutchman', 'status');
+        $bill = self::chipHostMetrics('Lost Dutchman', 'due');
         self::assertTrue($account['inherits'], json_encode($account));
         self::assertEqualsWithDelta((float) $account['chipFontSize'], (float) $bill['chipFontSize'], 0.5);
         self::assertEqualsWithDelta((float) $account['chipPaddingTop'], (float) $bill['chipPaddingTop'], 1.5);

@@ -109,16 +109,15 @@ final class StayListTest extends TestCase
         self::assertFalse($lost['dateIsChip']);
         self::assertSame('Lost Dutchman', $lost['place']);
         self::assertSame('Site 18', $lost['note']);
-        self::assertSame('Apache Junction', $lost['city']);
-        self::assertSame('AZ', $lost['state']);
-        self::assertContains($lost['status'], ['upcoming', 'underway', 'done']);
+        self::assertSame('Apache Junction, AZ', $lost['locality']);
+        self::assertSame('', $lost['status']);
         self::assertSame('balance due Nov 22', $lost['due']);
         self::assertSame([], $lost['stray']);
         self::assertStringNotContainsString('2026', $lost['text']);
         self::assertStringNotContainsString('2027', $lost['text']);
         self::assertTrue($lost['moneyInherits'], json_encode($lost['money']));
         if ($lost['miles'] !== '') {
-            self::assertMatchesRegularExpression('/^\d+ miles from previous stay$/', $lost['miles']);
+            self::assertMatchesRegularExpression('/^\d+ miles$/', $lost['miles']);
         }
 
         self::openTripMonth('2026-12');
@@ -128,12 +127,16 @@ final class StayListTest extends TestCase
         self::assertFalse($year['dateIsChip']);
         self::assertSame('La Posa South', $year['place']);
         self::assertSame('South row', $year['note']);
-        self::assertSame('Quartzsite', $year['city']);
-        self::assertSame('AZ', $year['state']);
+        self::assertSame('Quartzsite, AZ', $year['locality']);
         self::assertSame([], $year['stray']);
         self::assertStringNotContainsString('2026', $year['text']);
         self::assertStringNotContainsString('2027', $year['text']);
         self::assertTrue($year['moneyInherits'], json_encode($year['money']));
+
+        self::openTripMonth('2026-09');
+        self::waitForText('Devils Garden');
+        $fly = self::stayRow('Devils Garden');
+        self::assertSame('Flight', $fly['flight']);
     }
 
     /** @return array<string, mixed> */
@@ -167,10 +170,10 @@ final class StayListTest extends TestCase
                 dateIsChip: Boolean(dates && (dates.classList.contains('bill-detail-chip') || dates.classList.contains('stay-chip'))),
                 place: chip('place'),
                 note: chip('note'),
-                city: chip('city'),
-                state: chip('state'),
+                locality: chip('locality'),
                 status: chip('status'),
                 due: chip('due'),
+                flight: chip('flight'),
                 miles: chip('miles'),
                 stray,
                 money,

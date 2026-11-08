@@ -12,6 +12,7 @@ namespace App\Trip;
  * A stay that arrives while another is still there takes the upper-right half.
  * The stay already there keeps the lower-left half.
  * The first arrival on a day is the one that shows.
+ * A day inside overlapping stays fills with the nested stay, the latest arrival still there.
  */
 final class StayDayFill
 {
@@ -27,13 +28,8 @@ final class StayDayFill
                 $covering[] = $stay;
             }
         }
-        $ongoing = null;
-        foreach ($covering as $stay) {
-            if ($day !== $stay['arriveOn'] && $day !== $stay['departOn']) {
-                $ongoing = $stay['color'];
-                break;
-            }
-        }
+        $nested = StayDayOverlap::nested($covering, $day);
+        $ongoing = $nested === null ? null : $nested['color'];
         $arrive = null;
         $depart = null;
         foreach ($covering as $stay) {

@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import { api, explain } from '../lib/api';
   import { follow, route } from '../lib/nav.svelte.ts';
+  import { resetTripsGlobeWindow } from '../lib/tripsView.svelte.ts';
   import { adoptUser, applyTheme, loadSession, session } from '../lib/session.svelte.ts';
   import type { User } from '../lib/types';
   import DateField from './DateField.svelte';
@@ -99,6 +100,9 @@
   function visit(event: MouseEvent, href: string): void {
     const modified = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
     if (!modified) open = false;
+    if (href === '/trips') {
+      resetTripsGlobeWindow();
+    }
     follow(event, href);
   }
 

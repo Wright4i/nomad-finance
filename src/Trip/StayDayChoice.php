@@ -8,7 +8,8 @@ namespace App\Trip;
  * The stay a calendar day opens.
  * A handoff opens the stay that is arriving.
  * One stay on the day opens that stay.
- * A day inside a stay opens the stay that covers it.
+ * A day inside a stay opens that stay.
+ * A day inside overlapping stays opens the nested stay, the latest arrival still there.
  */
 final class StayDayChoice
 {
@@ -17,19 +18,29 @@ final class StayDayChoice
      */
     public static function id(array $stays, string $day): ?int
     {
-        $open = null;
+        $covering = [];
         foreach ($stays as $stay) {
             if ($day < $stay['arriveOn'] || $day > $stay['departOn']) {
                 continue;
             }
+            $covering[] = $stay;
             if ($stay['arriveOn'] === $day) {
                 return $stay['id'];
             }
-            if ($open === null) {
-                $open = $stay['id'];
+        }
+        if ($covering === []) {
+            return null;
+        }
+        foreach ($covering as $stay) {
+            if ($stay['departOn'] === $day) {
+                return $stay['id'];
             }
         }
+        $nested = StayDayOverlap::nested($covering, $day);
+        if ($nested !== null) {
+            return $nested['id'];
+        }
 
-        return $open;
+        return $covering[0]['id'];
     }
 }

@@ -262,6 +262,46 @@ final class TripRulesTest extends TestCase
         self::assertSame('2026-11-09', $updated['departOn']);
     }
 
+    public function testChangingDatesReseatsTheRouteForOverlappingStays(): void
+    {
+        $this->stay(0, 0, '2026-07-21', '2026-07-26', 'Reeder Beach');
+        $this->stay(0, 0, '2026-07-26', '2026-07-28', 'Albany KOA');
+        $this->stay(0, 0, '2026-10-23', '2026-10-25', 'Las Vegas');
+        $fly = $this->trips->create($this->fields([
+            'placeName' => 'Conference',
+            'arriveOn' => '2026-11-08',
+            'departOn' => '2026-11-10',
+            'travel' => 'fly',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $fly = $this->trips->update((int) $fly['id'], $this->fields([
+            'placeName' => 'Conference',
+            'arriveOn' => '2026-07-23',
+            'departOn' => '2026-07-25',
+            'travel' => 'fly',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        self::assertSame(1, $fly['routeOrder']);
+        self::assertTrue($fly['moveEarlier']);
+        self::assertFalse($fly['moveLater']);
+        $legs = $this->trips->route('2026-07-24');
+        $ids = array_map(static fn (array $leg): int => $leg['toId'], $legs);
+        self::assertContains((int) $fly['id'], $ids);
+        $flyLeg = null;
+        foreach ($legs as $leg) {
+            if ($leg['toId'] === (int) $fly['id']) {
+                $flyLeg = $leg;
+                break;
+            }
+        }
+        self::assertIsArray($flyLeg);
+        self::assertSame('fly', $flyLeg['travel']);
+    }
+
     public function testANestedStayTradesPlacesAndFuelFollowsTheRoute(): void
     {
         $vegas = $this->trips->create($this->fields([
