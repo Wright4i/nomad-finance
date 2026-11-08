@@ -3699,6 +3699,21 @@ dialog.modal.gauge-modal[open] {
   white-space: nowrap;
 }
 
+.planner-side-amount-line {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.planner-side-interest {
+  display: none;
+  font-size: clamp(0.68rem, 4.5cqi, 0.88rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
 .planner-interest {
   display: flex;
   justify-content: space-between;
@@ -3836,11 +3851,26 @@ dialog.modal.gauge-modal[open] {
     justify-items: start;
     text-align: left;
   }
+
+  .planner-interest {
+    display: none;
+  }
+
+  .planner-side-interest {
+    display: inline;
+  }
+
+  .planner-side-amount-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.12rem 0.3rem;
+  }
 }
 
 @media (max-width: 1279px) {
   .planner-board {
-    --planner-widget-height: 15.5rem;
+    --planner-widget-height: 14.25rem;
   }
 
   .planner-net.hero {
@@ -3853,6 +3883,31 @@ dialog.modal.gauge-modal[open] {
     align-items: stretch;
     gap: 0.28rem;
     margin-top: 0.3rem;
+  }
+
+  .planner-net .planner-interest {
+    display: none;
+  }
+
+  .planner-net .planner-side-interest {
+    display: inline;
+  }
+
+  .planner-net .planner-side-amount-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.12rem 0.3rem;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .planner-net .planner-assets-amount,
+  .planner-net .planner-liabilities-amount {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
   }
 
   .planner-net .planner-liabilities {

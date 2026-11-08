@@ -1054,8 +1054,8 @@ final class PlannerWidgetsTest extends TestCase
         self::assertTrue($medium['navCollapsed']);
         self::assertTrue($medium['assetsAboveLiabilities']);
         self::assertTrue($medium['interestLostVisible']);
-        self::assertTrue($medium['interestBeside']);
-        self::assertTrue($medium['interestNoOverlap']);
+        self::assertTrue($medium['interestInline']);
+        self::assertTrue($medium['interestInlineCopy']);
         self::assertFalse($medium['gaugesStacked']);
         self::assertTrue($medium['gaugesShareRow']);
         self::assertFalse($medium['gaugeOverflow']);
@@ -1077,7 +1077,8 @@ final class PlannerWidgetsTest extends TestCase
         self::waitForText('Camp host');
         $narrowMid = self::plannerMediumLayoutMetrics();
         self::assertTrue($narrowMid['interestLostVisible']);
-        self::assertTrue($narrowMid['interestNoOverlap']);
+        self::assertTrue($narrowMid['interestInline']);
+        self::assertTrue($narrowMid['interestInlineCopy']);
 
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
     }
@@ -1171,21 +1172,42 @@ final class PlannerWidgetsTest extends TestCase
                 return text !== '' && !text.includes('…') && !text.includes('...');
             })();
             const net = document.querySelector('.planner-net');
+            const interestFooter = document.querySelector('.planner-interest');
+            const interestFooterOn = interestFooter ? getComputedStyle(interestFooter).display !== 'none' : false;
+            const inlineLost = document.querySelector('.planner-liabilities .planner-side-interest .money');
             const interestLostVisible = (() => {
-                if (!net || !lost) return false;
+                if (!net) return false;
                 const netBox = net.getBoundingClientRect();
-                const lostBox = lost.getBoundingClientRect();
+                const target = interestFooterOn ? lost : inlineLost;
+                if (!target) return false;
+                const lostBox = target.getBoundingClientRect();
                 return lostBox.bottom <= netBox.bottom + 1
                     && lostBox.top >= netBox.top - 1
                     && lostBox.height > 0;
             })();
+            const interestInline = (() => {
+                const inline = document.querySelector('.planner-assets .planner-side-interest');
+                if (!interestFooter || !inline) return false;
+                return getComputedStyle(interestFooter).display === 'none'
+                    && getComputedStyle(inline).display !== 'none';
+            })();
+            const interestInlineCopy = (() => {
+                const assetsLine = document.querySelector('.planner-assets .planner-side-amount-line');
+                const liabilitiesLine = document.querySelector('.planner-liabilities .planner-side-amount-line');
+                const assetsText = assetsLine ? assetsLine.textContent.replace(/\s+/g, ' ').trim() : '';
+                const liabilitiesText = liabilitiesLine ? liabilitiesLine.textContent.replace(/\s+/g, ' ').trim() : '';
+                return /\(\+\$[\d,]+\.\d{2}\/mn\)/.test(assetsText)
+                    && /\(-\$[\d,]+\.\d{2}\/mn\)/.test(liabilitiesText);
+            })();
             const interestBeside = (() => {
+                if (!interestFooterOn) return false;
                 const gainedRow = document.querySelector('.planner-interest-gained');
                 const lostRow = document.querySelector('.planner-interest-lost');
                 if (!gainedRow || !lostRow) return false;
                 return Math.abs(gainedRow.getBoundingClientRect().top - lostRow.getBoundingClientRect().top) < 4;
             })();
             const interestNoOverlap = (() => {
+                if (!interestFooterOn) return true;
                 const gainedAmt = document.querySelector('.planner-interest-gained .planner-interest-amount');
                 const lostAmt = document.querySelector('.planner-interest-lost .planner-interest-amount');
                 if (!gainedAmt || !lostAmt) return false;
@@ -1196,8 +1218,10 @@ final class PlannerWidgetsTest extends TestCase
             return {
                 navCollapsed: document.querySelector('.nav')?.classList.contains('collapsed') === true,
                 assetsAboveLiabilities: above(assets, liabilities),
-                interestLostBelowGained: above(gained, lost),
+                interestLostBelowGained: interestFooterOn ? above(gained, lost) : interestInline,
                 interestLostVisible,
+                interestInline,
+                interestInlineCopy,
                 interestBeside,
                 interestNoOverlap,
                 gaugesStacked: stacked,
@@ -1228,7 +1252,11 @@ final class PlannerWidgetsTest extends TestCase
             };
             const net = boxOf('.planner-net');
             const liabilities = document.querySelector('.planner-liabilities-amount');
-            const interestLost = document.querySelector('.planner-interest-lost .planner-interest-amount');
+            const interestFooter = document.querySelector('.planner-interest');
+            const interestFooterOn = interestFooter ? getComputedStyle(interestFooter).display !== 'none' : false;
+            const interestLost = interestFooterOn
+                ? document.querySelector('.planner-interest-lost .planner-interest-amount')
+                : document.querySelector('.planner-liabilities .planner-side-interest .money');
             const envelopes = boxOf('[data-section="envelopes"]');
             const gauges = [...document.querySelectorAll('.planner-gauges .want-gauge')];
             const gaugeOverflow = gauges.some((node) => {
@@ -1257,10 +1285,9 @@ final class PlannerWidgetsTest extends TestCase
             })();
             const interestLostVisible = (() => {
                 const net = document.querySelector('.planner-net');
-                const lost = document.querySelector('.planner-interest-lost .planner-interest-amount');
-                if (!net || !lost) return false;
+                if (!net || !interestLost) return false;
                 const netBox = net.getBoundingClientRect();
-                const lostBox = lost.getBoundingClientRect();
+                const lostBox = interestLost.getBoundingClientRect();
                 return lostBox.bottom <= netBox.bottom + 1
                     && lostBox.top >= netBox.top - 1
                     && lostBox.height > 0;

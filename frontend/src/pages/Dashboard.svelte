@@ -558,11 +558,38 @@
             <p class="muted planner-sides m-0">
               <span class="planner-assets">
                 <span>Assets</span>
-                <Dollars class="planner-assets-amount" minor={data.assetsMinor} currency={data.baseCurrency} exponent={data.exponent} />
+                <span class="planner-side-amount-line">
+                  <Dollars class="planner-assets-amount" minor={data.assetsMinor} currency={data.baseCurrency} exponent={data.exponent} />
+                  <span
+                    class="planner-side-interest"
+                    aria-label="Interest gained per month"
+                  >
+                    ({#if (data.interestGainedMinor ?? 0) > 0}+{/if}<Dollars
+                      minor={data.interestGainedMinor ?? 0}
+                      currency={data.baseCurrency}
+                      exponent={data.exponent}
+                      suffix="/mn"
+                    />)
+                  </span>
+                </span>
               </span>
               <span class="planner-liabilities">
                 <span>Liabilities</span>
-                <Dollars class="planner-liabilities-amount" minor={data.liabilitiesMinor} currency={data.baseCurrency} exponent={data.exponent} owe />
+                <span class="planner-side-amount-line">
+                  <Dollars class="planner-liabilities-amount" minor={data.liabilitiesMinor} currency={data.baseCurrency} exponent={data.exponent} owe />
+                  <span
+                    class="planner-side-interest"
+                    aria-label="Interest lost per month"
+                  >
+                    (<Dollars
+                      minor={data.interestLostMinor ?? 0}
+                      currency={data.baseCurrency}
+                      exponent={data.exponent}
+                      owe
+                      suffix="/mn"
+                    />)
+                  </span>
+                </span>
               </span>
             </p>
             <div class="planner-interest">
