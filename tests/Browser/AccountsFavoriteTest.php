@@ -117,7 +117,7 @@ final class AccountsFavoriteTest extends TestCase
         self::click('Between accounts');
         self::waitForText('From');
         self::wait()->until(function (): bool {
-            return self::selected('moveSource') === 'Emergency fund - $8,600.00';
+            return self::selected('moveSource') === 'Emergency fund | $8,600.00';
         });
 
         self::clickLink('Accounts');
@@ -152,7 +152,7 @@ final class AccountsFavoriteTest extends TestCase
         self::click('Between accounts');
         self::waitForText('From');
         self::wait()->until(function (): bool {
-            return self::selected('moveSource') === 'Wallet - $86.00';
+            return self::selected('moveSource') === 'Wallet | $86.00';
         });
     }
 

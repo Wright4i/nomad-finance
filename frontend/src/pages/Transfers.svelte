@@ -7,9 +7,10 @@
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
   import Dollars from '../components/Dollars.svelte';
-  import { formatBps, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { formatBps, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { session } from '../lib/session.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
+  import { transferOptionLabel } from '../lib/transferOptionLabel';
   import { payFromAccount } from '../lib/payFrom';
   import { fieldTips } from '../lib/fieldTips';
   import { tip } from '../lib/tip';
@@ -80,13 +81,8 @@
   let sourceAccount = $derived(accounts.find((account) => String(account.id) === sourceId) ?? null);
   let destinationAccount = $derived(accounts.find((account) => String(account.id) === destinationId) ?? null);
 
-  function money(minor: number): string {
-    return formatMinor(minor, currency, 2);
-  }
-
   function optionLabel(account: Account): string {
-    const shown = account.side === 'liability' ? -account.balanceMinor : account.balanceMinor;
-    return `${accountLabel(account)} - ${money(shown)}`;
+    return transferOptionLabel(account, currency);
   }
 
   function amountMinor(): number {
