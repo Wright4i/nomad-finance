@@ -451,6 +451,8 @@ export type DuePie = {
 
 export type PlannerWidget = 'income' | 'calendar' | 'trips' | 'accounts' | 'envelopes' | 'bills';
 
+export type PlannerLayoutId = PlannerWidget | 'net';
+
 export type PlannerPayday = {
   payor: string;
   on: string;
@@ -498,6 +500,6 @@ export type Dashboard = {
   payorCount: number;
   stay: PlannerStay | null;
   accountTotals: AccountTotal[];
-  plannerOrder: PlannerWidget[];
-  plannerSpans: Record<PlannerWidget, 1 | 2 | 3 | 4 | 5 | 6>;
+  plannerOrder: PlannerLayoutId[];
+  plannerSpans: Record<PlannerLayoutId, 1 | 2 | 3 | 4 | 5 | 6>;
 };

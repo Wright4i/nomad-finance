@@ -150,6 +150,22 @@ export function dayChips(
   return chips;
 }
 
+export type PlannerCalendarFilters = {
+  stays: boolean;
+  bills: boolean;
+  income: boolean;
+};
+
+/** Calendar entries stay visible; stays, paydays, and bills follow the planner toggles. */
+export function filterPlannerDayChips(chips: DayChip[], filters: PlannerCalendarFilters): DayChip[] {
+  return chips.filter((chip) => {
+    if (chip.kind === 'stay') return filters.stays;
+    if (chip.kind === 'bill') return filters.bills;
+    if (chip.kind === 'income') return filters.income;
+    return true;
+  });
+}
+
 /** Span 1–2 is today, 3–4 adds the next day, and 5–6 adds the day after that. */
 export function plannerDayCount(span: number): number {
   if (span >= 5) return 3;

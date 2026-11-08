@@ -99,18 +99,17 @@ final class EnvelopesTest extends TestCase
         self::waitForText('Use demo');
         self::click('Use demo');
         self::waitForText('Available to assign');
-        self::waitForText('assigned of');
         self::waitForText('Needs');
         self::waitForText('50%');
         self::waitForText('Assigned');
-        self::waitForText('Max');
+        self::waitForText('Goal');
         self::waitForText('Wants');
         self::waitForText('30%');
         self::waitForText('Savings');
         self::waitForText('20%');
         $gauges = self::driver()->executeScript(<<<'JS'
             const read = (name) => {
-                const gauge = [...document.querySelectorAll('.want-gauge')].find((node) => node.innerText.startsWith(name));
+                const gauge = [...document.querySelectorAll('[data-section="envelopes"] .want-gauge')].find((node) => node.innerText.includes(name));
                 return {
                     text: gauge ? gauge.innerText : '',
                     preview: gauge ? gauge.querySelectorAll('.want-gauge-preview').length : -1,
@@ -120,7 +119,7 @@ final class EnvelopesTest extends TestCase
         JS);
         self::assertIsArray($gauges);
         self::assertStringContainsStringIgnoringCase('Assigned', $gauges['needs']['text']);
-        self::assertStringContainsStringIgnoringCase('Max', $gauges['needs']['text']);
+        self::assertStringContainsStringIgnoringCase('Goal', $gauges['needs']['text']);
         self::assertSame(0, $gauges['needs']['preview']);
         self::assertStringContainsStringIgnoringCase('Assigned', $gauges['wants']['text']);
         self::assertSame(0, $gauges['wants']['preview']);
@@ -168,7 +167,7 @@ final class EnvelopesTest extends TestCase
         self::assertStringNotContainsString('Open period', $planner['envelopeText']);
         self::assertStringNotContainsString('Cash 3', $planner['envelopeText']);
         self::assertMatchesRegularExpression('/Available to assign\s+-?\$[\d,]+\.\d{2}/', $planner['envelopeText']);
-        self::assertStringContainsString('assigned of', $planner['envelopeText']);
+        self::assertStringNotContainsString('assigned of', $planner['envelopeText']);
         preg_match('/Available to assign\s+(-?\$[\d,]+\.\d{2})/', $planner['envelopeText'], $availableMatch);
         $availableText = $availableMatch[1];
         self::assertSame(1, $planner['pies']);

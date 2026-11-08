@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dayChips, plannerDayCount, plannerDayDates, stayCaption } from './daySquare.ts';
+import { dayChips, filterPlannerDayChips, plannerDayCount, plannerDayDates, stayCaption } from './daySquare.ts';
 
 const stay = {
   id: 1,
@@ -100,6 +100,24 @@ test('an entry shows on each day from start through end, after stays and before 
   assert.deepEqual(dayChips('2026-11-06', [], [], [], 'USD', 2, [early]).map((chip) => chip.name), ['Calendar entry 1']);
   assert.deepEqual(dayChips('2026-11-03', [], [], [], 'USD', 2, [early]), []);
   assert.deepEqual(dayChips('2026-11-07', [], [], [], 'USD', 2, [early, later]).map((chip) => chip.name), ['Calendar entry 0']);
+});
+
+test('planner calendar filters hide stays, income, and bills but not entries', () => {
+  const early = { id: 3, text: 'Calendar entry 1', startOn: '2026-11-05', endOn: '2026-11-05' };
+  const chips = dayChips('2026-11-05', [stay], [payday], [due, paid], 'USD', 2, [early]);
+  assert.deepEqual(filterPlannerDayChips(chips, { stays: false, bills: true, income: true }).map((chip) => chip.kind), [
+    'entry',
+    'income',
+    'bill',
+    'bill',
+  ]);
+  assert.deepEqual(filterPlannerDayChips(chips, { stays: true, bills: false, income: false }).map((chip) => chip.kind), [
+    'stay',
+    'entry',
+  ]);
+  assert.deepEqual(filterPlannerDayChips(chips, { stays: false, bills: false, income: false }).map((chip) => chip.name), [
+    'Calendar entry 1',
+  ]);
 });
 
 test('planner span 1 and 2 show one day, 3 and 4 show two, 5 and 6 show three', () => {

@@ -13,16 +13,20 @@ use App\Support\Dates;
 final class PlannerWidgets
 {
     /** @var list<string> */
-    public const ORDER = ['income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'];
+    public const ORDER = ['net', 'income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'];
+
+    /** @var list<string> */
+    public const SPAN_LAYOUT = ['net', 'income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'];
 
     /**
      * Column spans on the six-column planner.
-     * Income is half beside net worth. Calendar, Trips, and Accounts are single, three across.
+     * Net worth and Income share the top row. Calendar, Trips, and Accounts are single, three across.
      * Budget and Bills each take the row.
      *
      * @var array<string, int>
      */
     public const SPANS = [
+        'net' => 3,
         'income' => 3,
         'calendar' => 2,
         'trips' => 2,
@@ -125,11 +129,11 @@ final class PlannerWidgets
      */
     public static function acceptSpans(mixed $input): ?array
     {
-        if (!is_array($input) || array_is_list($input) || count($input) !== count(self::ORDER)) {
+        if (!is_array($input) || array_is_list($input) || count($input) !== count(self::SPAN_LAYOUT)) {
             return null;
         }
         $spans = [];
-        foreach (self::ORDER as $widget) {
+        foreach (self::SPAN_LAYOUT as $widget) {
             if (!array_key_exists($widget, $input)) {
                 return null;
             }
@@ -147,7 +151,7 @@ final class PlannerWidgets
     public static function encodeSpans(array $spans): string
     {
         $ordered = [];
-        foreach (self::ORDER as $widget) {
+        foreach (self::SPAN_LAYOUT as $widget) {
             $ordered[$widget] = $spans[$widget];
         }
         $json = json_encode($ordered);

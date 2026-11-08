@@ -305,7 +305,6 @@ final class PlannerWidgetsTest extends TestCase
                         liabilities: family('.planner-liabilities-amount'),
                         interest: family('.planner-interest-amount .money'),
                         payday: family('.payday-amount .money'),
-                        assigned: family('.envelope-available .muted .money'),
                         accounts: family('.account-totals .money'),
                     };
                 })(),
@@ -314,18 +313,37 @@ final class PlannerWidgetsTest extends TestCase
                 calendarBox: box('[data-section="calendar"]'),
                 tripBox: box('[data-section="trips"]'),
                 accountBox: box('[data-section="accounts"]'),
+                accountsLayout: (() => {
+                    const body = document.querySelector('[data-section="accounts"] .planner-widget-body');
+                    const totals = document.querySelector('[data-section="accounts"] .account-totals');
+                    if (!body || !totals) return null;
+                    const tracks = getComputedStyle(totals).gridTemplateColumns;
+                    const repeat = tracks.match(/repeat\((\d+)/);
+                    const columns = repeat ? Number(repeat[1]) : tracks.split(' ').filter(Boolean).length;
+                    const rects = [...totals.querySelectorAll('.account-total')].map((node) => node.getBoundingClientRect());
+                    const firstRowTop = rects.length === 0 ? 0 : Math.min(...rects.map((rect) => rect.top));
+                    const rowColumns = rects.filter((rect) => Math.abs(rect.top - firstRowTop) < 2).length;
+                    return {
+                        bodyScroll: body.scrollHeight,
+                        bodyClient: body.clientHeight,
+                        columns,
+                        rowColumns,
+                        tracks,
+                        overflowY: getComputedStyle(body).overflowY,
+                    };
+                })(),
             };
         JS);
         self::assertIsArray($seen);
         self::assertSame(
-            ['income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'],
+            ['net', 'income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'],
             $seen['widgets'],
         );
-        self::assertSame('income,calendar,trips,accounts,envelopes,bills', $seen['order']);
+        self::assertSame('net,income,calendar,trips,accounts,envelopes,bills', $seen['order']);
         self::assertStringContainsString('Camp host', $seen['income']);
         self::assertStringContainsString('Nov 8, 2026', $seen['income']);
         self::assertStringContainsString('$192.00', $seen['income']);
-        self::assertStringContainsString('3 payors', $seen['income']);
+        self::assertStringNotContainsString('payors', strtolower((string) $seen['income']));
         self::assertStringContainsString('Still coming in', $seen['income']);
         self::assertStringContainsString('$768.00', $seen['income']);
         self::assertStringContainsString('Nov 1', (string) $seen['bills']);
@@ -383,6 +401,13 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('$2,450.00', $accounts);
         self::assertStringContainsString('fuel', $accounts);
         self::assertStringContainsString('$64.00', $accounts);
+        self::assertIsArray($seen['accountsLayout']);
+        self::assertGreaterThanOrEqual(3, (int) $seen['accountsLayout']['rowColumns']);
+        self::assertSame('hidden', $seen['accountsLayout']['overflowY']);
+        self::assertLessThanOrEqual(
+            (int) $seen['accountsLayout']['bodyClient'] + 1,
+            (int) $seen['accountsLayout']['bodyScroll'],
+        );
         self::assertStringContainsString('money-neg', $seen['creditClass']);
         self::assertStringContainsString('money-neg', $seen['otherClass']);
         self::assertStringNotContainsString('money-pos', $seen['otherClass']);
@@ -455,7 +480,7 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('Fraunces', (string) $seen['faces']['total']);
         self::assertStringNotContainsString('Outfit', (string) $seen['faces']['assets']);
         self::assertStringNotContainsString('Fraunces', (string) $seen['faces']['assets']);
-        foreach (['available', 'liabilities', 'interest', 'payday', 'assigned', 'accounts'] as $face) {
+        foreach (['available', 'liabilities', 'interest', 'payday', 'accounts'] as $face) {
             self::assertSame($seen['faces']['assets'], $seen['faces'][$face]);
         }
         self::assertIsArray($seen['liabilities']);
@@ -493,7 +518,7 @@ final class PlannerWidgetsTest extends TestCase
             };
         JS);
         self::assertIsArray($handles);
-        self::assertSame(6, $handles['count']);
+        self::assertSame(7, $handles['count']);
         self::assertSame(0, $handles['shown']);
 
         self::driver()->executeScript(
@@ -534,7 +559,7 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame('3', $locked['value']);
         self::assertSame('3', $locked['readout']);
         self::assertSame('3', $locked['span']);
-        self::assertTrue($locked['back'] === true);
+        self::assertFalse($locked['back'] === true);
         self::assertFalse($locked['forward'] === true);
 
         self::chooseSpan(6);
@@ -556,8 +581,8 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('income:3', $untouched['saved']);
         self::assertStringNotContainsString('income:6', $untouched['saved']);
 
-        self::stepOrder('Move forward', 'calendar,income,trips,accounts,envelopes,bills');
-        self::stepOrder('Move back', 'income,calendar,trips,accounts,envelopes,bills');
+        self::stepOrder('Move forward', 'net,calendar,income,trips,accounts,envelopes,bills');
+        self::stepOrder('Move back', 'net,income,calendar,trips,accounts,envelopes,bills');
         self::driver()->findElement(WebDriverBy::xpath('//dialog[contains(@class,"modal") and @open]//button[normalize-space()="Close"]'))->click();
         self::wait()->until(
             fn (): bool => self::driver()->executeScript('return document.querySelector("dialog.modal[open]") === null') === true,
@@ -598,7 +623,7 @@ final class PlannerWidgetsTest extends TestCase
                 'return document.querySelector(".planner-board")?.dataset.saved ?? ""',
             );
 
-            return is_string($saved) && str_starts_with($saved, 'bills,');
+            return is_string($saved) && str_starts_with($saved, 'net,bills,');
         });
 
         self::driver()->navigate()->refresh();
@@ -613,10 +638,10 @@ final class PlannerWidgetsTest extends TestCase
         JS);
         self::assertIsArray($kept);
         self::assertSame(
-            ['bills', 'income', 'calendar', 'trips', 'accounts', 'envelopes'],
+            ['net', 'bills', 'income', 'calendar', 'trips', 'accounts', 'envelopes'],
             $kept['widgets'],
         );
-        self::assertSame('bills,income,calendar,trips,accounts,envelopes', $kept['order']);
+        self::assertSame('net,bills,income,calendar,trips,accounts,envelopes', $kept['order']);
         self::assertStringContainsString('Camp host', $kept['income']);
         self::assertSame(1, $kept['pie']);
 
@@ -643,8 +668,8 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame('2', $defaults['accounts']);
         self::assertSame('6', $defaults['envelopes']);
         self::assertSame('6', $defaults['bills']);
-        self::assertSame(6, $defaults['wrenches']);
-        self::assertFalse($defaults['netWrench']);
+        self::assertSame(7, $defaults['wrenches']);
+        self::assertTrue($defaults['netWrench']);
 
         self::driver()->findElement(WebDriverBy::cssSelector('[data-widget="income"] .planner-size'))->click();
         self::wait()->until(function (): bool {
@@ -683,8 +708,8 @@ final class PlannerWidgetsTest extends TestCase
         self::assertFalse($selected['forward'] === true);
         self::assertSame($defaults['order'], $selected['order']);
 
-        self::stepOrder('Move forward', 'bills,calendar,income,trips,accounts,envelopes');
-        self::stepOrder('Move back', 'bills,income,calendar,trips,accounts,envelopes');
+        self::stepOrder('Move forward', 'net,bills,calendar,income,trips,accounts,envelopes');
+        self::stepOrder('Move back', 'net,bills,income,calendar,trips,accounts,envelopes');
 
         self::chooseSpan(6);
         $full = self::waitForSpan('income', 6);
@@ -724,7 +749,7 @@ final class PlannerWidgetsTest extends TestCase
         self::assertIsArray($restored);
         self::assertSame('3', $restored['span']);
         self::assertMatchesRegularExpression('/span\s+3(?!\d)/', (string) $restored['column']);
-        self::assertSame('bills,income,calendar,trips,accounts,envelopes', $restored['order']);
+        self::assertSame('net,bills,income,calendar,trips,accounts,envelopes', $restored['order']);
     }
 
     #[\PHPUnit\Framework\Attributes\Depends('testThePlannerShowsTheSixWidgetsAndKeepsAMove')]
@@ -768,10 +793,10 @@ final class PlannerWidgetsTest extends TestCase
                         const zoom = globe ? Number(globe.dataset.zoom) : 0;
                         const ok = Boolean(globe)
                             && globe.dataset.projection === 'mercator'
-                            && globe.dataset.basemap !== 'satellite'
-                            && zoom > 6 && zoom < 12
+                            && globe.dataset.basemap === 'dark_matter'
+                            && zoom > 8 && zoom < 12
                             && label.includes('Usery Mountain')
-                            && label.includes('Mesa, AZ');
+                            && !globe.querySelector('.map-pin-name');
                         return {
                             ok,
                             text: section ? section.innerText.replace(/\s+/g, ' ').trim().slice(0, 240) : '',
@@ -904,6 +929,65 @@ final class PlannerWidgetsTest extends TestCase
         self::wait()->until(
             fn (): bool => self::driver()->executeScript('return document.querySelector("dialog.gauge-modal[open]") === null') === true,
         );
+    }
+
+    #[\PHPUnit\Framework\Attributes\Depends('testThePlannerShowsTheSixWidgetsAndKeepsAMove')]
+    public function testPlannerCalendarFiltersToggleStaysBillsAndIncome(): void
+    {
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+        self::driver()->get(self::$base . '/');
+        self::waitForText('Calendar');
+
+        $read = self::driver()->executeScript(<<<'JS'
+            const widget = document.querySelector('[data-section="calendar"]');
+            if (!widget) return { titles: [], kinds: [] };
+            const titles = [...widget.querySelectorAll('.planner-calendar-filter')].map((node) => node.title);
+            const kinds = () => [...widget.querySelectorAll('.planner-day .bill-chip')].map((node) => {
+                if (node.classList.contains('stay-chip')) return 'stay';
+                if (node.classList.contains('income-chip')) return 'income';
+                if (node.classList.contains('entry-chip')) return 'entry';
+                return 'bill';
+            });
+            return { titles, kinds: kinds() };
+        JS);
+        self::assertIsArray($read);
+        self::assertSame(['Show Stays', 'Show Bills', 'Show Income'], $read['titles']);
+
+        foreach (['stays' => 'stay', 'bills' => 'bill', 'income' => 'income'] as $filter => $kind) {
+            if (!in_array($kind, $read['kinds'], true)) {
+                continue;
+            }
+            self::driver()->findElement(WebDriverBy::cssSelector('[data-section="calendar"] .planner-calendar-filter[data-filter="' . $filter . '"]'))->click();
+            self::wait()->until(function () use ($kind): bool {
+                $kinds = self::driver()->executeScript(<<<'JS'
+                    const widget = document.querySelector('[data-section="calendar"]');
+                    return [...widget.querySelectorAll('.planner-day .bill-chip')].map((node) => {
+                        if (node.classList.contains('stay-chip')) return 'stay';
+                        if (node.classList.contains('income-chip')) return 'income';
+                        if (node.classList.contains('entry-chip')) return 'entry';
+                        return 'bill';
+                    });
+                JS);
+                self::assertIsArray($kinds);
+
+                return !in_array($kind, $kinds, true);
+            });
+            self::driver()->findElement(WebDriverBy::cssSelector('[data-section="calendar"] .planner-calendar-filter[data-filter="' . $filter . '"]'))->click();
+            self::wait()->until(function () use ($kind): bool {
+                $kinds = self::driver()->executeScript(<<<'JS'
+                    const widget = document.querySelector('[data-section="calendar"]');
+                    return [...widget.querySelectorAll('.planner-day .bill-chip')].map((node) => {
+                        if (node.classList.contains('stay-chip')) return 'stay';
+                        if (node.classList.contains('income-chip')) return 'income';
+                        if (node.classList.contains('entry-chip')) return 'entry';
+                        return 'bill';
+                    });
+                JS);
+                self::assertIsArray($kinds);
+
+                return in_array($kind, $kinds, true);
+            });
+        }
     }
 
     #[\PHPUnit\Framework\Attributes\Depends('testThePlannerShowsTheSixWidgetsAndKeepsAMove')]

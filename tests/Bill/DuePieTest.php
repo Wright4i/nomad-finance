@@ -30,15 +30,29 @@ final class DuePieTest extends TestCase
                 'currency' => 'USD',
                 'exponent' => 2,
                 'slices' => [
-                    ['type' => 'lodging', 'amountMinor' => 6400],
+                    ['type' => 'healthcare', 'amountMinor' => 127500],
                     ['type' => 'rent', 'amountMinor' => 9000],
+                    ['type' => 'lodging', 'amountMinor' => 6400],
                     ['type' => 'water', 'amountMinor' => 2800],
                     ['type' => 'fuel', 'amountMinor' => 500],
-                    ['type' => 'healthcare', 'amountMinor' => 127500],
                 ],
                 'leftOut' => [],
             ],
         ], $pies);
+    }
+
+    public function testLegendOrderIsLargestDueFirst(): void
+    {
+        $pies = DuePie::month([
+            $this->bill('lodging', 'active', '2026-11-03', 6400, 'USD'),
+            $this->bill('rent', 'active', '2026-11-10', 8000, 'USD'),
+            $this->bill('debt', 'active', '2026-11-11', 8000, 'USD'),
+        ], '2026-11', 'USD', 2);
+
+        self::assertSame(
+            ['debt', 'rent', 'lodging'],
+            array_column($pies[0]['slices'], 'type'),
+        );
     }
 
     public function testAnEmptyMonthHasNoPies(): void

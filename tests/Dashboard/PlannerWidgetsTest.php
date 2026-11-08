@@ -249,7 +249,7 @@ final class PlannerWidgetsTest extends TestCase
 
     public function testASavedOrderRoundTripsAndAPartialOrderFallsBack(): void
     {
-        $custom = ['bills', 'income', 'calendar', 'trips', 'accounts', 'envelopes'];
+        $custom = ['bills', 'net', 'income', 'calendar', 'trips', 'accounts', 'envelopes'];
         self::assertSame($custom, PlannerWidgets::order(PlannerWidgets::encode($custom)));
         foreach (['["bills"]', '["income","nope"]', '["income","income","calendar","trips","accounts","envelopes"]', '', null, ['trips']] as $stored) {
             $order = PlannerWidgets::order($stored);
@@ -285,12 +285,13 @@ final class PlannerWidgetsTest extends TestCase
     {
         $order = PlannerWidgets::ORDER;
         $forward = PlannerWidgets::step($order, 'income', 1);
-        self::assertSame(['calendar', 'income', 'trips', 'accounts', 'envelopes', 'bills'], $forward);
+        self::assertSame(['net', 'calendar', 'income', 'trips', 'accounts', 'envelopes', 'bills'], $forward);
         self::assertSame($order, PlannerWidgets::step($forward, 'income', -1));
-        self::assertSame($order, PlannerWidgets::step($order, 'income', -1));
+        self::assertSame(['income', 'net', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'], PlannerWidgets::step($order, 'income', -1));
+        self::assertSame($order, PlannerWidgets::step($order, 'net', -1));
         self::assertSame($order, PlannerWidgets::step($order, 'bills', 1));
         $later = PlannerWidgets::step($order, 'bills', -1);
-        self::assertSame(['income', 'calendar', 'trips', 'accounts', 'bills', 'envelopes'], $later);
+        self::assertSame(['net', 'income', 'calendar', 'trips', 'accounts', 'bills', 'envelopes'], $later);
         self::assertSame($order, PlannerWidgets::step($order, 'income', 2));
         self::assertSame($order, PlannerWidgets::step($order, 'missing', 1));
 
@@ -304,6 +305,7 @@ final class PlannerWidgetsTest extends TestCase
         // Income is 3 beside net worth. Calendar, Trips, and Accounts are 2.
         // Budget and Bills each take the row.
         $defaults = [
+            'net' => 3,
             'income' => 3,
             'calendar' => 2,
             'trips' => 2,
@@ -320,6 +322,7 @@ final class PlannerWidgetsTest extends TestCase
         }
 
         $custom = [
+            'net' => 2,
             'income' => 6,
             'calendar' => 1,
             'trips' => 5,
@@ -351,17 +354,18 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame($owner, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'owner'")->fetchColumn());
         self::assertSame($demo, $this->pdo->query("SELECT password_hash FROM user WHERE role = 'demo'")->fetchColumn());
 
-        $order = ['bills', 'income', 'calendar', 'trips', 'accounts', 'envelopes'];
+        $order = ['bills', 'net', 'income', 'calendar', 'trips', 'accounts', 'envelopes'];
         $kept = $this->auth->updateSettings(['plannerOrder' => $order]);
         self::assertSame($order, $kept['plannerOrder']);
         self::assertSame($custom, $kept['plannerSpans']);
 
         foreach ([
             ['income' => 4],
-            ['income' => 0, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
-            ['income' => 7, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
-            ['income' => '6', 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
-            ['income' => 2, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6, 'net' => 3],
+            ['net' => 3, 'income' => 0, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
+            ['net' => 3, 'income' => 7, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
+            ['net' => 3, 'income' => '6', 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
+            ['net' => 3, 'income' => 2, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6, 'extra' => 1],
+            ['income' => 2, 'calendar' => 2, 'trips' => 2, 'accounts' => 2, 'envelopes' => 6, 'bills' => 6],
             [1, 2, 3, 4, 5, 6],
         ] as $bad) {
             try {

@@ -6,23 +6,26 @@
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { api } from '../lib/api';
-  import { dayChips, plannerDayDates, type DayBill, type DayPayday, type DayStay } from '../lib/daySquare';
+  import { dayChips, filterPlannerDayChips, plannerDayDates, type DayBill, type DayPayday, type DayStay } from '../lib/daySquare';
   import { fitThree } from '../lib/fitThree';
   import Dollars from '../components/Dollars.svelte';
   import { dollarClass, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import { wantGaugeGoalPercent, wantGaugeLevels } from '../lib/wantGauge';
-  import type { CalendarEntry, Dashboard, DuePie, EnvelopeCategory, EnvelopeGroup, PlannerStay, PlannerWidget } from '../lib/types';
+  import type { CalendarEntry, Dashboard, DuePie, EnvelopeCategory, EnvelopeGroup, PlannerLayoutId, PlannerStay, PlannerWidget } from '../lib/types';
 
   const WIDGETS = ['income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'] as const;
+  const LAYOUT_ORDER = ['net', ...WIDGETS] as const;
+  const SPAN_LAYOUT = LAYOUT_ORDER;
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   type PlannerSpan = 1 | 2 | 3 | 4 | 5 | 6;
-  type PlannerSpans = Record<PlannerWidget, PlannerSpan>;
+  type PlannerSpans = Record<PlannerLayoutId, PlannerSpan>;
 
   // Income shares the top row with net worth. Calendar, Trips, and Accounts sit three across.
   // Budget and Bills each take the row.
   const DEFAULT_SPANS: PlannerSpans = {
+    net: 3,
     income: 3,
     calendar: 2,
     trips: 2,
@@ -31,7 +34,8 @@
     bills: 6,
   };
 
-  const widgetLabel: Record<PlannerWidget, string> = {
+  const layoutLabel: Record<PlannerLayoutId, string> = {
+    net: 'Net worth',
     income: 'Income',
     calendar: 'Calendar',
     trips: 'Trips',
@@ -69,12 +73,12 @@
     return (WIDGETS as readonly string[]).includes(value);
   }
 
-  function normalize(input: readonly string[] | undefined): PlannerWidget[] {
-    if (!input || input.length !== WIDGETS.length) return [...WIDGETS];
+  function normalize(input: readonly string[] | undefined): PlannerLayoutId[] {
+    if (!input || input.length !== LAYOUT_ORDER.length) return [...LAYOUT_ORDER];
     const seen = new Set<string>();
-    const next: PlannerWidget[] = [];
+    const next: PlannerLayoutId[] = [];
     for (const value of input) {
-      if (!isWidget(value) || seen.has(value)) return [...WIDGETS];
+      if (!isLayoutId(value) || seen.has(value)) return [...LAYOUT_ORDER];
       seen.add(value);
       next.push(value);
     }
@@ -85,16 +89,20 @@
     return value === 1 || value === 2 || value === 3 || value === 4 || value === 5 || value === 6;
   }
 
+  function isLayoutId(value: string): value is PlannerLayoutId {
+    return (SPAN_LAYOUT as readonly string[]).includes(value);
+  }
+
   function spanKey(value: PlannerSpans): string {
-    return WIDGETS.map((id) => `${id}:${value[id]}`).join(',');
+    return SPAN_LAYOUT.map((id) => `${id}:${value[id]}`).join(',');
   }
 
   function normalizeSpans(input: unknown): PlannerSpans {
     if (!input || typeof input !== 'object' || Array.isArray(input)) return { ...DEFAULT_SPANS };
     const record = input as Record<string, unknown>;
-    if (Object.keys(record).length !== WIDGETS.length) return { ...DEFAULT_SPANS };
+    if (Object.keys(record).length !== SPAN_LAYOUT.length) return { ...DEFAULT_SPANS };
     const next: PlannerSpans = { ...DEFAULT_SPANS };
-    for (const id of WIDGETS) {
+    for (const id of SPAN_LAYOUT) {
       const value = record[id];
       if (!isSpan(value)) return { ...DEFAULT_SPANS };
       next[id] = value;
@@ -105,18 +113,18 @@
   function spansFromKey(key: string): PlannerSpans {
     const next: PlannerSpans = { ...DEFAULT_SPANS };
     const parts = key.split(',');
-    if (parts.length !== WIDGETS.length) return { ...DEFAULT_SPANS };
+    if (parts.length !== SPAN_LAYOUT.length) return { ...DEFAULT_SPANS };
     const seen = new Set<string>();
     for (const part of parts) {
       const splitAt = part.lastIndexOf(':');
       if (splitAt <= 0) return { ...DEFAULT_SPANS };
       const id = part.slice(0, splitAt);
       const raw = Number(part.slice(splitAt + 1));
-      if (!isWidget(id) || seen.has(id) || !isSpan(raw)) return { ...DEFAULT_SPANS };
+      if (!isLayoutId(id) || seen.has(id) || !isSpan(raw)) return { ...DEFAULT_SPANS };
       seen.add(id);
       next[id] = raw;
     }
-    return seen.size === WIDGETS.length ? next : { ...DEFAULT_SPANS };
+    return seen.size === SPAN_LAYOUT.length ? next : { ...DEFAULT_SPANS };
   }
 
   function weekdayName(iso: string): string {
@@ -185,16 +193,16 @@
   let gauge = $state<EnvelopeGroup['group'] | null>(null);
   let gaugeDialog: HTMLDialogElement | undefined = $state();
   let gaugeToken = 0;
-  let order = $state<PlannerWidget[]>([...WIDGETS]);
-  let saved = $state(WIDGETS.join(','));
+  let order = $state<PlannerLayoutId[]>([...LAYOUT_ORDER]);
+  let saved = $state(LAYOUT_ORDER.join(','));
   let spans = $state<PlannerSpans>({ ...DEFAULT_SPANS });
   let savedSpans = $state(spanKey(DEFAULT_SPANS));
-  let sizing = $state<PlannerWidget | null>(null);
+  let sizing = $state<PlannerLayoutId | null>(null);
   let spanDialog: HTMLDialogElement | undefined = $state();
   let spanChain: Promise<void> = Promise.resolve();
   let orderChain: Promise<void> = Promise.resolve();
   let phone = $state(false);
-  let dragId = $state<string | null>(null);
+  let dragId = $state<PlannerLayoutId | null>(null);
   let drag: { id: string; pointerId: number; dx: number; dy: number } | null = null;
   let pieFocus = $state<{ currency: string; type: string; pull: boolean } | null>(null);
 
@@ -238,11 +246,17 @@
   let entries = $state<CalendarEntry[]>([]);
   let entryOpen = $state(false);
   let editing = $state<CalendarEntry | null>(null);
+  let plannerShowStays = $state(true);
+  let plannerShowBills = $state(true);
+  let plannerShowIncome = $state(true);
   let calendarSquares = $derived(
     data
       ? plannerDayDates(data.today, spans.calendar, data.windowStart, data.windowEnd).map((date) => ({
           date,
-          chips: dayChips(date, stays, paydays, dayBills, data.baseCurrency, data.exponent, entries),
+          chips: filterPlannerDayChips(
+            dayChips(date, stays, paydays, dayBills, data.baseCurrency, data.exponent, entries),
+            { stays: plannerShowStays, bills: plannerShowBills, income: plannerShowIncome },
+          ),
         }))
       : [],
   );
@@ -276,7 +290,7 @@
     }
   }
 
-  function persist(next: PlannerWidget[]): void {
+  function persist(next: PlannerLayoutId[]): void {
     const key = next.join(',');
     orderChain = orderChain
       .catch(() => undefined)
@@ -312,9 +326,9 @@
     widget.style.transform = `translate(${x - drag.dx - laid.left}px, ${y - drag.dy - laid.top}px)`;
     if (!hit) return;
     const over = widgetUnder(x, y, drag.id);
-    if (!over || !isWidget(over)) return;
-    const from = order.indexOf(drag.id as PlannerWidget);
-    const to = order.indexOf(over);
+    if (!over || !isLayoutId(over)) return;
+    const from = order.indexOf(drag.id as PlannerLayoutId);
+    const to = order.indexOf(over as PlannerLayoutId);
     if (from < 0 || to < 0 || from === to) return;
     const next = order.slice();
     const item = next[from];
@@ -408,7 +422,7 @@
     persist(next);
   }
 
-  function openSpan(id: PlannerWidget): void {
+  function openSpan(id: PlannerLayoutId): void {
     sizing = id;
     void tick().then(() => {
       if (!spanDialog) return;
@@ -455,11 +469,22 @@
 
   function openPlannerDay(event: MouseEvent): void {
     const target = event.target;
-    if (target instanceof Element && target.closest('.calendar-entry, [data-calendar-entry]')) {
+    if (target instanceof Element && target.closest('.calendar-entry, [data-calendar-entry], .planner-calendar-filter')) {
       event.preventDefault();
       return;
     }
     follow(event, widgetPage.calendar);
+  }
+
+  function togglePlannerCalendarFilter(event: MouseEvent): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLButtonElement)) return;
+    const filter = button.dataset.filter;
+    if (filter === 'stays') plannerShowStays = !plannerShowStays;
+    if (filter === 'bills') plannerShowBills = !plannerShowBills;
+    if (filter === 'income') plannerShowIncome = !plannerShowIncome;
   }
 
   function openEntry(event: MouseEvent, id: number): void {
@@ -495,32 +520,60 @@
     <Spinner />
   {:else if data}
     <div class="planner-board" data-order={order.join(',')} data-saved={saved} data-spans={savedSpans}>
-      <section class="hero planner-net">
-        <p class="kicker">Net worth</p>
-        <p class="figure {dollarClass(data.netWorthMinor ?? 0)}">{formatMinor(data.netWorthMinor ?? 0, data.baseCurrency, data.exponent)}</p>
-        <p class="muted planner-sides m-0">
-          <span class="planner-assets">
-            <span>Assets</span>
-            <Dollars class="planner-assets-amount" minor={data.assetsMinor} currency={data.baseCurrency} exponent={data.exponent} />
-          </span>
-          <span class="planner-liabilities">
-            <span>Liabilities</span>
-            <Dollars class="planner-liabilities-amount" minor={data.liabilitiesMinor} currency={data.baseCurrency} exponent={data.exponent} owe />
-          </span>
-        </p>
-        <div class="planner-interest">
-          <p class="planner-interest-gained m-0" data-interest="gained">
-            <span class="planner-interest-label">Interest gained</span>
-            <span class="planner-interest-amount"><Dollars minor={data.interestGainedMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} suffix="/mn" /></span>
-          </p>
-          <p class="planner-interest-lost m-0" data-interest="lost">
-            <span class="planner-interest-label">Interest lost</span>
-            <span class="planner-interest-amount"><Dollars minor={data.interestLostMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} owe suffix="/mn" /></span>
-          </p>
-        </div>
-      </section>
-
       {#each order as id (id)}
+        {#if id === 'net'}
+          <section
+            class="hero planner-net card"
+            class:dragging={dragId === id}
+            data-widget="net"
+            data-section="net"
+            data-span={spans.net}
+          >
+            <button
+              class="planner-grab"
+              type="button"
+              aria-label={`Move ${layoutLabel.net}`}
+              onpointerdown={grabDown}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
+                <circle cx="4" cy="3" r="1.15" /><circle cx="10" cy="3" r="1.15" />
+                <circle cx="4" cy="7" r="1.15" /><circle cx="10" cy="7" r="1.15" />
+                <circle cx="4" cy="11" r="1.15" /><circle cx="10" cy="11" r="1.15" />
+              </svg>
+            </button>
+            <button
+              class="planner-size"
+              type="button"
+              aria-label={`Size ${layoutLabel.net}`}
+              onpointerdown={keepDragOff}
+              onclick={() => openSpan('net')}
+            >
+              <Glyph name="wrench" mini />
+            </button>
+            <p class="kicker">Net worth</p>
+            <p class="figure {dollarClass(data.netWorthMinor ?? 0)}">{formatMinor(data.netWorthMinor ?? 0, data.baseCurrency, data.exponent)}</p>
+            <p class="muted planner-sides m-0">
+              <span class="planner-assets">
+                <span>Assets</span>
+                <Dollars class="planner-assets-amount" minor={data.assetsMinor} currency={data.baseCurrency} exponent={data.exponent} />
+              </span>
+              <span class="planner-liabilities">
+                <span>Liabilities</span>
+                <Dollars class="planner-liabilities-amount" minor={data.liabilitiesMinor} currency={data.baseCurrency} exponent={data.exponent} owe />
+              </span>
+            </p>
+            <div class="planner-interest">
+              <p class="planner-interest-gained m-0" data-interest="gained">
+                <span class="planner-interest-label">Interest gained</span>
+                <span class="planner-interest-amount"><Dollars minor={data.interestGainedMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} suffix="/mn" /></span>
+              </p>
+              <p class="planner-interest-lost m-0" data-interest="lost">
+                <span class="planner-interest-label">Interest lost</span>
+                <span class="planner-interest-amount"><Dollars minor={data.interestLostMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} owe suffix="/mn" /></span>
+              </p>
+            </div>
+          </section>
+        {:else}
         <article
           class="planner-widget card"
           class:dragging={dragId === id}
@@ -531,7 +584,7 @@
           <button
             class="planner-grab"
             type="button"
-            aria-label={`Move ${widgetLabel[id]}`}
+            aria-label={`Move ${layoutLabel[id]}`}
             onpointerdown={grabDown}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
@@ -543,7 +596,7 @@
           <button
             class="planner-size"
             type="button"
-            aria-label={`Size ${widgetLabel[id]}`}
+            aria-label={`Size ${layoutLabel[id]}`}
             onpointerdown={keepDragOff}
             onclick={() => openSpan(id)}
           >
@@ -565,18 +618,58 @@
                         <Dollars minor={data.payday.paycheckMinor} currency={data.baseCurrency} exponent={data.exponent} />
                       {/if}
                     </p>
-                    {#if data.payorCount > 1}
-                      <p class="muted m-0">{data.payorCount} payors</p>
-                    {/if}
                   {:else}
                     <p class="muted m-0">No payday yet</p>
                   {/if}
-                  <p class="muted m-0">Still coming in <Dollars minor={data.incomeComing} currency={data.baseCurrency} exponent={data.exponent} /></p>
                 </a>
+                <p class="planner-income-coming muted m-0">
+                  Still coming in <Dollars minor={data.incomeComing} currency={data.baseCurrency} exponent={data.exponent} />
+                </p>
               </div>
             {:else if id === 'calendar'}
               <div class="planner-calendar">
-                <a class="planner-widget-title" href={widgetPage.calendar} onclick={(event) => follow(event, widgetPage.calendar)}>Calendar</a>
+                <div class="planner-calendar-head">
+                  <a class="planner-widget-title" href={widgetPage.calendar} onclick={(event) => follow(event, widgetPage.calendar)}>Calendar</a>
+                  <div class="planner-calendar-filters" role="group" aria-label="Show on the calendar">
+                    <button
+                      class="planner-calendar-filter"
+                      type="button"
+                      data-filter="stays"
+                      title="Show Stays"
+                      aria-pressed={plannerShowStays}
+                      style="--tone: var(--sky)"
+                      onclick={togglePlannerCalendarFilter}
+                    >
+                      <Glyph name="tree" mini />
+                    </button>
+                    <button
+                      class="planner-calendar-filter"
+                      type="button"
+                      data-filter="bills"
+                      title="Show Bills"
+                      aria-pressed={plannerShowBills}
+                      style="--tone: var(--coral)"
+                      onclick={togglePlannerCalendarFilter}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M7 4.5h7l4 4V19.5H7V4.5zM14 4.5v4h4M9.5 12.5h5M9.5 16h3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                    <button
+                      class="planner-calendar-filter"
+                      type="button"
+                      data-filter="income"
+                      title="Show Income"
+                      aria-pressed={plannerShowIncome}
+                      style="--tone: var(--teal)"
+                      onclick={togglePlannerCalendarFilter}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 19V7M8 11l4-4 4 4M6 19.5h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
                 <div class="planner-days">
                   {#each calendarSquares as square (square.date)}
                     <a
@@ -662,6 +755,8 @@
                       compact
                       flat
                       quiet
+                      hideNames
+                      hideLocations
                       pins={[{
                         id: data.stay.id,
                         latitude: data.stay.latitude,
@@ -678,15 +773,17 @@
                 {/if}
               </a>
             {:else if id === 'accounts'}
-              <a class="planner-widget-title" href={widgetPage.accounts} onclick={(event) => follow(event, widgetPage.accounts)}>Accounts</a>
-              <a class="account-totals" href={widgetPage.accounts} onclick={(event) => follow(event, widgetPage.accounts)}>
+              <div class="planner-accounts">
+                <a class="planner-widget-title" href={widgetPage.accounts} onclick={(event) => follow(event, widgetPage.accounts)}>Accounts</a>
+                <a class="account-totals" href={widgetPage.accounts} onclick={(event) => follow(event, widgetPage.accounts)}>
                 {#each data.accountTotals as column (`${column.type}:${column.side}`)}
                   <span class="account-total" data-account-type={column.type} data-side={column.side}>
                     <span class="kicker">{typeLabel[column.type] ?? column.type}</span>
                     <Dollars minor={column.balanceMinor} currency={data.baseCurrency} exponent={data.exponent} owe={column.side === 'liability'} />
                   </span>
                 {/each}
-              </a>
+                </a>
+              </div>
             {:else if id === 'envelopes'}
               <a class="planner-widget-title" href={widgetPage.envelopes} onclick={(event) => follow(event, widgetPage.envelopes)}>Budget</a>
               {#if data.envelopes.payors.length === 0}
@@ -732,9 +829,6 @@
                 <p class="envelope-available">
                   <span>Available to assign</span>
                   <Dollars minor={data.envelopes.availableMinor} currency={data.baseCurrency} exponent={data.exponent} plain />
-                  <span class="muted" title="Income still coming in this period, plus every asset marked Include in Budget.">
-                    <Dollars minor={data.envelopes.assignedMinor} currency={data.baseCurrency} exponent={data.exponent} plain /> assigned of <Dollars minor={data.envelopes.poolMinor} currency={data.baseCurrency} exponent={data.exponent} plain />
-                  </span>
                 </p>
                 {/if}
                 {#if data.envelopes.celebrate}
@@ -808,6 +902,7 @@
             {/if}
           </div>
         </article>
+        {/if}
       {/each}
     </div>
   {/if}
@@ -860,7 +955,7 @@
 <dialog class="modal" bind:this={spanDialog} aria-labelledby="span-title" onclose={() => { if (!spanDialog?.open) sizing = null; }}>
   {#if sizing}
     <div class="modal-body">
-      <h2 id="span-title" class="m-0 text-2xl">Edit {widgetLabel[sizing]} layout</h2>
+      <h2 id="span-title" class="m-0 text-2xl">Edit {layoutLabel[sizing]} layout</h2>
       <div class="span-moves">
         <button
           class="btn"
@@ -888,7 +983,7 @@
           max="6"
           step="1"
           value={spans[sizing]}
-          aria-label={`Width of ${widgetLabel[sizing]}`}
+          aria-label={`Width of ${layoutLabel[sizing]}`}
           aria-valuemin={1}
           aria-valuemax={6}
           aria-valuenow={spans[sizing]}

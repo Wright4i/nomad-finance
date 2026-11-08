@@ -1,6 +1,8 @@
 /** World view of the trips globe. Locate is street level. */
 export const worldZoom = 3.4;
 export const locateZoom = 15;
+/** Closer mercator view on the planner trip map. */
+export const plannerZoom = 10;
 
 /** MapLibre flyTo duration when the globe recenters on a stay. */
 export const globeFlyMs = 1000;

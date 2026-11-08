@@ -153,7 +153,7 @@ final class TimelineTest extends TestCase
         $sheet = $this->dashboard->show('2026-11-04');
         $november = $this->slices($sheet['duePies']);
         self::assertSame(['USD'], array_keys($november));
-        self::assertSame('lodging', array_key_first($november['USD']));
+        self::assertSame('healthcare', array_key_first($november['USD']));
         self::assertSame(80500, $november['USD']['rent']);
         self::assertGreaterThan(4968, $november['USD']['electricity']);
         self::assertSame(230000, $november['USD']['healthcare']);

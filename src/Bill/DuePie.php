@@ -80,6 +80,17 @@ final class DuePie
         if ($slices === []) {
             return [];
         }
+        usort(
+            $slices,
+            static function (array $left, array $right): int {
+                $byAmount = $right['amountMinor'] <=> $left['amountMinor'];
+                if ($byAmount !== 0) {
+                    return $byAmount;
+                }
+
+                return strcmp($left['type'], $right['type']);
+            },
+        );
 
         return [[
             'currency' => $base,

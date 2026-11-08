@@ -6,6 +6,7 @@
   import { basemapId } from '../lib/basemap';
   import {
     cartoAttribution,
+    darkMatterTiles,
     positronTiles,
     satelliteAttribution,
     satelliteTiles,
@@ -13,7 +14,7 @@
   } from '../lib/carto';
   import type { LngLat } from '../lib/route';
   import { session } from '../lib/session.svelte.ts';
-  import { globeFlyMs, locateZoom, stayZoom, tripFrame, worldZoom } from '../lib/tripFrame';
+  import { globeFlyMs, locateZoom, plannerZoom, stayZoom, tripFrame, worldZoom } from '../lib/tripFrame';
 
   setWorkerUrl(maplibreWorker);
 
@@ -97,15 +98,19 @@
   function viewZoom(): number {
     if (typeof zoom === 'number') return zoom;
     if (satellite) return pinZoom;
+    if (compact && flat) return plannerZoom;
     if (flat) return cityZoom;
     return routeZoom;
   }
 
   function basemap(): { id: string; tiles: string[]; attribution: string; maxzoom: number } {
-    const id = basemapId(session.user?.theme, satellite);
-    if (id === 'satellite') {
-      return { id, tiles: satelliteTiles, attribution: satelliteAttribution, maxzoom: 19 };
+    if (satellite) {
+      return { id: 'satellite', tiles: satelliteTiles, attribution: satelliteAttribution, maxzoom: 19 };
     }
+    if (compact) {
+      return { id: 'dark_matter', tiles: darkMatterTiles, attribution: cartoAttribution, maxzoom: 20 };
+    }
+    const id = basemapId(session.user?.theme, satellite);
     if (id === 'voyager') {
       return { id, tiles: voyagerTiles, attribution: cartoAttribution, maxzoom: 20 };
     }
@@ -504,6 +509,7 @@
     session.user?.theme;
     satellite;
     flat;
+    compact;
     host;
     applyBasemap();
   });

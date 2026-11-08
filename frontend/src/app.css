@@ -3597,13 +3597,26 @@ dialog.modal.gauge-modal[open] {
 }
 
 .planner-board {
+  --planner-widget-height: 13.75rem;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.75rem;
-  align-items: stretch;
+  align-items: start;
 }
 
-.planner-net { grid-column: span 3; }
+.planner-net.hero,
+.planner-widget.card {
+  box-sizing: border-box;
+  height: var(--planner-widget-height);
+  max-height: var(--planner-widget-height);
+}
+
+.planner-net[data-span="1"] { grid-column: span 1; }
+.planner-net[data-span="2"] { grid-column: span 2; }
+.planner-net[data-span="3"] { grid-column: span 3; }
+.planner-net[data-span="4"] { grid-column: span 4; }
+.planner-net[data-span="5"] { grid-column: span 5; }
+.planner-net[data-span="6"] { grid-column: span 6; }
 
 .planner-widget[data-span="1"] { grid-column: span 1; }
 .planner-widget[data-span="2"] { grid-column: span 2; }
@@ -3613,10 +3626,16 @@ dialog.modal.gauge-modal[open] {
 .planner-widget[data-span="6"] { grid-column: span 6; }
 
 .planner-net.hero {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 0.9rem 1rem;
+  min-height: 0;
+}
+
+.planner-net.dragging {
+  z-index: 6;
 }
 
 .planner-net .figure {
@@ -3699,6 +3718,7 @@ dialog.modal.gauge-modal[open] {
 
 .planner-widget {
   position: relative;
+  overflow: hidden;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -3718,7 +3738,7 @@ dialog.modal.gauge-modal[open] {
   position: absolute;
   top: 0.4rem;
   right: 0.4rem;
-  z-index: 2;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3727,7 +3747,8 @@ dialog.modal.gauge-modal[open] {
   padding: 0;
   border: 0;
   border-radius: 0.45rem;
-  background: transparent;
+  background: color-mix(in oklab, var(--bg-raise) 90%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--line) 70%, transparent);
   color: var(--muted);
   cursor: grab;
   touch-action: none;
@@ -3739,7 +3760,7 @@ dialog.modal.gauge-modal[open] {
   position: absolute;
   top: 2.25rem;
   right: 0.4rem;
-  z-index: 2;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3748,7 +3769,8 @@ dialog.modal.gauge-modal[open] {
   padding: 0;
   border: 0;
   border-radius: 0.45rem;
-  background: transparent;
+  background: color-mix(in oklab, var(--bg-raise) 90%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--line) 70%, transparent);
   color: var(--muted);
   cursor: pointer;
   touch-action: manipulation;
@@ -3886,7 +3908,32 @@ dialog.modal.gauge-modal[open] {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  padding-right: 2.25rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.planner-widget[data-section="trips"] .planner-widget-body {
+  overflow: hidden;
+}
+
+.planner-widget[data-section="trips"] a.planner-stay {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: start;
+}
+
+.planner-widget[data-section="trips"] .planner-map.globe {
+  align-self: center;
+  width: calc(100% + 2.2rem);
+  height: min(7.25rem, 100%);
+  min-height: 5.5rem;
+  max-height: 7.25rem;
+  margin: 0 -1.1rem;
+  border-radius: 0.85rem;
+  border-left: 0;
+  border-right: 0;
 }
 
 a.planner-widget-title {
@@ -3934,6 +3981,23 @@ a.planner-stay {
     border-color 160ms ease;
 }
 
+.planner-income {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.planner-income .planner-link {
+  flex: 1;
+  min-height: 0;
+}
+
+.planner-income-coming {
+  margin-top: auto;
+}
+
 .payday-amount {
   font-weight: 600;
   font-size: 1.65rem;
@@ -3954,6 +4018,130 @@ a.planner-stay {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+.planner-calendar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
+  min-width: 0;
+  padding-right: 1.85rem;
+}
+
+.planner-calendar-head a.planner-widget-title {
+  margin-bottom: 0.35rem;
+}
+
+.planner-calendar-filters {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.planner-calendar-filter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  padding: 0;
+  border: 1px solid color-mix(in oklab, var(--tone, var(--line)) 72%, var(--line));
+  border-radius: 0.32rem;
+  background: color-mix(in oklab, var(--tone, var(--line)) 88%, var(--bg-raise));
+  color: color-mix(in oklab, var(--tone, var(--text)) 55%, var(--text));
+  cursor: pointer;
+  flex: none;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease,
+    opacity 140ms ease;
+}
+
+.planner-calendar-filter[aria-pressed="true"] {
+  background: var(--tone, var(--teal));
+  border-color: color-mix(in oklab, var(--tone, var(--line)) 90%, #000);
+  color: color-mix(in oklab, var(--tone, #04211c) 20%, #04211c);
+}
+
+:root.light .planner-calendar-filter[aria-pressed="true"] {
+  color: #f4fffc;
+}
+
+.planner-calendar-filter[aria-pressed="false"] {
+  opacity: 0.58;
+}
+
+.planner-calendar-filter svg {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.planner-calendar-filter .glyph {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.planner-accounts {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.planner-widget[data-section="accounts"] .planner-widget-body {
+  overflow: hidden;
+}
+
+.planner-widget[data-section="accounts"] .account-totals {
+  flex: 1;
+  min-height: 0;
+  align-content: start;
+  gap: 0.35rem 0.7rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.planner-widget[data-section="accounts"] .account-total {
+  height: auto;
+  gap: 0.08rem;
+  overflow: clip;
+}
+
+.planner-widget[data-section="accounts"] .account-total .kicker {
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+}
+
+.planner-widget[data-section="accounts"] .account-total .money {
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+@container planner (max-width: 14rem) {
+  .planner-widget[data-section="accounts"] .account-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.3rem 0.55rem;
+  }
+
+  .planner-widget[data-section="accounts"] .account-total .money {
+    font-size: 0.78rem;
+  }
+}
+
+@container planner (min-width: 40rem) {
+  .planner-widget[data-section="accounts"] .account-totals {
+    grid-template-columns: repeat(auto-fit, minmax(5.25rem, 1fr));
+    gap: 0.45rem 0.75rem;
+  }
+
+  .planner-widget[data-section="accounts"] .account-total .money {
+    font-size: 0.9rem;
+  }
 }
 
 .planner-days {
@@ -3980,12 +4168,6 @@ a.planner-stay {
   color: inherit;
   align-content: start;
   justify-items: stretch;
-}
-
-.planner-map.globe {
-  height: 9.5rem;
-  min-height: 0;
-  margin-top: 0.35rem;
 }
 
 .bucket-mark {
