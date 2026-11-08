@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { onMount } from 'svelte';
   import { api, explain } from '../lib/api';
   import { follow, route } from '../lib/nav.svelte.ts';
   import { resetTripsGlobeWindow } from '../lib/tripsView.svelte.ts';
@@ -13,9 +14,12 @@
   import { tip } from '../lib/tip';
   import { PERIOD_LENGTHS, periodEnd, periodShift, periodWithinReach, type PeriodLength } from '../lib/acctPeriod';
 
+  const navAutoCollapseMaxPx = 1279;
+
   let { children }: { children: Snippet } = $props();
   let open = $state(false);
   let collapsed = $state(false);
+  let navCollapsePinned = $state<'auto' | 'open' | 'closed'>('auto');
   let resetting = $state(false);
   let savingTheme = $state(false);
   let resetDialog: HTMLDialogElement | undefined = $state();
@@ -231,6 +235,23 @@
     open = false;
   });
 
+  function syncNavCollapse(): void {
+    if (navCollapsePinned !== 'auto') return;
+    collapsed = window.matchMedia(`(max-width: ${navAutoCollapseMaxPx}px)`).matches;
+  }
+
+  function toggleNavCollapse(): void {
+    collapsed = !collapsed;
+    navCollapsePinned = collapsed ? 'closed' : 'open';
+  }
+
+  onMount(() => {
+    const query = window.matchMedia(`(max-width: ${navAutoCollapseMaxPx}px)`);
+    syncNavCollapse();
+    query.addEventListener('change', syncNavCollapse);
+    return () => query.removeEventListener('change', syncNavCollapse);
+  });
+
 </script>
 
 <a class="skip" href="#main">Skip to content</a>
@@ -258,7 +279,7 @@
         aria-expanded={!collapsed}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         use:tip={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        onclick={() => (collapsed = !collapsed)}
+        onclick={toggleNavCollapse}
       >
         <Glyph name={collapsed ? 'expand' : 'collapse'} mini />
       </button>

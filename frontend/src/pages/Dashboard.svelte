@@ -249,6 +249,9 @@
   let plannerShowStays = $state(true);
   let plannerShowBills = $state(true);
   let plannerShowIncome = $state(true);
+  let firstLiabilityAccountIndex = $derived(
+    data ? data.accountTotals.findIndex((column) => column.side === 'liability') : -1,
+  );
   let calendarSquares = $derived(
     data
       ? plannerDayDates(data.today, spans.calendar, data.windowStart, data.windowEnd).map((date) => ({
@@ -776,7 +779,10 @@
               <div class="planner-accounts">
                 <a class="planner-widget-title" href={widgetPage.accounts} onclick={(event) => follow(event, widgetPage.accounts)}>Accounts</a>
                 <a class="account-totals" href={widgetPage.accounts} onclick={(event) => follow(event, widgetPage.accounts)}>
-                {#each data.accountTotals as column (`${column.type}:${column.side}`)}
+                {#each data.accountTotals as column, index (`${column.type}:${column.side}`)}
+                  {#if index === firstLiabilityAccountIndex && firstLiabilityAccountIndex > 0}
+                    <hr class="account-totals-split" aria-hidden="true" />
+                  {/if}
                   <span class="account-total" data-account-type={column.type} data-side={column.side}>
                     <span class="kicker">{typeLabel[column.type] ?? column.type}</span>
                     <Dollars minor={column.balanceMinor} currency={data.baseCurrency} exponent={data.exponent} owe={column.side === 'liability'} />

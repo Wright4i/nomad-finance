@@ -323,6 +323,8 @@ final class PlannerWidgetsTest extends TestCase
                     const rects = [...totals.querySelectorAll('.account-total')].map((node) => node.getBoundingClientRect());
                     const firstRowTop = rects.length === 0 ? 0 : Math.min(...rects.map((rect) => rect.top));
                     const rowColumns = rects.filter((rect) => Math.abs(rect.top - firstRowTop) < 2).length;
+                    const split = totals.querySelector('.account-totals-split');
+                    const fuel = totals.querySelector('[data-account-type="fuel"][data-side="liability"]');
                     return {
                         bodyScroll: body.scrollHeight,
                         bodyClient: body.clientHeight,
@@ -330,6 +332,18 @@ final class PlannerWidgetsTest extends TestCase
                         rowColumns,
                         tracks,
                         overflowY: getComputedStyle(body).overflowY,
+                        hasSplit: Boolean(split),
+                        splitAboveFuel: Boolean(split && fuel && split.getBoundingClientRect().bottom <= fuel.getBoundingClientRect().top + 2),
+                    };
+                })(),
+                staysFilterInk: (() => {
+                    const button = document.querySelector('[data-section="calendar"] .planner-calendar-filter[data-filter="stays"]');
+                    const glyph = button ? button.querySelector('.glyph') : null;
+                    if (!button || !glyph) return null;
+                    return {
+                        pressed: button.getAttribute('aria-pressed') === 'true',
+                        button: getComputedStyle(button).color,
+                        glyph: getComputedStyle(glyph).color,
                     };
                 })(),
             };
@@ -408,6 +422,11 @@ final class PlannerWidgetsTest extends TestCase
             (int) $seen['accountsLayout']['bodyClient'] + 1,
             (int) $seen['accountsLayout']['bodyScroll'],
         );
+        self::assertTrue($seen['accountsLayout']['hasSplit']);
+        self::assertTrue($seen['accountsLayout']['splitAboveFuel']);
+        self::assertIsArray($seen['staysFilterInk']);
+        self::assertTrue($seen['staysFilterInk']['pressed']);
+        self::assertSame($seen['staysFilterInk']['button'], $seen['staysFilterInk']['glyph']);
         self::assertStringContainsString('money-neg', $seen['creditClass']);
         self::assertStringContainsString('money-neg', $seen['otherClass']);
         self::assertStringNotContainsString('money-pos', $seen['otherClass']);
@@ -873,11 +892,10 @@ final class PlannerWidgetsTest extends TestCase
         self::wait()->until(
             fn (): bool => self::driver()->executeScript('return document.querySelector("dialog.modal[open]") === null') === true,
         );
-        $singleGauges = self::driver()->executeScript(<<<'JS'
-            const gauges = [...document.querySelectorAll('.planner-gauges .want-gauge')].map((node) => node.getBoundingClientRect().top);
-            return gauges.length === 3 && gauges[1] > gauges[0] + 20 && gauges[2] > gauges[1] + 20;
-        JS);
-        self::assertTrue($singleGauges === true);
+        $narrowBudget = self::plannerShrinkMetrics();
+        self::assertIsArray($narrowBudget);
+        self::assertTrue($narrowBudget['gaugesShareRow']);
+        self::assertFalse($narrowBudget['gaugeOverflow']);
 
         self::driver()->executeScript(<<<'JS'
             const button = document.querySelector('[data-widget="envelopes"] button.want-gauge');
@@ -991,6 +1009,80 @@ final class PlannerWidgetsTest extends TestCase
     }
 
     #[\PHPUnit\Framework\Attributes\Depends('testThePlannerShowsTheSixWidgetsAndKeepsAMove')]
+    public function testPlannerNetAndBudgetFitNarrowSpans(): void
+    {
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+        self::driver()->get(self::$base . '/');
+        self::waitForText('Camp host');
+
+        self::sizeWidget('net', 1);
+        $narrowNet = self::plannerShrinkMetrics();
+        self::assertIsArray($narrowNet);
+        self::assertTrue($narrowNet['liabilitiesFit']);
+        self::assertTrue($narrowNet['interestLostFit']);
+        self::assertFalse($narrowNet['assetsBesideLiabilities']);
+        self::assertTrue($narrowNet['netFigureFull']);
+        self::assertTrue($narrowNet['interestLostVisible']);
+
+        self::sizeWidget('net', 3);
+        $midNet = self::plannerShrinkMetrics();
+        self::assertTrue($midNet['liabilitiesFit']);
+        self::assertTrue($midNet['interestLostFit']);
+        self::assertTrue($midNet['assetsBesideLiabilities']);
+
+        self::sizeWidget('envelopes', 2);
+        $narrowBudget = self::plannerShrinkMetrics();
+        self::assertTrue($narrowBudget['assignedShowsAmount']);
+        self::assertFalse($narrowBudget['gaugeOverflow']);
+        self::assertTrue($narrowBudget['gaugePercentsCentered']);
+
+        self::sizeWidget('envelopes', 6);
+        $wideBudget = self::plannerShrinkMetrics();
+        self::assertTrue($wideBudget['gaugesShareRow']);
+        self::assertFalse($wideBudget['gaugeOverflow']);
+        self::assertTrue($wideBudget['gaugePercentsCentered']);
+
+        self::sizeWidget('envelopes', 1);
+        $stackedBudget = self::plannerShrinkMetrics();
+        self::assertFalse($stackedBudget['gaugesShareRow']);
+
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(1000, 900));
+        self::driver()->get(self::$base . '/');
+        self::waitForText('Camp host');
+        self::sizeWidget('envelopes', 6);
+        $medium = self::plannerMediumLayoutMetrics();
+        self::assertTrue($medium['navCollapsed']);
+        self::assertTrue($medium['assetsAboveLiabilities']);
+        self::assertTrue($medium['interestLostVisible']);
+        self::assertTrue($medium['interestBeside']);
+        self::assertTrue($medium['interestNoOverlap']);
+        self::assertFalse($medium['gaugesStacked']);
+        self::assertTrue($medium['gaugesShareRow']);
+        self::assertFalse($medium['gaugeOverflow']);
+        self::assertTrue($medium['assignedShowsAmount']);
+        self::assertTrue($medium['netFigureFull']);
+        self::assertStringContainsString('$3,459.00', $medium['liabilitiesText']);
+
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(1100, 900));
+        self::driver()->get(self::$base . '/');
+        self::waitForText('Camp host');
+        self::sizeWidget('envelopes', 6);
+        self::sizeWidget('net', 2);
+        $midWide = self::plannerShrinkMetrics();
+        self::assertTrue($midWide['assignedShowsAmount']);
+        self::assertTrue($midWide['netFigureFull']);
+
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(820, 900));
+        self::driver()->get(self::$base . '/');
+        self::waitForText('Camp host');
+        $narrowMid = self::plannerMediumLayoutMetrics();
+        self::assertTrue($narrowMid['interestLostVisible']);
+        self::assertTrue($narrowMid['interestNoOverlap']);
+
+        self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
+    }
+
+    #[\PHPUnit\Framework\Attributes\Depends('testThePlannerShowsTheSixWidgetsAndKeepsAMove')]
     public function testCalendarDaysFollowThePlannerSpan(): void
     {
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
@@ -1025,17 +1117,183 @@ final class PlannerWidgetsTest extends TestCase
 
     private static function sizeCalendar(int $span): void
     {
+        self::sizeWidget('calendar', $span);
+    }
+
+    private static function sizeWidget(string $widget, int $span): void
+    {
         self::driver()->executeScript(
-            'document.querySelector(\'[data-widget="calendar"] .planner-size\')?.scrollIntoView({ block: "center" })',
+            'document.querySelector(`[data-widget="${arguments[0]}"] .planner-size`)?.scrollIntoView({ block: "center" })',
+            [$widget],
         );
-        self::driver()->findElement(WebDriverBy::cssSelector('[data-widget="calendar"] .planner-size'))->click();
-        self::waitForText('Edit Calendar layout');
+        self::driver()->findElement(WebDriverBy::cssSelector('[data-widget="' . $widget . '"] .planner-size'))->click();
+        self::wait()->until(
+            fn (): bool => self::driver()->executeScript('return document.querySelector("dialog.modal[open] #span-title") !== null') === true,
+        );
         self::chooseSpan($span);
-        self::waitForSpan('calendar', $span);
+        self::waitForSpan($widget, $span);
         self::driver()->findElement(WebDriverBy::xpath('//dialog[contains(@class,"modal") and @open]//button[normalize-space()="Close"]'))->click();
         self::wait()->until(
             fn (): bool => self::driver()->executeScript('return document.querySelector("dialog.modal[open]") === null') === true,
         );
+    }
+
+    /** @return array<string, mixed> */
+    private static function plannerMediumLayoutMetrics(): array
+    {
+        $seen = self::driver()->executeScript(<<<'JS'
+            const assets = document.querySelector('.planner-assets-amount');
+            const liabilities = document.querySelector('.planner-liabilities-amount');
+            const gained = document.querySelector('.planner-interest-gained .planner-interest-amount');
+            const lost = document.querySelector('.planner-interest-lost .planner-interest-amount');
+            const gauges = [...document.querySelectorAll('.planner-gauges .want-gauge')];
+            const above = (upper, lower) => {
+                if (!upper || !lower) return false;
+                return lower.getBoundingClientRect().top >= upper.getBoundingClientRect().bottom - 2;
+            };
+            const stacked = gauges.length === 3
+                && gauges[1].getBoundingClientRect().top >= gauges[0].getBoundingClientRect().bottom + 8;
+            const tops = gauges.map((node) => node.getBoundingClientRect().top);
+            const gaugesShareRow = gauges.length === 3 && Math.abs(tops[0] - tops[2]) < 4;
+            const envelopes = document.querySelector('[data-section="envelopes"]');
+            const gaugeOverflow = gauges.some((node) => {
+                const rect = node.getBoundingClientRect();
+                const box = envelopes ? envelopes.getBoundingClientRect() : null;
+                return !box || rect.right > box.right + 1 || rect.left < box.left - 1;
+            });
+            const assignedShowsAmount = [...document.querySelectorAll('.planner-gauges .want-gauge-line')]
+                .filter((node) => (node.textContent || '').includes('Assigned'))
+                .every((node) => /\$[\d,]/.test(node.textContent || ''));
+            const netFigureFull = (() => {
+                const fig = document.querySelector('.planner-net .figure');
+                if (!fig) return false;
+                const text = (fig.textContent || '').trim();
+                return text !== '' && !text.includes('…') && !text.includes('...');
+            })();
+            const net = document.querySelector('.planner-net');
+            const interestLostVisible = (() => {
+                if (!net || !lost) return false;
+                const netBox = net.getBoundingClientRect();
+                const lostBox = lost.getBoundingClientRect();
+                return lostBox.bottom <= netBox.bottom + 1
+                    && lostBox.top >= netBox.top - 1
+                    && lostBox.height > 0;
+            })();
+            const interestBeside = (() => {
+                const gainedRow = document.querySelector('.planner-interest-gained');
+                const lostRow = document.querySelector('.planner-interest-lost');
+                if (!gainedRow || !lostRow) return false;
+                return Math.abs(gainedRow.getBoundingClientRect().top - lostRow.getBoundingClientRect().top) < 4;
+            })();
+            const interestNoOverlap = (() => {
+                const gainedAmt = document.querySelector('.planner-interest-gained .planner-interest-amount');
+                const lostAmt = document.querySelector('.planner-interest-lost .planner-interest-amount');
+                if (!gainedAmt || !lostAmt) return false;
+                const gainedBox = gainedAmt.getBoundingClientRect();
+                const lostBox = lostAmt.getBoundingClientRect();
+                return lostBox.left >= gainedBox.right - 2;
+            })();
+            return {
+                navCollapsed: document.querySelector('.nav')?.classList.contains('collapsed') === true,
+                assetsAboveLiabilities: above(assets, liabilities),
+                interestLostBelowGained: above(gained, lost),
+                interestLostVisible,
+                interestBeside,
+                interestNoOverlap,
+                gaugesStacked: stacked,
+                gaugesShareRow,
+                gaugeOverflow,
+                assignedShowsAmount,
+                netFigureFull,
+                liabilitiesText: liabilities ? liabilities.textContent.replace(/\s+/g, ' ').trim() : '',
+            };
+        JS);
+        self::assertIsArray($seen);
+
+        return $seen;
+    }
+
+    /** @return array<string, mixed> */
+    private static function plannerShrinkMetrics(): array
+    {
+        $seen = self::driver()->executeScript(<<<'JS'
+            const boxOf = (selector) => {
+                const node = document.querySelector(selector);
+                return node ? node.getBoundingClientRect() : null;
+            };
+            const fits = (node, box) => {
+                if (!node || !box) return false;
+                const rect = node.getBoundingClientRect();
+                return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+            };
+            const net = boxOf('.planner-net');
+            const liabilities = document.querySelector('.planner-liabilities-amount');
+            const interestLost = document.querySelector('.planner-interest-lost .planner-interest-amount');
+            const envelopes = boxOf('[data-section="envelopes"]');
+            const gauges = [...document.querySelectorAll('.planner-gauges .want-gauge')];
+            const gaugeOverflow = gauges.some((node) => {
+                const rect = node.getBoundingClientRect();
+                return !envelopes || rect.right > envelopes.right + 1 || rect.left < envelopes.left - 1;
+            });
+            const tops = gauges.map((node) => node.getBoundingClientRect().top);
+            const gaugesShareRow = gauges.length === 3 && Math.abs(tops[0] - tops[2]) < 4;
+            const gaugeGrid = document.querySelector('.planner-gauges');
+            const assetsGroup = document.querySelector('.planner-assets');
+            const liabilitiesGroup = document.querySelector('.planner-liabilities');
+            const assetsBesideLiabilities = (() => {
+                if (!assetsGroup || !liabilitiesGroup) return false;
+                const aTop = assetsGroup.getBoundingClientRect().top;
+                const lTop = liabilitiesGroup.getBoundingClientRect().top;
+                return Math.abs(aTop - lTop) < 4;
+            })();
+            const assignedShowsAmount = [...document.querySelectorAll('.planner-gauges .want-gauge-line')]
+                .filter((node) => (node.textContent || '').includes('Assigned'))
+                .every((node) => /\$[\d,]/.test(node.textContent || ''));
+            const netFigureFull = (() => {
+                const fig = document.querySelector('.planner-net .figure');
+                if (!fig) return false;
+                const text = (fig.textContent || '').trim();
+                return text !== '' && !text.includes('…') && !text.includes('...');
+            })();
+            const interestLostVisible = (() => {
+                const net = document.querySelector('.planner-net');
+                const lost = document.querySelector('.planner-interest-lost .planner-interest-amount');
+                if (!net || !lost) return false;
+                const netBox = net.getBoundingClientRect();
+                const lostBox = lost.getBoundingClientRect();
+                return lostBox.bottom <= netBox.bottom + 1
+                    && lostBox.top >= netBox.top - 1
+                    && lostBox.height > 0;
+            })();
+            const gaugePercentsCentered = gauges.every((gauge) => {
+                const current = gauge.querySelector('.want-gauge-current');
+                const track = gauge.querySelector('.want-gauge-track');
+                if (!current || !track) return false;
+                const c = current.getBoundingClientRect();
+                const t = track.getBoundingClientRect();
+                const cMid = (c.left + c.right) / 2;
+                const tMid = (t.left + t.right) / 2;
+                return Math.abs(cMid - tMid) < 2;
+            });
+            return {
+                liabilitiesFit: fits(liabilities, net),
+                interestLostFit: fits(interestLost, net),
+                gaugeOverflow,
+                gaugesShareRow,
+                assetsBesideLiabilities,
+                assignedShowsAmount,
+                netFigureFull,
+                interestLostVisible,
+                gaugePercentsCentered,
+                netWidth: net ? net.width : 0,
+                gaugeCount: gauges.length,
+                gaugeTops: tops,
+                gaugeColumns: gaugeGrid ? getComputedStyle(gaugeGrid).gridTemplateColumns : '',
+            };
+        JS);
+        self::assertIsArray($seen);
+
+        return $seen;
     }
 
     private static function assertCalendarDays(int $count): void

@@ -3632,6 +3632,9 @@ dialog.modal.gauge-modal[open] {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  padding-right: 2.65rem;
+  container-type: inline-size;
+  container-name: planner-net;
 }
 
 .planner-net.dragging {
@@ -3639,22 +3642,40 @@ dialog.modal.gauge-modal[open] {
 }
 
 .planner-net .figure {
-  font-size: clamp(1.8rem, 3vw, 2.45rem);
+  font-size: clamp(1.05rem, 9cqi, 2.45rem);
   margin-top: 0.15rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-height: 0;
+}
+
+.planner-net .planner-sides {
+  flex-shrink: 1;
+  min-height: 0;
+}
+
+.planner-net .planner-interest {
+  flex-shrink: 0;
 }
 
 .planner-sides {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  gap: 0.75rem;
+  gap: clamp(0.35rem, 3cqi, 0.75rem);
   margin-top: 0.45rem;
+  min-width: 0;
 }
 
 .planner-assets,
 .planner-liabilities {
   display: grid;
   gap: 0.1rem;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .planner-assets {
@@ -3670,7 +3691,11 @@ dialog.modal.gauge-modal[open] {
 
 .planner-assets-amount,
 .planner-liabilities-amount {
+  font-size: clamp(0.72rem, 5.75cqi, 1.05rem);
   font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -3678,15 +3703,17 @@ dialog.modal.gauge-modal[open] {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  gap: 0.75rem;
+  gap: clamp(0.25rem, 3cqi, 0.75rem);
   margin-top: auto;
   padding-top: 0.85rem;
+  min-width: 0;
 }
 
 .planner-interest-lost,
 .planner-interest-gained {
   display: grid;
   gap: 0.1rem;
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -3702,17 +3729,209 @@ dialog.modal.gauge-modal[open] {
 
 .planner-interest-label {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: clamp(0.64rem, 3.8cqi, 0.78rem);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .planner-interest-amount {
-  font-size: clamp(1.05rem, 2.1vw, 1.35rem);
+  font-size: clamp(1.05rem, 5.75cqi, 1.35rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   line-height: 1.15;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
   white-space: nowrap;
+}
+
+.planner-interest-amount .money {
+  display: block;
+  font-size: 1em;
+  letter-spacing: inherit;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+@container planner-net (max-width: 24rem) {
+  .planner-assets-amount,
+  .planner-liabilities-amount {
+    font-size: clamp(0.82rem, 5.5cqi, 1rem);
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .planner-interest {
+    padding-top: 0.35rem;
+    gap: 0.28rem;
+  }
+
+  .figure {
+    font-size: clamp(0.95rem, 8.25cqi, 1.65rem);
+    margin-top: 0;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
+
+@container planner-net (max-width: 22rem) {
+  .planner-interest {
+    gap: clamp(0.3rem, 2.2cqi, 0.65rem);
+  }
+
+  .planner-interest-label {
+    font-size: clamp(0.62rem, 3.2cqi, 0.72rem);
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .planner-interest-amount {
+    font-size: clamp(0.78rem, 4.35cqi, 1.05rem);
+    letter-spacing: -0.03em;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .planner-interest-amount .money {
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
+
+@container planner-net (max-width: 20rem) {
+  .figure {
+    font-size: clamp(0.88rem, 7.25cqi, 1.35rem);
+  }
+
+  .planner-interest-amount {
+    font-size: clamp(0.72rem, 4cqi, 0.95rem);
+    letter-spacing: -0.035em;
+  }
+}
+
+@container planner-net (max-width: 15rem) {
+  .planner-interest {
+    gap: 0.25rem;
+  }
+
+  .planner-interest-amount {
+    font-size: clamp(0.65rem, 3.6cqi, 0.85rem);
+    letter-spacing: -0.04em;
+  }
+}
+
+@container planner-net (max-width: 16.5rem) {
+  .planner-sides {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+  }
+
+  .planner-liabilities {
+    margin-left: 0;
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+@media (max-width: 1279px) {
+  .planner-board {
+    --planner-widget-height: 15.5rem;
+  }
+
+  .planner-net.hero {
+    padding-top: 1.15rem;
+    padding-bottom: 1.15rem;
+  }
+
+  .planner-net .planner-sides {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.28rem;
+    margin-top: 0.3rem;
+  }
+
+  .planner-net .planner-liabilities {
+    margin-left: 0;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .planner-net .planner-assets-amount,
+  .planner-net .planner-liabilities-amount {
+    font-size: clamp(0.82rem, 3.6vw, 0.98rem);
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .planner-net .planner-interest {
+    flex-direction: row;
+    align-items: flex-end;
+    padding-top: 0.35rem;
+    gap: clamp(0.3rem, 2.5cqi, 0.75rem);
+  }
+
+  .planner-net .planner-interest-lost {
+    justify-items: end;
+    text-align: right;
+  }
+
+  .planner-net .planner-interest-label,
+  .planner-net .planner-interest-amount {
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .planner-net .planner-interest-label {
+    font-size: 0.68rem;
+  }
+
+  .planner-net .planner-interest-amount {
+    font-size: clamp(0.92rem, 5.25cqi, 1.2rem);
+  }
+
+  .planner-net .figure {
+    font-size: clamp(0.95rem, 5.5vw, 1.75rem);
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .planner-widget[data-section="envelopes"] .planner-gauges {
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: clamp(0.2rem, 1.2vw, 0.45rem);
+  }
+
+  .planner-widget[data-section="envelopes"] .planner-board button.want-gauge {
+    grid-template-columns: minmax(1.5rem, 24%) minmax(0, 1fr);
+    gap: 0.2rem;
+  }
+
+  .planner-widget[data-section="envelopes"] .planner-board .want-gauge-meter,
+  .planner-widget[data-section="envelopes"] .planner-board .want-gauge-readout {
+    height: clamp(3.65rem, 18cqi, 4.35rem);
+    min-height: 3.65rem;
+  }
+
+  .planner-widget[data-section="envelopes"] .planner-board .want-gauge-track,
+  .planner-widget[data-section="envelopes"] .planner-board .want-gauge-current {
+    max-width: 2.85rem;
+  }
+
+  .planner-widget[data-section="envelopes"] .planner-board .want-gauge-name {
+    font-size: clamp(0.62rem, 2cqi, 0.78rem);
+  }
+
+  .planner-widget[data-section="envelopes"] .planner-board .want-gauge-line {
+    font-size: clamp(0.65rem, 1.8cqi, 0.78rem);
+  }
+
+  .planner-widget[data-section="envelopes"] .planner-board .want-gauge-line span {
+    font-size: clamp(0.54rem, 1.6cqi, 0.62rem);
+  }
 }
 
 
@@ -4082,6 +4301,16 @@ a.planner-stay {
 .planner-calendar-filter .glyph {
   width: 0.72rem;
   height: 0.72rem;
+  color: currentColor;
+  background: none;
+}
+
+.planner-calendar-filter[data-filter="stays"][aria-pressed="true"] {
+  color: #04211c;
+}
+
+:root.light .planner-calendar-filter[data-filter="stays"][aria-pressed="true"] {
+  color: #04211c;
 }
 
 .planner-accounts {
@@ -4120,6 +4349,16 @@ a.planner-stay {
   font-size: 0.82rem;
   font-weight: 650;
   line-height: 1.1;
+}
+
+.planner-widget[data-section="accounts"] .account-totals-split {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 0;
+  margin: 0.1rem 0 0.05rem;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in oklab, var(--line) 85%, transparent);
 }
 
 @container planner (max-width: 14rem) {
@@ -4225,14 +4464,23 @@ a.planner-stay {
 
 .planner-gauges {
   display: grid;
-  grid-template-columns: repeat(3, max-content);
-  justify-content: center;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-content: stretch;
   align-items: stretch;
-  gap: 0.85rem;
+  gap: clamp(0.35rem, 2.5cqi, 0.85rem);
+  width: 100%;
+  min-width: 0;
+}
+
+.planner-gauges > .want-gauge {
+  min-width: 0;
+  container-type: inline-size;
+  container-name: planner-gauge;
 }
 
 .planner-board button.want-gauge {
-  width: auto;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   align-self: stretch;
   padding: 0;
@@ -4243,25 +4491,79 @@ a.planner-stay {
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease;
+  grid-template-columns: minmax(2.35rem, 36%) minmax(0, 1fr);
+  gap: clamp(0.3rem, 2cqi, 0.85rem);
 }
 
 .planner-board .want-gauge-meter {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.2rem;
-  height: 7.5rem;
+  height: clamp(4.75rem, 26cqi, 7.5rem);
+  min-width: 0;
+  width: 100%;
+}
+
+.planner-board .want-gauge-readout {
+  min-height: clamp(4.75rem, 26cqi, 7.5rem);
+}
+
+.planner-board .want-gauge-name {
+  font-size: clamp(0.68rem, 2.4cqi, 0.9rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-board .want-gauge-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.08rem 0.3rem;
+  font-size: clamp(0.72rem, 2.2cqi, 0.85rem);
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.planner-board .want-gauge-line span {
+  min-width: 0;
+  flex: 0 0 auto;
+  font-size: clamp(0.58rem, 2cqi, 0.68rem);
+}
+
+@container planner-gauge (max-width: 15.5rem) {
+  .want-gauge-line {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.05rem;
+  }
+}
+
+.planner-board .want-gauge.over .want-gauge-warning {
+  position: static;
+  margin: 0;
+  white-space: normal;
+  font-size: clamp(0.62rem, 1.9cqi, 0.75rem);
+  line-height: 1.15;
 }
 
 .planner-board .want-gauge-track {
   flex: 1;
   min-height: 0;
   height: auto;
+  width: 100%;
+  max-width: 4.25rem;
+  align-self: center;
 }
 
 .planner-board .want-gauge-current {
-  width: 4.25rem;
+  width: 100%;
+  max-width: 4.25rem;
+  align-self: center;
   text-align: center;
-  font-size: 0.72rem;
+  font-size: clamp(0.62rem, 2.4cqi, 0.72rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
@@ -4345,10 +4647,47 @@ a.planner-stay {
   }
 }
 
-@container planner (max-width: 36rem) {
+@container planner (max-width: 28rem) {
+  .planner-board button.want-gauge {
+    grid-template-columns: minmax(1.55rem, 28%) minmax(0, 1fr);
+    gap: 0.22rem;
+  }
+
+  .planner-board .want-gauge-meter,
+  .planner-board .want-gauge-readout {
+    height: 3.85rem;
+    min-height: 3.85rem;
+  }
+}
+
+@container planner (max-width: 16.5rem) {
   .planner-gauges {
-    grid-template-columns: max-content;
-    justify-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.55rem;
+  }
+
+  .planner-board button.want-gauge {
+    grid-template-columns: minmax(2.35rem, 4.25rem) minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .planner-board .want-gauge-meter,
+  .planner-board .want-gauge-readout {
+    height: 5.5rem;
+    min-height: 5.5rem;
+  }
+
+  .planner-board .want-gauge-track,
+  .planner-board .want-gauge-current {
+    max-width: 4.25rem;
+  }
+
+  .planner-board .want-gauge-name,
+  .planner-board .want-gauge-line {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    font-size: 0.85rem;
   }
 }
 
@@ -4389,8 +4728,8 @@ a.planner-stay {
   }
 
   .planner-gauges {
-    grid-template-columns: max-content;
-    justify-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
   }
 
   .account-totals {
@@ -4646,12 +4985,9 @@ a.planner-stay {
 }
 
 .planner-board .want-gauge-meter .want-gauge-warning {
-  position: absolute;
-  top: 0;
-  left: calc(100% + 0.35rem);
-  z-index: 2;
+  position: static;
   margin: 0;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .pay-stage {
