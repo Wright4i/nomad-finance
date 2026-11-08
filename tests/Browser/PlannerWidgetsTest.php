@@ -250,6 +250,49 @@ final class PlannerWidgetsTest extends TestCase
                 creditClass: money ? money.className : '',
                 otherClass: otherDebt ? otherDebt.className : '',
                 figureChildren: figure ? figure.childElementCount : -1,
+                assets: (() => {
+                    const row = document.querySelector('.planner-sides');
+                    const group = document.querySelector('.planner-assets');
+                    const amount = document.querySelector('.planner-assets-amount');
+                    const word = group ? group.querySelector('span') : null;
+                    if (!row || !group || !amount || !word) return null;
+                    const rowBox = row.getBoundingClientRect();
+                    const wordBox = word.getBoundingClientRect();
+                    const amountBox = amount.getBoundingClientRect();
+                    return {
+                        align: getComputedStyle(group).textAlign,
+                        split: amountBox.top >= wordBox.bottom - 2,
+                        amountLeft: Math.abs(rowBox.left - amountBox.left) < 3,
+                        colored: amount.classList.contains('teal'),
+                    };
+                })(),
+                liabilities: (() => {
+                    const row = document.querySelector('.planner-sides');
+                    const group = document.querySelector('.planner-liabilities');
+                    const amount = document.querySelector('.planner-liabilities-amount');
+                    const word = group ? group.querySelector('span') : null;
+                    if (!row || !group || !amount || !word) return null;
+                    const rowBox = row.getBoundingClientRect();
+                    const wordBox = word.getBoundingClientRect();
+                    const amountBox = amount.getBoundingClientRect();
+                    return {
+                        align: getComputedStyle(group).textAlign,
+                        split: amountBox.top >= wordBox.bottom - 2,
+                        amountRight: Math.abs(rowBox.right - amountBox.right) < 3,
+                    };
+                })(),
+                availableAlign: (() => {
+                    const row = document.querySelector('[data-section="envelopes"] .envelope-available');
+                    if (!row) return null;
+                    const style = getComputedStyle(row);
+                    const rowBox = row.getBoundingClientRect();
+                    const last = row.lastElementChild ? row.lastElementChild.getBoundingClientRect() : null;
+                    return {
+                        justify: style.justifyContent,
+                        align: style.textAlign,
+                        nearRight: last !== null && rowBox.right - last.right < 3,
+                    };
+                })(),
                 net: box('.planner-net'),
                 incomeBox: box('[data-section="income"]'),
                 calendarBox: box('[data-section="calendar"]'),
@@ -387,6 +430,19 @@ final class PlannerWidgetsTest extends TestCase
         self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}\/mn$/', (string) $seen['interestLost']);
         self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}\/mn$/', (string) $seen['interestGained']);
         self::assertStringNotContainsString('per month', (string) $seen['netCopy']);
+        self::assertIsArray($seen['assets']);
+        self::assertSame('left', $seen['assets']['align']);
+        self::assertTrue($seen['assets']['split']);
+        self::assertTrue($seen['assets']['amountLeft']);
+        self::assertTrue($seen['assets']['colored']);
+        self::assertIsArray($seen['liabilities']);
+        self::assertSame('right', $seen['liabilities']['align']);
+        self::assertTrue($seen['liabilities']['split']);
+        self::assertTrue($seen['liabilities']['amountRight']);
+        self::assertIsArray($seen['availableAlign']);
+        self::assertSame('flex-end', $seen['availableAlign']['justify']);
+        self::assertSame('right', $seen['availableAlign']['align']);
+        self::assertTrue($seen['availableAlign']['nearRight']);
         self::assertStringNotContainsString('USD', $seen['income'] . $seen['accounts'] . $seen['envelopes'] . $seen['bills']);
         self::assertGreaterThan($seen['net']['left'] + $seen['net']['width'] - 8, $seen['incomeBox']['left']);
         self::assertEqualsWithDelta($seen['calendarBox']['top'], $seen['tripBox']['top'], 4);

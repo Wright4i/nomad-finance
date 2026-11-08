@@ -3499,9 +3499,33 @@ dialog.modal.gauge-modal[open] {
 
 .planner-sides {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.5rem;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.75rem;
   margin-top: 0.45rem;
+}
+
+.planner-assets,
+.planner-liabilities {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.planner-assets {
+  justify-items: start;
+  text-align: left;
+}
+
+.planner-liabilities {
+  justify-items: end;
+  margin-left: auto;
+  text-align: right;
+}
+
+.planner-assets-amount,
+.planner-liabilities-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .planner-interest {
@@ -3920,8 +3944,11 @@ a.planner-stay {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
+  justify-content: flex-end;
+  text-align: right;
   gap: 0.3rem 0.65rem;
   margin: 0.55rem 0 0;
+  width: 100%;
 }
 
 .envelope-available .money {

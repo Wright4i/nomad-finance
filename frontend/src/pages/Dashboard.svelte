@@ -502,9 +502,14 @@
         <p class="kicker">Net worth</p>
         <p class="figure">{money(data.netWorthMinor ?? 0)}</p>
         <p class="muted planner-sides m-0">
-          Assets {money(data.assetsMinor)}
-          <span aria-hidden="true">·</span>
-          Liabilities <span class="coral">{money(data.liabilitiesMinor)}</span>
+          <span class="planner-assets">
+            <span>Assets</span>
+            <span class="teal planner-assets-amount">{money(data.assetsMinor)}</span>
+          </span>
+          <span class="planner-liabilities">
+            <span>Liabilities</span>
+            <span class="coral planner-liabilities-amount">{money(data.liabilitiesMinor)}</span>
+          </span>
         </p>
         <div class="planner-interest">
           <p class="planner-interest-lost m-0" data-interest="lost">
