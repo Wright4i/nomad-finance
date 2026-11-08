@@ -1,11 +1,13 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
+  import Dollars from '../components/Dollars.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
-  import { formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { minorToInput, parseMajor, todayISO } from '../lib/money';
   import { go } from '../lib/nav.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
   import { fieldTips } from '../lib/fieldTips';
@@ -258,7 +260,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
       <span use:tip={fieldTips.logPrice}>Price per gallon</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
-        <input name="price" inputmode="decimal" bind:value={price} oninput={() => (priceTouched = true)} />
+        <AmountInput name="price" bind:value={price} oninput={() => (priceTouched = true)} />
       </span>
       {#if fields.pricePerGallonMinor}<em>{fields.pricePerGallonMinor}</em>{/if}
     </label>
@@ -306,10 +308,10 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
         </div>
         <div class="want-gauge-readout">
           <p class="want-gauge-name m-0">{wantBucket.name}</p>
-          <p class="want-gauge-line m-0"><span>Assigned</span> <strong>{formatMinor(wantAssignedMinor, sheet.baseCurrency, sheet.exponent)}</strong></p>
-          <p class="want-gauge-line m-0"><span>Max</span> <strong>{formatMinor(wantMaxMinor, sheet.baseCurrency, sheet.exponent)}</strong></p>
+          <p class="want-gauge-line m-0"><span>Assigned</span> <Dollars minor={wantAssignedMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
+          <p class="want-gauge-line m-0"><span>Max</span> <Dollars minor={wantMaxMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
           {#if wantLevels.over}
-            <p class="want-gauge-warning m-0">Over <strong>{formatMinor(wantLevels.overMinor, sheet.baseCurrency, sheet.exponent)}</strong></p>
+            <p class="want-gauge-warning m-0">Over <Dollars minor={wantLevels.overMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} owe /></p>
           {/if}
         </div>
       </div>
@@ -319,7 +321,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     <span use:tip={fieldTips.logAmount}>Amount</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input name="amount" inputmode="decimal" bind:value={amount} />
+      <AmountInput name="amount" bind:value={amount} />
     </span>
     {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
   </label>

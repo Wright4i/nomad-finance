@@ -174,7 +174,8 @@ final class PlannerHeadingTest extends TestCase
         $again = self::heading();
         self::assertSame('Planner', $again['text']);
         self::assertSame('normal', $again['style']);
-        self::assertStringContainsString('Outfit', $again['family']);
+        self::assertStringNotContainsString('Outfit', $again['family']);
+        self::assertStringNotContainsString('Fraunces', $again['family']);
         self::assertSame($worth, self::netWorth());
     }
 

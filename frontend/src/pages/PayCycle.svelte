@@ -1,12 +1,14 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import DateField from '../components/DateField.svelte';
+  import Dollars from '../components/Dollars.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { priorMonthWeekdays, readDateInput } from '../lib/dates';
-  import { exponentOf, formatDate, formatMinor, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { exponentOf, formatDate, formatMonth, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { fieldTips } from '../lib/fieldTips';
   import { go } from '../lib/nav.svelte.ts';
   import { tip } from '../lib/tip';
@@ -317,7 +319,7 @@
     </span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input name="rate" inputmode="decimal" bind:value={rate} />
+      <AmountInput name="rate" bind:value={rate} {exponent} />
     </span>
     {#if fields.rateMinor}<em>{fields.rateMinor}</em>{/if}
   </label>
@@ -351,16 +353,16 @@
   </label>
   {#if payKind === 'hourly' && length === 'semimonthly' && hoursMode === 'weekdays' && cycle?.weekdayPay}
     <p class="m-0">
-      Weekday paycheck {formatMinor(cycle.weekdayPay.earlierMinor, currency, exponent)} on day {cycle.weekdayPay.earlierDay}
-      and {formatMinor(cycle.weekdayPay.laterMinor, currency, exponent)} on day {cycle.weekdayPay.laterDay}.
+      Weekday paycheck <Dollars minor={cycle.weekdayPay.earlierMinor} {currency} {exponent} /> on day {cycle.weekdayPay.earlierDay}
+      and <Dollars minor={cycle.weekdayPay.laterMinor} {currency} {exponent} /> on day {cycle.weekdayPay.laterDay}.
     </p>
   {:else if monthlyWeekdayPreview}
     <p class="m-0">{monthlyWeekdayPreview.weekdays} weekdays in {formatMonth(monthlyWeekdayPreview.month)} · {monthlyWeekdayPreview.hours} hours.</p>
     {#if monthlyWeekdayPreview.paycheckMinor !== null}
-      <p class="m-0">Paycheck this period {formatMinor(monthlyWeekdayPreview.paycheckMinor, currency, exponent)}.</p>
+      <p class="m-0">Paycheck this period <Dollars minor={monthlyWeekdayPreview.paycheckMinor} {currency} {exponent} />.</p>
     {/if}
   {:else if paycheck !== null && !(payKind === 'hourly' && hoursMode === 'weekdays')}
-    <p class="m-0">Paycheck this period {formatMinor(paycheck, currency, exponent)}.</p>
+    <p class="m-0">Paycheck this period <Dollars minor={paycheck} {currency} {exponent} />.</p>
   {:else if payKind === 'salary' && length === 'irregular' && rate.trim() !== ''}
     <p class="muted m-0">A salary on an irregular cycle is not split into a paycheck.</p>
   {/if}

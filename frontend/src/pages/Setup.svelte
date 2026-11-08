@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
@@ -138,7 +139,7 @@
       <span use:tip={fieldTips.fuelFallback}>Fallback price per gallon</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
-        <input name="fuelPrice" inputmode="decimal" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
+        <AmountInput name="fuelPrice" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
       </span>
       {#if fields.fuelPriceMinor}<em>{fields.fuelPriceMinor}</em>{/if}
     </label>

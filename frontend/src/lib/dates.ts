@@ -17,6 +17,23 @@ export function formatChipDate(iso: string): string {
   return `${MONTHS[parts.month - 1]} ${parts.day}`;
 }
 
+/**
+ * Stay-list dates: month and day, joined with an en dash. The year is dropped.
+ * It stays when dropping it would read as a different length: more than one year
+ * apart, or one year apart while the end month and day are not earlier.
+ */
+export function formatStaySpan(start: string, end: string): string {
+  const from = dateParts(start);
+  const to = dateParts(end);
+  if (!from || !to) return `${formatDate(start)} – ${formatDate(end)}`;
+  const yearGap = Number(to.year) - Number(from.year);
+  const endIsEarlier = to.month < from.month || (to.month === from.month && to.day < from.day);
+  const ambiguous = yearGap < 0 || yearGap > 1 || (yearGap === 1 && !endIsEarlier);
+  const fromText = ambiguous ? formatDate(start) : formatChipDate(start);
+  const toText = ambiguous ? formatDate(end) : formatChipDate(end);
+  return `${fromText} – ${toText}`;
+}
+
 /** Month/day through month/day, as in 10/16-11/15. */
 export function formatSlashSpan(start: string, end: string): string {
   const from = dateParts(start);

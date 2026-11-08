@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Dollars from '../components/Dollars.svelte';
   import Glyph from '../components/Glyph.svelte';
   import Spinner from '../components/Spinner.svelte';
   import Note from '../components/Note.svelte';
   import { api, explain } from '../lib/api';
   import { fieldTips } from '../lib/fieldTips';
-  import { formatBps, formatMinor } from '../lib/money';
+  import { formatBps } from '../lib/money';
   import { tip } from '../lib/tip';
   import { go } from '../lib/nav.svelte.ts';
   import type { Account } from '../lib/types';
@@ -68,22 +69,16 @@
     }
   }
 
-  function chipsFor(account: Account): { key: string; label: string }[] {
-    const chips: { key: string; label: string }[] = [];
+  function chipsFor(account: Account): { key: string; label: string; minor?: number; owe?: boolean }[] {
+    const chips: { key: string; label: string; minor?: number; owe?: boolean }[] = [];
     if ((account.type === 'credit' || account.type === 'fuel') && account.creditLimitMinor !== null) {
-      chips.push({
-        key: 'limit',
-        label: `Credit limit ${formatMinor(account.creditLimitMinor, account.currency, account.exponent)}`,
-      });
+      chips.push({ key: 'limit', label: 'Credit limit', minor: account.creditLimitMinor });
     }
     if (account.interestBps !== null) {
       chips.push({ key: 'apr', label: `APR ${formatBps(account.interestBps)}%` });
     }
     if (account.side === 'liability' && account.minimumDueMinor !== null) {
-      chips.push({
-        key: 'minimum',
-        label: `Minimum ${formatMinor(account.minimumDueMinor, account.currency, account.exponent)}`,
-      });
+      chips.push({ key: 'minimum', label: 'Minimum', minor: account.minimumDueMinor, owe: true });
     }
     if (account.bankAutopay && account.autopayChoice === 'minimum') {
       chips.push({ key: 'autopay-min', label: 'Autopay min' });
@@ -199,11 +194,11 @@
         {#if chips.length > 0}
           <span class="bill-detail-chips">
             {#each chips as chip (chip.key)}
-              <span class="bill-detail-chip" data-chip={chip.key}>{chip.label}</span>
+              <span class="bill-detail-chip" data-chip={chip.key}>{chip.label}{#if chip.minor != null} <Dollars minor={chip.minor} currency={account.currency} exponent={account.exponent} owe={chip.owe === true} />{/if}</span>
             {/each}
           </span>
         {/if}
-        <strong class="money" class:coral={account.side === 'liability'}>{formatMinor(account.balanceMinor, account.currency, account.exponent)}</strong>
+        <Dollars class="account-balance" minor={account.balanceMinor} currency={account.currency} exponent={account.exponent} owe={account.side === 'liability'} />
       </a>
       {#if account.archivedAt}
         <button
@@ -347,8 +342,15 @@
     color: color-mix(in oklab, var(--tone) 62%, #14211c);
   }
 
-  .money {
+  :global(.account-balance) {
     margin-top: auto;
+    align-self: flex-end;
+    text-align: right;
+    width: 100%;
+  }
+
+  .account-id {
+    padding-right: 2.15rem;
   }
 
   .account-star-rule {

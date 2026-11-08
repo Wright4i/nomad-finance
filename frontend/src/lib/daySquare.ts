@@ -6,6 +6,8 @@ export type DayStay = {
   placeName: string;
   arriveOn: string;
   departOn: string;
+  city?: string | null;
+  region?: string | null;
 };
 
 export type DayPayday = {
@@ -48,7 +50,22 @@ export type DayChip = {
   paid: boolean;
 };
 
-function stayCaption(stay: DayStay): string {
+/**
+ * City and state, such as Apache Junction, AZ. Dates stay off that line when a place is known.
+ * A stay with only a city or only a state shows that one. Neither falls back to the date span,
+ * or Stay when the dates are the same day or cannot be read.
+ */
+export function stayCaption(stay: {
+  city?: string | null;
+  region?: string | null;
+  arriveOn: string;
+  departOn: string;
+}): string {
+  const city = (stay.city ?? '').trim();
+  const region = (stay.region ?? '').trim();
+  if (city !== '' && region !== '') return `${city}, ${region}`;
+  if (city !== '') return city;
+  if (region !== '') return region;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(stay.arriveOn) || !/^\d{4}-\d{2}-\d{2}$/.test(stay.departOn)) return 'Stay';
   if (stay.arriveOn === stay.departOn) return 'Stay';
   return `${formatDate(stay.arriveOn)} – ${formatDate(stay.departOn)}`;

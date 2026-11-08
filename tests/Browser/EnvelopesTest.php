@@ -135,7 +135,11 @@ final class EnvelopesTest extends TestCase
             const rent = bills.querySelector('.bill-legend [data-type="rent"]');
             const slice = bills.querySelector('svg.bill-pie [data-type="rent"]');
             const swatch = bills.querySelector('.bill-legend [data-type="rent"] .bill-swatch');
-            const teal = document.querySelector('.teal');
+            const probe = document.createElement('span');
+            probe.style.color = 'var(--teal)';
+            document.body.appendChild(probe);
+            const teal = getComputedStyle(probe).color;
+            probe.remove();
             const monthButtons = [...bills.querySelectorAll('.month-square')].map((el) => {
                 const box = el.getBoundingClientRect();
                 return { text: el.textContent.trim(), width: box.width, height: box.height, top: box.top, left: box.left };
@@ -148,7 +152,7 @@ final class EnvelopesTest extends TestCase
                 billText: bills.innerText,
                 pies: bills.querySelectorAll('svg.bill-pie').length,
                 rentFill: slice ? getComputedStyle(slice).fill : '',
-                teal: teal ? getComputedStyle(teal).color : '',
+                teal,
                 swatch: swatch ? getComputedStyle(swatch).backgroundColor : '',
                 assign: [...envelopes.querySelectorAll('a, button')].some((node) => (node.textContent || '').trim() === 'Assign'),
                 squares: monthButtons.length,
@@ -204,7 +208,7 @@ final class EnvelopesTest extends TestCase
                 const heading = document.querySelector(`h2.group-title[data-group="${name}"]`);
                 const figure = (key) => {
                     const node = heading ? heading.querySelector(`[data-figure="${key}"]`) : null;
-                    return node ? node.innerText.replace(/\s+/g, ' ').trim() : '';
+                    return node ? node.innerText.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').trim() : '';
                 };
                 const label = heading ? heading.querySelector('.group-name') : null;
                 const sums = heading ? heading.querySelector('.group-sums') : null;
@@ -358,7 +362,7 @@ final class EnvelopesTest extends TestCase
         self::assertHardStroke((string) $bars['rent']['nameStroke']);
         self::assertFieldInk($bars['rent']);
         self::assertHardIcon((string) $bars['rent']['glyphFilter']);
-        self::assertFieldInkStaysWhiteInDay();
+        self::assertFieldInkFollowsDay();
         self::assertFalse($bars['rent']['assignedDisabled']);
         self::assertSame('Bill assignments', $bars['rent']['bill']);
         self::assertSame('', $bars['needs']['bill']);
@@ -544,7 +548,14 @@ final class EnvelopesTest extends TestCase
         self::waitForText($raised . ' assigned of');
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Site week', 'active');
-        self::clickLinkContaining('Site week');
+        self::driver()->executeScript(<<<'JS'
+            const article = [...document.querySelectorAll('section[data-section="active"] article')].find((node) => {
+                const strong = node.querySelector('strong');
+                return strong && strong.textContent.trim().startsWith('Site week');
+            });
+            const edit = article ? [...article.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Edit') : null;
+            if (edit) edit.click();
+        JS);
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(<<<'JS'
                 const name = document.querySelector('input[name="name"]');
@@ -955,27 +966,27 @@ final class EnvelopesTest extends TestCase
         return $row;
     }
 
-    private static function assertHardStroke(string $stroke): void
+    private static function assertHardStroke(string $stroke, string $rgb = '0, 0, 0'): void
     {
-        self::assertMatchesRegularExpression('/^1px rgb\(0,\s*0,\s*0\)$/', $stroke);
+        self::assertMatchesRegularExpression('/^1px rgb\(' . str_replace(', ', ',\\s*', $rgb) . '\)$/', $stroke);
     }
 
     /** @param array<string, mixed> $row */
-    private static function assertFieldInk(array $row): void
+    private static function assertFieldInk(array $row, string $color = 'rgb(243, 246, 241)', string $stroke = '0, 0, 0'): void
     {
-        self::assertSame('rgb(255, 255, 255)', $row['labelColor']);
-        self::assertSame('rgb(255, 255, 255)', $row['inputColor']);
-        self::assertHardStroke((string) $row['labelStroke']);
-        self::assertHardStroke((string) $row['inputStroke']);
+        self::assertSame($color, $row['labelColor']);
+        self::assertSame($color, $row['inputColor']);
+        self::assertHardStroke((string) $row['labelStroke'], $stroke);
+        self::assertHardStroke((string) $row['inputStroke'], $stroke);
         if ($row['maximumColor'] !== '') {
-            self::assertSame('rgb(255, 255, 255)', $row['maximumColor']);
-            self::assertHardStroke((string) $row['maximumStroke']);
+            self::assertSame($color, $row['maximumColor']);
+            self::assertHardStroke((string) $row['maximumStroke'], $stroke);
         }
         self::assertSame('none', $row['labelShadow']);
         self::assertSame('none', $row['inputShadow']);
     }
 
-    private static function assertFieldInkStaysWhiteInDay(): void
+    private static function assertFieldInkFollowsDay(): void
     {
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
             WebDriverBy::cssSelector('.theme-pill button[aria-label="Day"]'),
@@ -985,8 +996,8 @@ final class EnvelopesTest extends TestCase
         });
         $light = self::fieldInk('Road cushion');
         self::assertSame('1px rgb(255, 255, 255)', $light['nameStroke']);
-        self::assertNotSame('rgb(255, 255, 255)', $light['nameColor']);
-        self::assertFieldInk($light);
+        self::assertSame('rgb(28, 36, 32)', $light['nameColor']);
+        self::assertFieldInk($light, 'rgb(28, 36, 32)', '255, 255, 255');
         self::driver()->findElement(WebDriverBy::cssSelector('.theme-pill button[aria-label="Night"]'))->click();
         self::wait()->until(function (): bool {
             return self::driver()->executeScript('return document.documentElement.classList.contains("light")') === false;

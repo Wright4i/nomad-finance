@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
@@ -263,7 +264,7 @@ import type { Account, Bill, Category } from '../lib/types';
     <span use:tip={fieldTips.billAmount}>Amount</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input name="amount" inputmode="decimal" bind:value={amount} />
+      <AmountInput name="amount" bind:value={amount} />
     </span>
     {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
   </label>

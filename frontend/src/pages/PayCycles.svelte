@@ -1,11 +1,13 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import DateField from '../components/DateField.svelte';
   import { onMount } from 'svelte';
+  import Dollars from '../components/Dollars.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import { formatChipDate, formatDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { formatChipDate, formatDate, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { fieldTips } from '../lib/fieldTips';
   import { go } from '../lib/nav.svelte.ts';
   import { tip } from '../lib/tip';
@@ -161,11 +163,6 @@
     if (kind === 'hourly') return 'Hourly';
     return 'Fixed';
   }
-
-  function moneyOrDash(minor: number | null): string {
-    if (minor === null) return '—';
-    return formatMinor(minor, session.user?.baseCurrency ?? 'USD');
-  }
 </script>
 
 <div class="grid gap-4">
@@ -218,11 +215,11 @@
               <button class="btn" type="button" onclick={() => void openPayroll(cycle)}>Log Payroll</button>
             </div>
           </div>
-          <p class="pay-period-range m-0">{span(cycle)} | {moneyOrDash(cycle.paycheckMinor)}</p>
+          <p class="pay-period-range m-0">{span(cycle)} | {#if cycle.paycheckMinor === null}—{:else}<Dollars minor={cycle.paycheckMinor} currency={session.user?.baseCurrency ?? 'USD'} />{/if}</p>
           <div class="pay-chips">
             <span class="pay-chip pay-chip-roll">{cycle.rollsOn ? `Roll ${formatChipDate(cycle.rollsOn)}` : 'Open'}</span>
             <span class="pay-chip pay-chip-kind">{kindLabel(cycle.payKind)}</span>
-            <span class="pay-chip pay-chip-month">Monthly {moneyOrDash(cycle.monthlyMinor)}</span>
+            <span class="pay-chip pay-chip-month">Monthly {#if cycle.monthlyMinor === null}—{:else}<Dollars minor={cycle.monthlyMinor} currency={session.user?.baseCurrency ?? 'USD'} />{/if}</span>
           </div>
         </article>
       {/each}
@@ -236,7 +233,7 @@
     <p class="m-0">One amount per payday. A blank amount is not keyed. A keyed amount is the paycheck on that date.</p>
     {#each payrollRows as row (row.payday)}
       <label class="field">
-        <span use:tip={fieldTips.payrollDay}>{formatDate(row.payday)}{row.projectedMinor !== null ? ` · ${formatMinor(row.projectedMinor, session.user?.baseCurrency ?? 'USD')}` : ''}</span>
+        <span use:tip={fieldTips.payrollDay}>{formatDate(row.payday)}{#if row.projectedMinor !== null} · <Dollars minor={row.projectedMinor} currency={session.user?.baseCurrency ?? 'USD'} />{/if}</span>
         {#if payrollCycle?.payKind === 'hourly'}
           <input
             name={`hours-${row.payday}`}
@@ -251,13 +248,9 @@
         {/if}
         <span class="money-input">
           <span class="money-mark" aria-hidden="true">$</span>
-          <input
+          <AmountInput
             name={`amount-${row.payday}`}
-            inputmode="decimal"
-            value={payrollDrafts[row.payday] ?? ''}
-            oninput={(event) => {
-              payrollDrafts[row.payday] = (event.currentTarget as HTMLInputElement).value;
-            }}
+            bind:value={payrollDrafts[row.payday]}
           />
         </span>
         <span class="flex flex-wrap gap-2" role="group" aria-label={`Payroll ${formatDate(row.payday)}`}>

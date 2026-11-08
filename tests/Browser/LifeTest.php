@@ -138,7 +138,7 @@ final class LifeTest extends TestCase
         self::wait()->until(function (): bool {
             $text = self::driver()->findElement(WebDriverBy::cssSelector('.stay-card'))->getText();
 
-            return str_contains($text, 'Lost Dutchman') && str_contains($text, '$140.00 Due Nov 22');
+            return str_contains($text, 'Lost Dutchman') && str_contains($text, '-$140.00 Due Nov 22');
         });
         $balanceColor = self::assertBalanceChipOnStayOne();
         self::click('Next');
@@ -570,16 +570,23 @@ final class LifeTest extends TestCase
 
     private static function choose(string $name, string $label): void
     {
-        self::wait()->until(function () use ($name, $label): bool {
-            $ready = self::driver()->executeScript(
-                'const select = document.querySelector(arguments[0]); if (!select) return false; return [...select.options].some((option) => option.textContent.trim() === arguments[1]);',
-                ['select[name="' . $name . '"]', $label],
-            );
+        $visible = self::wait()->until(function () use ($name, $label): string|false {
+            $ready = self::driver()->executeScript(<<<'JS'
+                const select = document.querySelector(arguments[0]);
+                if (!select) return '';
+                const label = arguments[1];
+                const option = [...select.options].find((item) => {
+                    const text = item.textContent.trim();
+                    return text === label || text.startsWith(label + ' (') || text.startsWith(label + ' -');
+                });
+                return option ? option.textContent.trim() : '';
+            JS, ['select[name="' . $name . '"]', $label]);
 
-            return $ready === true;
+            return is_string($ready) && $ready !== '' ? $ready : false;
         });
+        self::assertIsString($visible);
         $element = self::driver()->findElement(WebDriverBy::name($name));
-        (new WebDriverSelect($element))->selectByVisibleText($label);
+        (new WebDriverSelect($element))->selectByVisibleText($visible);
     }
 
     private static function assertCollapsedSidebar(): void
@@ -878,7 +885,8 @@ final class LifeTest extends TestCase
     private static function assertBalanceChipOnStayOne(): string
     {
         $chip = self::chipOnCard('.balance-due-chip');
-        self::assertSame('$140.00 Due Nov 22', $chip['text']);
+        self::assertSame('-$140.00 Due Nov 22', $chip['text']);
+        self::assertTrue($chip['moneyFollows']);
         self::assertStringNotContainsString('2026', $chip['text']);
         self::assertTrue($chip['icon']);
         self::assertStringContainsString('M12 5v13.5', $chip['path']);
@@ -895,7 +903,8 @@ final class LifeTest extends TestCase
     private static function assertFuelChipOnStayTwo(string $balanceColor): void
     {
         $chip = self::chipOnCard('.fuel-amount-chip');
-        self::assertMatchesRegularExpression('/^Fuel \$\d[\d,]*\.\d{2}$/', $chip['text']);
+        self::assertMatchesRegularExpression('/^Fuel -\$\d[\d,]*\.\d{2}$/', $chip['text']);
+        self::assertTrue($chip['moneyFollows']);
         self::assertTrue($chip['icon']);
         self::assertStringContainsString('M12 19.5c2.6', $chip['path']);
         self::assertSame('rgb(154,103,9)', $chip['color']);
@@ -903,7 +912,8 @@ final class LifeTest extends TestCase
         self::assertSame($chip['ink'], $chip['iconInk']);
         self::assertSame(0, $chip['stray']);
         $balance = self::chipOnCard('.balance-due-chip');
-        self::assertSame('$75.00 Due Dec 1', $balance['text']);
+        self::assertSame('-$75.00 Due Dec 1', $balance['text']);
+        self::assertTrue($balance['moneyFollows']);
         self::assertStringNotContainsString('2026', $balance['text']);
         self::assertStringNotContainsString('$100.00', $balance['text']);
         self::assertSame('rgb(31,95,147)', $balance['color']);
@@ -915,6 +925,7 @@ final class LifeTest extends TestCase
         self::assertSame(0, $mpg['stray']);
         $price = self::chipOnCard('.fuel-price-chip');
         self::assertSame('$4.00/gal', $price['text']);
+        self::assertTrue($price['moneyFollows']);
         self::assertTrue($price['icon']);
         self::assertSame('rect', $price['drawn']);
         self::assertSame('rgb(194,65,85)', $price['color']);
@@ -953,15 +964,22 @@ final class LifeTest extends TestCase
                 const box = icon ? icon.getBoundingClientRect() : null;
                 const path = icon ? icon.querySelector('path') : null;
                 const drawn = icon ? icon.querySelector('path, rect, circle, ellipse') : null;
+                const money = chip.querySelector('.money');
+                const moneyStyle = money ? getComputedStyle(money) : null;
+                const chipStyle = getComputedStyle(chip);
                 return {
                     text: chip.innerText.replace(/\s+/g, ' ').trim(),
-                    color: getComputedStyle(chip).backgroundColor.replace(/\s+/g, ''),
-                    ink: getComputedStyle(chip).color.replace(/\s+/g, ''),
+                    color: chipStyle.backgroundColor.replace(/\s+/g, ''),
+                    ink: chipStyle.color.replace(/\s+/g, ''),
                     iconInk: icon ? getComputedStyle(icon).color.replace(/\s+/g, '') : '',
                     icon: Boolean(icon && drawn && box && box.width >= 8 && box.height >= 8),
                     path: path ? path.getAttribute('d') || '' : '',
                     drawn: drawn ? drawn.tagName.toLowerCase() : '',
                     stray: document.querySelectorAll('button ' + arguments[0]).length,
+                    moneyFollows: Boolean(moneyStyle)
+                        && moneyStyle.color === chipStyle.color
+                        && moneyStyle.fontFamily === chipStyle.fontFamily
+                        && moneyStyle.fontSize === chipStyle.fontSize,
                 };
             JS,
             [$selector],
@@ -969,6 +987,52 @@ final class LifeTest extends TestCase
         self::assertIsArray($chip);
 
         return $chip;
+    }
+
+    /** @return array{total:string,deposit:string,due:string,totalTone:string,depositTone:string,dueTone:string} */
+    private static function lodgingFigures(): array
+    {
+        $row = self::driver()->executeScript(<<<'JS'
+            const heading = [...document.querySelectorAll('h2')].find((node) => node.textContent.trim() === 'Lodging');
+            const line = heading && heading.parentElement ? heading.parentElement.querySelector('p') : null;
+            if (!line) return null;
+            const probe = document.createElement('span');
+            document.body.appendChild(probe);
+            const token = (paint) => {
+                const named = ['--teal', '--coral', '--muted'].find((name) => {
+                    probe.style.color = `var(${name})`;
+                    return getComputedStyle(probe).color === paint;
+                });
+                return named || paint;
+            };
+            const read = (index) => {
+                const money = line.querySelectorAll('.money')[index];
+                if (!money) return { text: '', tone: '' };
+                return { text: money.textContent.trim(), tone: token(getComputedStyle(money).color) };
+            };
+            const total = read(0);
+            const deposit = read(1);
+            const due = read(2);
+            probe.remove();
+            return {
+                total: total.text,
+                deposit: deposit.text,
+                due: due.text,
+                totalTone: total.tone,
+                depositTone: deposit.tone,
+                dueTone: due.tone,
+            };
+        JS);
+        self::assertIsArray($row);
+
+        return [
+            'total' => (string) $row['total'],
+            'deposit' => (string) $row['deposit'],
+            'due' => (string) $row['due'],
+            'totalTone' => (string) $row['totalTone'],
+            'depositTone' => (string) $row['depositTone'],
+            'dueTone' => (string) $row['dueTone'],
+        ];
     }
 
     /** @return array{text:string,fuel:bool,mpg:bool,price:bool,miles:bool} */
@@ -1287,7 +1351,14 @@ final class LifeTest extends TestCase
         self::assertStringContainsString('Lost Dutchman', $paint['cardText']);
         self::assertStringContainsString('Nov 20, 2026', $paint['cardText']);
         self::assertStringContainsString('Nov 24, 2026', $paint['cardText']);
-        self::assertStringContainsString('$140.00 Due Nov 22', $paint['cardText']);
+        self::assertStringContainsString('-$140.00 Due Nov 22', $paint['cardText']);
+        $lodging = self::lodgingFigures();
+        self::assertSame('-$140.00', $lodging['total']);
+        self::assertSame('$0.00', $lodging['deposit']);
+        self::assertSame('-$140.00', $lodging['due']);
+        self::assertSame('--coral', $lodging['totalTone']);
+        self::assertSame('--muted', $lodging['depositTone']);
+        self::assertSame('--coral', $lodging['dueTone']);
         self::assertStringNotContainsString('Nov 22, 2026', $paint['cardText']);
         self::assertFalse($paint['cardHasTitle']);
         self::assertSame('tide', $paint['arriveIn']);

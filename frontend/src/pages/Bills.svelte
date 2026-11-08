@@ -1,11 +1,13 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { billDays } from '../lib/billDays';
-  import { formatDate, formatMinor, todayISO } from '../lib/money';
+  import Dollars from '../components/Dollars.svelte';
+  import { formatDate, todayISO } from '../lib/money';
   import { go, route } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
@@ -72,6 +74,7 @@ import type { Account, Bill } from '../lib/types';
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
   let epoch = 0;
   let booting = $state(true);
+  let allOpen = $derived(rows(shown).length > 0 && rows(shown).every((bill) => open[bill.id] === true));
 
   function query(section: SectionKey, count: number): string {
     const params = new URLSearchParams({ section, chunks: String(count) });
@@ -185,6 +188,14 @@ import type { Account, Bill } from '../lib/types';
     open = { ...open, [id]: !open[id] };
   }
 
+  function toggleAll(): void {
+    const ids = rows(shown).map((bill) => bill.id);
+    const next = { ...open };
+    const opening = !ids.every((id) => open[id]);
+    for (const id of ids) next[id] = opening;
+    open = next;
+  }
+
   function kind(bill: Bill): string {
     if ((bill.type === 'other' || bill.type === 'misc') && bill.otherLabel) return bill.otherLabel;
     return bill.type;
@@ -222,7 +233,8 @@ import type { Account, Bill } from '../lib/types';
   {#if booting}
     <Spinner />
   {:else}
-  <div class="bill-tabs" role="tablist" aria-label="Bill status">
+  <div class="bill-tabs">
+    <div role="tablist" aria-label="Bill status">
     {#each tabs as tab (tab.key)}
       <button
         class="bill-tab"
@@ -237,6 +249,8 @@ import type { Account, Bill } from '../lib/types';
         }}
       >{tab.title}</button>
     {/each}
+    </div>
+    <button class="btn bill-expand" type="button" disabled={rows(shown).length === 0} onclick={toggleAll}>{allOpen ? 'Collapse' : 'Expand all'}</button>
   </div>
   <form class="bill-filter" role="search" aria-label="Filter bills" onsubmit={(event) => event.preventDefault()}>
     <label class="field">
@@ -263,7 +277,7 @@ import type { Account, Bill } from '../lib/types';
     </label>
     <label class="field">
       <span>Amount</span>
-      <input name="billAmount" inputmode="decimal" bind:value={filterAmount} oninput={rememberFilters} />
+      <AmountInput name="billAmount" bind:value={filterAmount} oninput={rememberFilters} onblur={rememberFilters} />
     </label>
   </form>
   <Note bind:message />
@@ -287,34 +301,34 @@ import type { Account, Bill } from '../lib/types';
           <div class="bill-columns">
             {#each day.bills as bill (`${bill.id}-${bill.shownOn}`)}
               <article class="card stripe bill-card grid gap-0" data-open={open[bill.id] ? 'true' : 'false'} style={`--tone: var(--tone-${bill.type})`}>
-                <div class="bill-slim">
-                  <a class="bill-slim-main" href={`/bills/${bill.id}`} onclick={(event) => { event.preventDefault(); go(`/bills/${bill.id}`); }}>
+                <button
+                  class="bill-slim"
+                  type="button"
+                  aria-expanded={open[bill.id] ? 'true' : 'false'}
+                  aria-label={open[bill.id] ? `Hide details for ${bill.name}` : `Show details for ${bill.name}`}
+                  onclick={() => toggle(bill.id)}
+                >
+                  <span class="bill-slim-main">
                     <Glyph name={bill.type} />
                     <span class="bill-slim-text">
                       <strong>{bill.name}</strong>
                       {#if bill.locked}<Glyph name="lock" mini />{/if}
                       <span class="type-label">{kind(bill)}</span>
                     </span>
-                  </a>
-                  <strong class="money">{formatMinor(bill.amountMinor, bill.currency, bill.exponent)}</strong>
-                  <button
-                    class="bill-open"
-                    type="button"
-                    aria-expanded={open[bill.id] ? 'true' : 'false'}
-                    aria-label={open[bill.id] ? `Hide details for ${bill.name}` : `Show details for ${bill.name}`}
-                    onclick={() => toggle(bill.id)}
-                  >
-                    <span class="bill-chevron"></span>
-                  </button>
-                </div>
+                  </span>
+                  <Dollars minor={bill.amountMinor} currency={bill.currency} exponent={bill.exponent} owe />
+                  <span class="bill-open" aria-hidden="true"><span class="bill-chevron"></span></span>
+                </button>
                 <div class="bill-more" hidden={!open[bill.id]}>
                   <div class="bill-detail-chips">
-                    <span class="bill-detail-chip" data-chip="account">{bill.accountName}</span>
+                    <span class="bill-detail-chip" data-chip="account" style={`--tone: var(--tone-${bill.accountType})`}>{bill.accountName}</span>
+                    {#if bill.accountHolder}<span class="bill-detail-chip" data-chip="holder">{bill.accountHolder}</span>{/if}
                     {#if bill.categoryName}<span class="bill-detail-chip" data-chip="bucket">{bill.categoryName}</span>{/if}
-                    <span class="bill-detail-chip" data-chip="autopay">{bill.autopay ? 'Autopay' : 'Manual'}</span>
-                    <span class="bill-detail-chip" data-chip="recurrence">{recurrenceLabel(bill)}</span>
+                    <span class="bill-detail-chip" data-chip={bill.autopay ? 'autopay' : 'manual'}>{bill.autopay ? 'Autopay' : 'Manual'}</span>
+                    <span class="bill-detail-chip" data-chip={bill.recurrence}>{recurrenceLabel(bill)}</span>
                   </div>
                   <div class="flex flex-wrap gap-2">
+                    <button class="btn" type="button" onclick={() => go(`/bills/${bill.id}`)}>Edit</button>
                     {#if !unpay && bill.status === 'active'}
                       <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
                       {#if !bill.locked && bill.recurrence === 'once'}

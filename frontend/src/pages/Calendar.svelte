@@ -8,7 +8,9 @@
   import { calendarBillColor, calendarBillShown, calendarBillSide } from '../lib/calendarBill';
   import { fitThree } from '../lib/fitThree';
   import { monthCells, shiftYearMonth } from '../lib/dates';
-  import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { stayCaption } from '../lib/daySquare';
+  import Dollars from '../components/Dollars.svelte';
+  import { dollarClass, exponentOf, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import type { CalendarEntry, Trip } from '../lib/types';
@@ -72,12 +74,6 @@
   function weekdayName(date: string): string {
     const [year, monthNumber, dayNumber] = date.split('-').map(Number);
     return weekdays[new Date(year, monthNumber - 1, dayNumber).getDay()];
-  }
-
-  function stayCaption(trip: Trip): string {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(trip.arriveOn) || !/^\d{4}-\d{2}-\d{2}$/.test(trip.departOn)) return 'Stay';
-    if (trip.arriveOn === trip.departOn) return 'Stay';
-    return `${formatDate(trip.arriveOn)} – ${formatDate(trip.departOn)}`;
   }
 
   function dayStays(date: string): Trip[] {
@@ -350,7 +346,7 @@
                         <Glyph name={mark.type} mini />
                         <span class="bill-chip-name">{mark.name}</span>
                       </span>
-                      <span class="bill-chip-amount money">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</span>
+                      <span class="bill-chip-amount money {dollarClass(mark.amountMinor)}">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</span>
                     </span>
                   {/each}
                 {/if}
@@ -360,7 +356,7 @@
                       <Glyph name={mark.type} mini />
                       <span class="bill-chip-name">{mark.name}</span>
                     </span>
-                    <span class="bill-chip-amount money">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</span>
+                    <span class="bill-chip-amount money {dollarClass(mark.amountMinor)}">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</span>
                   </span>
                 {/each}
               </span>
@@ -381,11 +377,11 @@
     <div class="month-total">
       <p class="kicker m-0">Total</p>
       <p class="month-total-figures m-0">
-        <span class="month-income">Income <strong class="money">{formatMinor(totals.income, baseCurrency, baseExponent)}</strong></span>
-        <span class="month-debt">Debt <strong class="money">{formatMinor(totals.debt, baseCurrency, baseExponent)}</strong></span>
-        <span class="month-net">Net <strong class="money">{formatMinor(totals.net, baseCurrency, baseExponent)}</strong></span>
+        <span class="month-income">Income <Dollars minor={totals.income} currency={baseCurrency} exponent={baseExponent} /></span>
+        <span class="month-debt">Debt <Dollars minor={totals.debt} currency={baseCurrency} exponent={baseExponent} owe /></span>
+        <span class="month-net">Net <Dollars minor={totals.net} currency={baseCurrency} exponent={baseExponent} /></span>
         <span class="month-rule" aria-hidden="true"></span>
-        <span class="month-paid">Paid <strong class="money">{formatMinor(totals.paid, baseCurrency, baseExponent)}</strong></span>
+        <span class="month-paid">Paid <Dollars minor={totals.paid} currency={baseCurrency} exponent={baseExponent} plain /></span>
         {#if totals.leftOut.length > 0}
           <span class="month-bills">Left out {totals.leftOut.join(', ')}</span>
         {/if}
@@ -431,7 +427,7 @@
               <span class="block muted text-sm">Income</span>
             </span>
           </span>
-          <strong class="money teal">{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</strong>
+          <Dollars minor={mark.amountMinor} currency={mark.currency} exponent={mark.exponent} plain />
         </a>
       {/each}
     </section>
@@ -450,7 +446,7 @@
               <span class="block muted text-sm">{calendarBillSide(mark.status, mark.kind) === 'paid' ? 'Paid' : 'Due'} · {mark.type}</span>
             </span>
           </span>
-          <strong class="money" class:lilac={calendarBillColor(mark.status, mark.kind) === '--lilac'} class:coral={calendarBillColor(mark.status, mark.kind) === '--coral'}>{formatMinor(mark.amountMinor, mark.currency, mark.exponent)}</strong>
+          <Dollars minor={mark.amountMinor} currency={mark.currency} exponent={mark.exponent} plain />
         </a>
       {/each}
     </section>

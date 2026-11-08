@@ -31,7 +31,7 @@ final class BillService
     public function list(): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT b.*, a.name AS account_name, c.name AS category_name
+            "SELECT b.*, a.name AS account_name, a.type AS account_type, a.holder AS account_holder, c.name AS category_name
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              LEFT JOIN categories c ON c.id = b.category_id
@@ -131,7 +131,7 @@ final class BillService
     public function get(int $id): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT b.*, a.name AS account_name, c.name AS category_name
+            'SELECT b.*, a.name AS account_name, a.type AS account_type, a.holder AS account_holder, c.name AS category_name
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              LEFT JOIN categories c ON c.id = b.category_id
@@ -774,6 +774,16 @@ final class BillService
         return $row;
     }
 
+    private function storedHolder(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
     private function asInt(mixed $value): ?int
     {
         if (is_int($value)) {
@@ -801,6 +811,8 @@ final class BillService
             'otherLabel' => $row['other_label'],
             'accountId' => (int) $row['account_id'],
             'accountName' => $row['account_name'],
+            'accountType' => is_string($row['account_type'] ?? null) ? $row['account_type'] : '',
+            'accountHolder' => $this->storedHolder($row['account_holder'] ?? null),
             'currency' => 'USD',
             'exponent' => 2,
             'amountMinor' => (int) $row['amount_minor'],
@@ -825,7 +837,7 @@ final class BillService
     /** @return list<array<string, mixed>> */
     private function listed(bool $includeHidden): array
     {
-        $sql = 'SELECT b.*, a.name AS account_name, c.name AS category_name
+        $sql = 'SELECT b.*, a.name AS account_name, a.type AS account_type, a.holder AS account_holder, c.name AS category_name
              FROM bills b
              JOIN accounts a ON a.id = b.account_id
              LEFT JOIN categories c ON c.id = b.category_id

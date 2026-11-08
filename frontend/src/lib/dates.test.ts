@@ -1,11 +1,27 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatDate, formatMonth, formatSlashSpan, isoToInput, maskDateInput, monthCells, monthOf, parseDateInput, shiftYearMonth } from './dates.ts';
+import { formatDate, formatMonth, formatSlashSpan, formatStaySpan, isoToInput, maskDateInput, monthCells, monthOf, parseDateInput, shiftYearMonth } from './dates.ts';
 
 test('a full date reads as a short month, a day, and a four-digit year', () => {
   assert.equal(formatDate('2026-11-05'), 'Nov 5, 2026');
   assert.equal(formatDate('2026-11-01'), 'Nov 1, 2026');
   assert.equal(formatDate('2027-02-01'), 'Feb 1, 2027');
+});
+
+test('a stay list drops the year and keeps an en dash', () => {
+  assert.equal(formatStaySpan('2026-11-20', '2026-11-24'), 'Nov 20 – Nov 24');
+  assert.equal(formatStaySpan('2026-11-24', '2026-12-01'), 'Nov 24 – Dec 1');
+  assert.equal(formatStaySpan('2026-11-20', '2026-11-20'), 'Nov 20 – Nov 20');
+  assert.equal(formatStaySpan('2026-12-12', '2027-01-08'), 'Dec 12 – Jan 8');
+  assert.equal(formatStaySpan('2026-12-31', '2027-01-01'), 'Dec 31 – Jan 1');
+});
+
+test('a stay list keeps the year when the month and day would read as a shorter stay', () => {
+  assert.equal(formatStaySpan('2026-11-20', '2027-11-24'), 'Nov 20, 2026 – Nov 24, 2027');
+  assert.equal(formatStaySpan('2026-11-20', '2027-11-20'), 'Nov 20, 2026 – Nov 20, 2027');
+  assert.equal(formatStaySpan('2026-01-01', '2027-01-02'), 'Jan 1, 2026 – Jan 2, 2027');
+  assert.equal(formatStaySpan('2026-11-20', '2028-01-08'), 'Nov 20, 2026 – Jan 8, 2028');
+  assert.equal(formatStaySpan('nope', '2026-11-20'), 'nope – Nov 20, 2026');
 });
 
 test('a collapsed period reads as month/day-month/day', () => {

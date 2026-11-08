@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import AmountInput from '../components/AmountInput.svelte';
   import Celebrate from '../components/Celebrate.svelte';
   import Glyph from '../components/Glyph.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
+  import Dollars from '../components/Dollars.svelte';
   import { formatBps, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { session } from '../lib/session.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
@@ -83,7 +85,8 @@
   }
 
   function optionLabel(account: Account): string {
-    return `${accountLabel(account)} - ${money(account.balanceMinor)}`;
+    const shown = account.side === 'liability' ? -account.balanceMinor : account.balanceMinor;
+    return `${accountLabel(account)} - ${money(shown)}`;
   }
 
   function amountMinor(): number {
@@ -91,22 +94,16 @@
     return parsed ?? 0;
   }
 
-  function chipsFor(account: Account): { key: string; label: string }[] {
-    const chips: { key: string; label: string }[] = [];
+  function chipsFor(account: Account): { key: string; label: string; minor?: number; owe?: boolean }[] {
+    const chips: { key: string; label: string; minor?: number; owe?: boolean }[] = [];
     if ((account.type === 'credit' || account.type === 'fuel') && account.creditLimitMinor !== null) {
-      chips.push({
-        key: 'limit',
-        label: `Credit limit ${formatMinor(account.creditLimitMinor, account.currency, account.exponent)}`,
-      });
+      chips.push({ key: 'limit', label: 'Credit limit', minor: account.creditLimitMinor });
     }
     if (account.interestBps !== null) {
       chips.push({ key: 'apr', label: `APR ${formatBps(account.interestBps)}%` });
     }
     if (account.side === 'liability' && account.minimumDueMinor !== null) {
-      chips.push({
-        key: 'minimum',
-        label: `Minimum ${formatMinor(account.minimumDueMinor, account.currency, account.exponent)}`,
-      });
+      chips.push({ key: 'minimum', label: 'Minimum', minor: account.minimumDueMinor, owe: true });
     }
     if (account.bankAutopay && account.autopayChoice === 'minimum') {
       chips.push({ key: 'autopay-min', label: 'Autopay min' });
@@ -231,6 +228,11 @@
     modalMessage = '';
     if (confirmDialog?.open) confirmDialog.close();
     confirming = false;
+  }
+
+  function noteAmount(): void {
+    if (mode === 'card') fitSelection();
+    closeConfirm();
   }
 
   async function openConfirm(): Promise<void> {
@@ -375,11 +377,11 @@
     {#if chips.length > 0}
       <span class="bill-detail-chips">
         {#each chips as chip (chip.key)}
-          <span class="bill-detail-chip" data-chip={chip.key}>{chip.label}</span>
+          <span class="bill-detail-chip" data-chip={chip.key}>{chip.label}{#if chip.minor != null} <Dollars minor={chip.minor} currency={account.currency} exponent={account.exponent} owe={chip.owe === true} />{/if}</span>
         {/each}
       </span>
     {/if}
-    <strong class="money" class:coral={account.side === 'liability'}>{money(account.balanceMinor)}</strong>
+    <Dollars class="account-balance" minor={account.balanceMinor} currency={account.currency} exponent={account.exponent} owe={account.side === 'liability'} />
   </article>
 {/snippet}
 
@@ -398,7 +400,7 @@
           <path d="M62 12 L112 40 L62 68" stroke="url(#transfer-arrow-fill)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </span>
-      <p class="transfer-amount money m-0">{money(amount)}</p>
+      <p class="transfer-amount m-0"><Dollars minor={amount} currency={currency} /></p>
     </div>
   </div>
 {/snippet}
@@ -409,10 +411,10 @@
       <Glyph name={account.type} />
       <strong>{account.name}</strong>
       <span class="account-institution">{account.institution ?? ''}</span>
-      <span class="money">{money(account.balanceMinor)}</span>
+      <Dollars minor={account.balanceMinor} currency={account.currency} exponent={account.exponent} owe={account.side === 'liability'} />
     </div>
     {#if nextBalance !== null}
-      <p class="transfer-after">After {money(nextBalance)}</p>
+      <p class="transfer-after">After <Dollars minor={nextBalance} currency={account.currency} exponent={account.exponent} owe={account.side === 'liability'} /></p>
     {/if}
   </div>
 {/snippet}
@@ -465,8 +467,8 @@
               </span>
               <span class="tank-copy tank-figures">
                 <span>Payment</span>
-                <strong class="money">{money(paymentMinor)}</strong>
-                <span>Buckets {money(selectedMinor)}</span>
+                <Dollars minor={paymentMinor} currency={currency} />
+                <span>Buckets <Dollars minor={selectedMinor} currency={currency} /></span>
                 <span aria-live="polite">{waterState}</span>
               </span>
             </article>
@@ -494,7 +496,7 @@
             >
               <strong use:tip={fieldTips.uncovered}>Not covered by buckets</strong>
               <span class="muted text-sm">Calculated from Total payment</span>
-              <strong class="money">{money(beyondMinor)}</strong>
+              <Dollars minor={beyondMinor} currency={currency} />
             </button>
           </div>
         {/if}
@@ -523,7 +525,7 @@
                 {#if charge.categoryName && charge.categoryName !== charge.name}
                   <span class="tank-copy">{charge.name}</span>
                 {/if}
-                <span class="tank-copy money">{money(charge.amountMinor)}</span>
+                <span class="tank-copy"><Dollars minor={charge.amountMinor} currency={currency} owe /></span>
               </button>
             {/each}
           </div>
@@ -532,7 +534,7 @@
           <span use:tip={fieldTips.totalPayment}>Total payment</span>
           <span class="money-input">
             <span class="money-mark" aria-hidden="true">$</span>
-            <input name="amount" inputmode="decimal" bind:value={amountText} oninput={() => { fitSelection(); closeConfirm(); }} />
+            <AmountInput name="amount" bind:value={amountText} oninput={() => { fitSelection(); closeConfirm(); }} onblur={noteAmount} />
           </span>
         </label>
         <button class="btn primary" type="button" disabled={sourceId === '' || paymentMinor < 1 || !cardChosen} onclick={() => void openConfirm()}>Review</button>
@@ -566,7 +568,7 @@
         <span use:tip={fieldTips.transferAmount}>Amount</span>
         <span class="money-input">
           <span class="money-mark" aria-hidden="true">$</span>
-          <input name="moveAmount" inputmode="decimal" bind:value={amountText} oninput={() => closeConfirm()} />
+          <AmountInput name="moveAmount" bind:value={amountText} oninput={() => closeConfirm()} onblur={noteAmount} />
         </span>
       </label>
       <button
@@ -589,7 +591,7 @@
   <div class="modal-body">
     <h2 id="transfer-confirm-title" class="m-0 text-2xl">{mode === 'card' ? 'Pay this card?' : 'Move this money?'}</h2>
     {#if mode === 'card' && cardAccount && sourceAccount}
-      <p class="m-0">You may now post a payment of {money(paymentMinor)} to {cardAccount.name} from {sourceAccount.name} after hitting Confirm.</p>
+      <p class="m-0">You may now post a payment of <Dollars minor={paymentMinor} currency={currency} /> to {cardAccount.name} from {sourceAccount.name} after hitting Confirm.</p>
       <div class="pay-review" style={`--from: var(--tone-${sourceAccount.type}); --to: var(--tone-${cardAccount.type})`}>
       <section
         class="transfer-scene"
@@ -610,10 +612,10 @@
             {/if}
           </div>
           {#if selectedMinor > 0}
-            <p class="pay-note m-0"><span class="pay-swatch buckets" aria-hidden="true"></span>Buckets {money(selectedMinor)}. These bills are marked paid and their buckets drop. That does not move more cash.</p>
+            <p class="pay-note m-0"><span class="pay-swatch buckets" aria-hidden="true"></span>Buckets <Dollars minor={selectedMinor} currency={currency} />. These bills are marked paid and their buckets drop. That does not move more cash.</p>
           {/if}
           {#if beyondMinor > 0}
-            <p class="pay-note m-0"><span class="pay-swatch beyond" aria-hidden="true"></span>Beyond the buckets {money(beyondMinor)}. This is the rest of the same payment.</p>
+            <p class="pay-note m-0"><span class="pay-swatch beyond" aria-hidden="true"></span>Beyond the buckets <Dollars minor={beyondMinor} currency={currency} />. This is the rest of the same payment.</p>
           {:else}
             <p class="pay-note m-0">The buckets cover this payment. Available to assign stays the same.</p>
           {/if}
@@ -624,7 +626,7 @@
         <section class="grid gap-2">
           <h3 class="m-0 text-xl">Marked paid</h3>
           {#each selectedCharges as charge (charge.id)}
-            <p class="source-row pay-note m-0"><span>{charge.categoryName || charge.name} · {charge.name}</span><strong>{money(charge.amountMinor)}</strong></p>
+            <p class="source-row pay-note m-0"><span>{charge.categoryName || charge.name} · {charge.name}</span><Dollars minor={charge.amountMinor} currency={currency} owe /></p>
           {/each}
         </section>
       {/if}
@@ -642,7 +644,7 @@
         {@render flowEnd(destinationAccount, accountShort > 0 || !movePreview ? null : destinationAccount.balanceMinor + movePreview.amountMinor)}
       </section>
       {#if accountShort > 0}
-        <p class="m-0" style="color: var(--coral)">Short {money(accountShort)}. You are asking for more than this account holds.</p>
+        <p class="m-0">Short <Dollars minor={accountShort} currency={currency} owe />. You are asking for more than this account holds.</p>
       {/if}
     {/if}
     {#if modalMessage}
@@ -662,7 +664,7 @@
 <dialog class="modal" bind:this={postedDialog} data-posted aria-label="Payment posted" onclose={() => { posted = null; }}>
   <div class="modal-body">
     {#if posted}
-      <p class="m-0">You may now post a payment of {money(posted.amount)} to {posted.card} from {posted.from} after hitting Confirm.</p>
+      <p class="m-0">You may now post a payment of <Dollars minor={posted.amount} currency={currency} /> to {posted.card} from {posted.from} after hitting Confirm.</p>
     {/if}
   </div>
   <div class="modal-actions">
@@ -864,7 +866,7 @@
     color: color-mix(in oklab, var(--tone) 62%, #14211c);
   }
 
-  .money {
+  :global(.account-balance) {
     margin-top: auto;
   }
 </style>

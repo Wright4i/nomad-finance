@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
@@ -203,7 +204,7 @@
       <span use:tip={fieldTips.bucketAmount}>Amount</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
-        <input name="targetAmount" inputmode="decimal" bind:value={targetAmount} />
+        <AmountInput name="targetAmount" bind:value={targetAmount} exponent={exponentOf(session.user?.baseCurrency ?? 'USD')} />
       </span>
       {#if fields.targetAmount}<em>{fields.targetAmount}</em>{/if}
     </label>

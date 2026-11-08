@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
@@ -309,12 +310,13 @@ import type { Account, Trip } from '../lib/types';
     <span use:tip={fieldTips.stayTotal}>Total</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input
+      <AmountInput
         name="total"
-        inputmode="decimal"
+        {exponent}
         bind:value={total}
         oninput={(event) => {
-          amountDue = event.currentTarget.value;
+          const input = event.currentTarget;
+          if (input instanceof HTMLInputElement) amountDue = input.value;
         }}
       />
     </span>
@@ -324,7 +326,7 @@ import type { Account, Trip } from '../lib/types';
     <span use:tip={fieldTips.stayAmountDue}>Amount due</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input name="amountDue" inputmode="decimal" bind:value={amountDue} />
+      <AmountInput name="amountDue" {exponent} bind:value={amountDue} />
     </span>
     {#if fields.amountDueMinor}<em>{fields.amountDueMinor}</em>{/if}
   </label>

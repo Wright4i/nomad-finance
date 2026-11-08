@@ -108,13 +108,16 @@ final class CalendarTest extends TestCase
         self::clickLink('Calendar');
         self::openMonth('2026-11');
         self::waitForText('Lost Dutchman');
-        self::waitForText('Nov 20, 2026 – Nov 24, 2026');
+        self::waitForText('Apache Junction, AZ');
         self::waitForText('Camp host');
         self::waitForText('America the Beautiful');
         $marks = self::chipMarks();
         self::assertSame('M16.2 8.2A5.2 5.2 0 1 0 17 12M17 7.2V11h-3.6', $marks['income']);
         self::assertSame('M4 14.5 20 9.5l-7 1.2L10 16.5l1.4-4.2L4 14.5z', $marks['bill']);
         self::assertSame(self::TREE, $marks['stay']);
+        self::assertSame('Apache Junction, AZ', $marks['stayText']);
+        self::assertTrue($marks['incomeMoney']);
+        self::assertTrue($marks['billMoney']);
         self::assertTrue($marks['incomeInk']);
         self::assertTrue($marks['billInk']);
         self::assertSame('--coral', $marks['billFill']);
@@ -139,6 +142,12 @@ final class CalendarTest extends TestCase
         self::assertSame(1, self::chipCount('2026-11-04', 'Metered electric'));
         self::assertSame('--coral', self::chipFill('2026-11-11', 'Metered electric'));
         self::assertStringContainsString('$58.40', self::paidColumn());
+        self::assertStringNotContainsString('-$', self::paidColumn());
+        $bar = self::totalTones();
+        self::assertSame('--muted', $bar['paid']);
+        self::assertSame('--teal', $bar['income']);
+        self::assertSame('--coral', $bar['debt']);
+        self::assertContains($bar['net'], ['--teal', '--coral', '--muted']);
         self::setFilter('Show Unpaid Bills', false);
         self::assertSame('--lilac', self::chipFill('2026-11-04', 'Metered electric'));
         self::assertSame('', self::chipFill('2026-11-11', 'Metered electric'));
@@ -168,7 +177,9 @@ final class CalendarTest extends TestCase
         self::clickDay('2026-11-24');
         $depart = self::dialogText();
         self::assertStringContainsString('Lost Dutchman', $depart);
-        self::assertStringContainsString('Nov 20, 2026 – Nov 24, 2026', $depart);
+        self::assertStringContainsString('Apache Junction, AZ', $depart);
+        self::assertStringContainsString('Lake Havasu City, AZ', $depart);
+        self::assertStringNotContainsString('Nov 20, 2026 – Nov 24, 2026', $depart);
         self::assertStringContainsString('No income this day.', $depart);
         self::assertStringContainsString('Cattail Cove', $depart);
         self::assertStringContainsString('$175.00', $depart);
@@ -225,11 +236,11 @@ final class CalendarTest extends TestCase
         self::assertTrue(self::chipInk('2026-10-15', 'October site'));
         self::clickDay('2026-10-01');
         self::assertStringContainsString('Urgent care', self::dialogText());
-        self::assertSame('--lilac', self::dialogAmountTone('Bills'));
+        self::assertMatchesRegularExpression('/-\$[\d,]+\.\d{2}/', self::dialogText());
         self::click('Close');
         self::clickDay('2026-10-15');
         self::assertStringContainsString('October site', self::dialogText());
-        self::assertSame('--coral', self::dialogAmountTone('Bills', 'October site'));
+        self::assertMatchesRegularExpression('/-\$[\d,]+\.\d{2}/', self::dialogText());
         self::click('Close');
 
         self::setFilter('Show Unpaid Bills', false);
@@ -268,9 +279,14 @@ final class CalendarTest extends TestCase
         self::assertNotContains('Unpay', $actions['active']);
         self::assertContains('Unpay', $actions['paid']);
         self::assertNotContains('Mark paid', $actions['paid']);
-        self::wait()->until(
-            WebDriverExpectedCondition::elementToBeClickable(WebDriverBy::partialLinkText('Metered electric'))
-        )->click();
+        self::driver()->executeScript(<<<'JS'
+            const article = [...document.querySelectorAll('section[data-section="active"] article')].find((node) => {
+                const strong = node.querySelector('strong');
+                return strong && strong.textContent.trim().startsWith('Metered electric');
+            });
+            const edit = article ? [...article.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Edit') : null;
+            if (edit) edit.click();
+        JS);
         self::waitForText('Save bill');
         $open = self::driver()->executeScript(<<<'JS'
             return [...document.querySelectorAll('button')].map((node) => node.textContent.trim());
@@ -609,7 +625,7 @@ final class CalendarTest extends TestCase
         return $text;
     }
 
-    /** @return array{income:string,bill:string,incomeInk:bool,billInk:bool,billFill:string,stay:list<string>,stayInk:bool,stayIcons:int,stayChips:int} */
+    /** @return array{income:string,bill:string,incomeInk:bool,billInk:bool,incomeMoney:bool,billMoney:bool,billFill:string,stay:list<string>,stayText:string,stayInk:bool,stayIcons:int,stayChips:int} */
     private static function chipMarks(): array
     {
         $value = self::driver()->executeScript(<<<'JS'
@@ -637,6 +653,20 @@ final class CalendarTest extends TestCase
                 });
                 return named || paint;
             };
+            const followsChip = (node) => {
+                if (!node) return false;
+                const money = node.querySelector('.money');
+                const name = node.querySelector('.bill-chip-name');
+                if (!money || !name) return false;
+                const moneyStyle = getComputedStyle(money);
+                const nameStyle = getComputedStyle(name);
+                const chipStyle = getComputedStyle(node);
+                const nested = !money.classList.contains('bill-chip-amount');
+                return moneyStyle.color === chipStyle.color
+                    && moneyStyle.fontFamily === chipStyle.fontFamily
+                    && moneyStyle.fontFamily === nameStyle.fontFamily
+                    && (!nested || moneyStyle.fontSize === nameStyle.fontSize);
+            };
             const income = chip('.day[data-date="2026-11-01"] .income-chip[title="Camp host"]');
             const bill = chip('.day[data-date="2026-11-19"] .bill-chip[title="America the Beautiful"]');
             const stay = chip('.day[data-date="2026-11-20"] .stay-chip[title="Lost Dutchman"]');
@@ -648,8 +678,11 @@ final class CalendarTest extends TestCase
                 bill: drawn(bill),
                 incomeInk: ink(income),
                 billInk: ink(bill),
+                incomeMoney: followsChip(income),
+                billMoney: followsChip(bill),
                 billFill,
                 stay: paths(stay),
+                stayText: stay ? (stay.querySelector('.bill-chip-amount') ? stay.querySelector('.bill-chip-amount').textContent.trim() : '') : '',
                 stayInk: ink(stay),
                 stayIcons: document.querySelectorAll('.stay-chip .glyph').length,
                 stayChips: stays.length,
@@ -817,6 +850,42 @@ final class CalendarTest extends TestCase
         self::assertIsString($value);
 
         return $value;
+    }
+
+    /** @return array{income:string,debt:string,net:string,paid:string} */
+    private static function totalTones(): array
+    {
+        $value = self::driver()->executeScript(<<<'JS'
+            const probe = document.createElement('span');
+            document.body.appendChild(probe);
+            const token = (paint) => {
+                const named = ['--teal', '--coral', '--muted', '--text', '--lilac'].find((name) => {
+                    probe.style.color = `var(${name})`;
+                    return getComputedStyle(probe).color === paint;
+                });
+                return named || paint;
+            };
+            const tone = (selector) => {
+                const money = document.querySelector(selector + ' .money');
+                return money ? token(getComputedStyle(money).color) : '';
+            };
+            const tones = {
+                income: tone('.month-income'),
+                debt: tone('.month-debt'),
+                net: tone('.month-net'),
+                paid: tone('.month-paid'),
+            };
+            probe.remove();
+            return tones;
+        JS);
+        self::assertIsArray($value);
+
+        return [
+            'income' => (string) $value['income'],
+            'debt' => (string) $value['debt'],
+            'net' => (string) $value['net'],
+            'paid' => (string) $value['paid'],
+        ];
     }
 
     private static function paidColumn(): string

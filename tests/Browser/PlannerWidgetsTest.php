@@ -263,7 +263,7 @@ final class PlannerWidgetsTest extends TestCase
                         align: getComputedStyle(group).textAlign,
                         split: amountBox.top >= wordBox.bottom - 2,
                         amountLeft: Math.abs(rowBox.left - amountBox.left) < 3,
-                        colored: amount.classList.contains('teal'),
+                        colored: amount.classList.contains('money-pos'),
                     };
                 })(),
                 liabilities: (() => {
@@ -291,6 +291,22 @@ final class PlannerWidgetsTest extends TestCase
                         justify: style.justifyContent,
                         align: style.textAlign,
                         nearRight: last !== null && rowBox.right - last.right < 3,
+                    };
+                })(),
+                faces: (() => {
+                    const family = (selector) => {
+                        const node = document.querySelector(selector);
+                        return node ? getComputedStyle(node).fontFamily : '';
+                    };
+                    return {
+                        total: family('.planner-net .figure'),
+                        available: family('.envelope-available > .money'),
+                        assets: family('.planner-assets-amount'),
+                        liabilities: family('.planner-liabilities-amount'),
+                        interest: family('.planner-interest-amount .money'),
+                        payday: family('.payday-amount .money'),
+                        assigned: family('.envelope-available .muted .money'),
+                        accounts: family('.account-totals .money'),
                     };
                 })(),
                 net: box('.planner-net'),
@@ -367,9 +383,9 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('$2,450.00', $accounts);
         self::assertStringContainsString('fuel', $accounts);
         self::assertStringContainsString('$64.00', $accounts);
-        self::assertStringContainsString('coral', $seen['creditClass']);
-        self::assertStringContainsString('coral', $seen['otherClass']);
-        self::assertStringNotContainsString('teal', $seen['otherClass']);
+        self::assertStringContainsString('money-neg', $seen['creditClass']);
+        self::assertStringContainsString('money-neg', $seen['otherClass']);
+        self::assertStringNotContainsString('money-pos', $seen['otherClass']);
         self::assertNotSame($seen['checking'], $seen['credit']);
         self::assertSame(
             [
@@ -427,7 +443,7 @@ final class PlannerWidgetsTest extends TestCase
         self::assertGreaterThan(0, $seen['pieWidth']);
         self::assertLessThan(200, $seen['pieWidth']);
         self::assertSame(0, $seen['figureChildren']);
-        self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}\/mn$/', (string) $seen['interestLost']);
+        self::assertMatchesRegularExpression('/^-\$[\d,]+\.\d{2}\/mn$/', (string) $seen['interestLost']);
         self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}\/mn$/', (string) $seen['interestGained']);
         self::assertStringNotContainsString('per month', (string) $seen['netCopy']);
         self::assertIsArray($seen['assets']);
@@ -435,6 +451,14 @@ final class PlannerWidgetsTest extends TestCase
         self::assertTrue($seen['assets']['split']);
         self::assertTrue($seen['assets']['amountLeft']);
         self::assertTrue($seen['assets']['colored']);
+        self::assertIsArray($seen['faces']);
+        self::assertStringContainsString('Fraunces', (string) $seen['faces']['total']);
+        self::assertStringContainsString('Fraunces', (string) $seen['faces']['available']);
+        self::assertStringNotContainsString('Outfit', (string) $seen['faces']['assets']);
+        self::assertStringNotContainsString('Fraunces', (string) $seen['faces']['assets']);
+        foreach (['liabilities', 'interest', 'payday', 'assigned', 'accounts'] as $face) {
+            self::assertSame($seen['faces']['assets'], $seen['faces'][$face]);
+        }
         self::assertIsArray($seen['liabilities']);
         self::assertSame('right', $seen['liabilities']['align']);
         self::assertTrue($seen['liabilities']['split']);

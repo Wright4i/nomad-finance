@@ -1,7 +1,4 @@
 @import "tailwindcss";
-@import "@fontsource/outfit/400.css";
-@import "@fontsource/outfit/500.css";
-@import "@fontsource/outfit/700.css";
 @import "@fontsource/fraunces/600.css";
 @import "@fontsource/fraunces/600-italic.css";
 
@@ -94,10 +91,11 @@
   --tone-semimonthly: var(--plum);
   --tone-monthly: var(--lime);
   --tone-irregular: var(--stone);
+  --ink-stroke: #000;
   --shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-display: "Fraunces", ui-serif, Georgia, serif;
 }
 
@@ -190,6 +188,7 @@
   --tone-semimonthly: var(--plum);
   --tone-monthly: var(--lime);
   --tone-irregular: var(--stone);
+  --ink-stroke: #fff;
   --shadow: 0 18px 40px rgba(70, 52, 20, 0.08);
 }
 
@@ -549,8 +548,17 @@ html.light .theme-pill .glyph {
   font-variant-numeric: tabular-nums;
 }
 
-.figure {
+.money {
+  font-family: var(--font-sans);
+}
+
+.figure,
+.figure .money,
+.envelope-available > .money {
   font-family: var(--font-display);
+}
+
+.figure {
   font-weight: 600;
   font-size: clamp(3rem, 8vw, 5.2rem);
   letter-spacing: -0.04em;
@@ -623,13 +631,6 @@ html.light .theme-pill .glyph {
   font-variant-numeric: tabular-nums;
 }
 
-.source-row strong.source-debit {
-  color: #ff6b6b;
-}
-
-:root.light .source-row strong.source-debit {
-  color: #b42318;
-}
 
 .source-row .bill-detail-chip {
   flex: none;
@@ -906,13 +907,6 @@ a.planner-stay:active {
   text-transform: none;
 }
 
-.group-sums [data-figure='goal'].over {
-  color: #ff6b6b;
-}
-
-:root.light .group-sums [data-figure='goal'].over {
-  color: #b42318;
-}
 
 .glyph {
   width: 2.4rem;
@@ -959,6 +953,33 @@ a.planner-stay:active {
 
 .teal { color: var(--teal); }
 .coral { color: var(--coral); }
+.money-pos { color: var(--teal); }
+.money-neg { color: var(--coral); }
+.money-zero { color: var(--muted); }
+.bill-chip .money,
+.income-chip .money,
+.stay-chip .money,
+.stay-amount-chip .money,
+.pay-chip .money,
+.bill-detail-chip .money {
+  font-family: inherit;
+  font-variant-numeric: inherit;
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+  margin: 0;
+  padding: 0;
+  vertical-align: baseline;
+}
+
+.stay-amount-chip .money,
+.pay-chip .money,
+.bill-detail-chip .money {
+  font-size: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
 .lilac { color: var(--lilac); }
 .amber { color: var(--amber); }
 .muted { color: var(--muted); }
@@ -1216,6 +1237,23 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   overflow-wrap: anywhere;
 }
 
+.stay-list .bill-detail-chips {
+  align-items: center;
+}
+
+.stay-list .bill-detail-chip {
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.stay-list [data-stay-dates] {
+  flex: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .stay-list-actions {
   display: flex;
   flex: none;
@@ -1246,6 +1284,27 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   font-size: 0.78rem;
   font-weight: 700;
   line-height: 1.15;
+}
+
+.bill-chip .money-pos,
+.bill-chip .money-neg,
+.bill-chip .money-zero,
+.income-chip .money-pos,
+.income-chip .money-neg,
+.income-chip .money-zero,
+.stay-chip .money-pos,
+.stay-chip .money-neg,
+.stay-chip .money-zero,
+.bill-detail-chip .money-pos,
+.bill-detail-chip .money-neg,
+.bill-detail-chip .money-zero,
+.stay-amount-chip .money-pos,
+.stay-amount-chip .money-neg,
+.stay-amount-chip .money-zero,
+.pay-chip .money-pos,
+.pay-chip .money-neg,
+.pay-chip .money-zero {
+  color: inherit;
 }
 
 .stay-amount-chip .glyph {
@@ -1866,7 +1925,7 @@ a.bucket-tile:hover {
 
 .account-tile {
   position: relative;
-  display: grid;
+  display: block;
   min-width: 0;
   animation-name: tile-in;
   animation-duration: 220ms;
@@ -1877,7 +1936,6 @@ a.bucket-tile:hover {
 
 .account-tile > a.bucket-tile {
   height: 100%;
-  padding-right: 2.6rem;
   animation: none;
 }
 
@@ -2242,8 +2300,9 @@ button.choice[data-favorite].on .glyph svg {
 
 .bill-chip-amount {
   text-align: center;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 700;
+  line-height: 1.15;
 }
 
 .income-chip {
@@ -2386,7 +2445,18 @@ button.entry-chip {
 .bill-tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.4rem;
+}
+
+.bill-tabs [role="tablist"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.bill-expand {
+  margin-left: auto;
 }
 
 .bill-tab {
@@ -2414,6 +2484,15 @@ button.entry-chip {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.55rem 0.7rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .bill-slim-main {
@@ -2477,6 +2556,8 @@ button.entry-chip {
 
 .bill-detail-chip {
   display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
   max-width: 100%;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
@@ -2484,6 +2565,25 @@ button.entry-chip {
   font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.2;
+}
+
+.bill-card .bill-detail-chip {
+  color: var(--tone, var(--text));
+  background: color-mix(in oklab, var(--tone, var(--teal)) 24%, transparent);
+}
+
+.bill-card .bill-detail-chip[data-chip='holder'] { --tone: var(--plum); }
+.bill-card .bill-detail-chip[data-chip='bucket'] { --tone: var(--iris); }
+.bill-card .bill-detail-chip[data-chip='autopay'] { --tone: var(--fern); }
+.bill-card .bill-detail-chip[data-chip='manual'] { --tone: var(--stone); }
+.bill-card .bill-detail-chip[data-chip='once'] { --tone: var(--stone); }
+.bill-card .bill-detail-chip[data-chip='weekly'] { --tone: var(--teal); }
+.bill-card .bill-detail-chip[data-chip='monthly'] { --tone: var(--lime); }
+.bill-card .bill-detail-chip[data-chip='yearly'] { --tone: var(--amber); }
+.bill-card .bill-detail-chip[data-chip='daily'] { --tone: var(--sky); }
+
+:root.light .bill-card .bill-detail-chip {
+  color: color-mix(in oklab, var(--tone, var(--teal)) 62%, #14211c);
 }
 
 @media (max-width: 767px) {
@@ -2555,10 +2655,11 @@ button.entry-chip {
   font-weight: 700;
 }
 
-.month-income { color: var(--teal); }
-.month-debt { color: var(--coral); }
-.month-bills { color: var(--coral); }
-.month-paid { color: var(--lilac); font-style: italic; }
+.month-paid { font-style: italic; }
+.month-paid .money {
+  color: var(--muted);
+  font-style: italic;
+}
 .month-rule { align-self: stretch; width: 1px; background: var(--text); }
 .month-net { color: var(--text); }
 
@@ -2759,32 +2860,24 @@ a.bucket-tile .money {
 .bucket-tile.envelope-tile strong,
 .bucket-tile.envelope-tile .bucket-field > span,
 .bucket-tile.envelope-tile > span:not(.bucket-water),
-.bucket-tile.envelope-tile > em {
-  -webkit-text-stroke: 1px rgb(0 0 0);
+.bucket-tile.envelope-tile > em,
+.bucket-tile.envelope-tile .bucket-field input,
+.bucket-tile.envelope-tile .bucket-locked,
+.bucket-tile.envelope-tile .money-mark,
+.bucket-tile.envelope-tile .money-pos,
+.bucket-tile.envelope-tile .money-neg,
+.bucket-tile.envelope-tile .money-zero {
+  -webkit-text-stroke: 1px var(--ink-stroke);
   paint-order: stroke fill;
   text-shadow: none;
 }
 
 .bucket-tile.envelope-tile .glyph {
   filter:
-    drop-shadow(0 -1px 0 rgb(0 0 0))
-    drop-shadow(1px 0 0 rgb(0 0 0))
-    drop-shadow(0 1px 0 rgb(0 0 0))
-    drop-shadow(-1px 0 0 rgb(0 0 0));
-}
-
-:root.light .bucket-tile.envelope-tile strong,
-:root.light .bucket-tile.envelope-tile > span:not(.bucket-water),
-:root.light .bucket-tile.envelope-tile > em {
-  -webkit-text-stroke: 1px rgb(255 255 255);
-}
-
-:root.light .bucket-tile.envelope-tile .glyph {
-  filter:
-    drop-shadow(0 -1px 0 rgb(255 255 255))
-    drop-shadow(1px 0 0 rgb(255 255 255))
-    drop-shadow(0 1px 0 rgb(255 255 255))
-    drop-shadow(-1px 0 0 rgb(255 255 255));
+    drop-shadow(0 -1px 0 var(--ink-stroke))
+    drop-shadow(1px 0 0 var(--ink-stroke))
+    drop-shadow(0 1px 0 var(--ink-stroke))
+    drop-shadow(-1px 0 0 var(--ink-stroke));
 }
 
 .bucket-field {
@@ -2871,17 +2964,30 @@ a.bucket-tile .money {
 .bucket-tile.envelope-tile .bucket-field input,
 .bucket-tile.envelope-tile .bucket-locked,
 .bucket-tile.envelope-tile .money-mark {
-  color: rgb(255 255 255);
-  -webkit-text-fill-color: rgb(255 255 255);
-  -webkit-text-stroke: 1px rgb(0 0 0);
-  paint-order: stroke fill;
-  text-shadow: none;
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
 }
 
-:root.light .bucket-tile.envelope-tile .bucket-locked {
-  color: rgb(255 255 255);
-  -webkit-text-fill-color: rgb(255 255 255);
-  -webkit-text-stroke: 1px rgb(0 0 0);
+.bucket-tile.envelope-tile .money-pos {
+  color: var(--teal);
+  -webkit-text-fill-color: var(--teal);
+}
+
+.bucket-tile.envelope-tile .money-neg {
+  color: var(--coral);
+  -webkit-text-fill-color: var(--coral);
+}
+
+.bucket-tile.envelope-tile .money-zero {
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+}
+
+.bucket-overage .money-pos,
+.bucket-overage .money-neg,
+.bucket-overage .money-zero {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
 }
 
 .bucket-tile.envelope-tile input {
@@ -2893,7 +2999,7 @@ a.bucket-tile .money {
   opacity: 0.72;
 }
 
-.bucket-tile .money {
+a.bucket-tile > .account-balance {
   font-size: 1.05rem;
 }
 
@@ -3187,6 +3293,12 @@ a.bucket-tile .money {
   }
 }
 
+.pay-chip .money-pos,
+.pay-chip .money-neg,
+.pay-chip .money-zero {
+  color: inherit;
+}
+
 .pay-chip-roll { background: #1f5f93; color: #f4fffc; }
 .pay-chip-kind { background: #5c3d86; color: #f4fffc; }
 .pay-chip-month { background: #2d6b40; color: #f4fffc; }
@@ -3330,7 +3442,7 @@ a.bucket-tile .money {
 }
 
 .want-gauge-warning {
-  color: var(--coral);
+  color: var(--text);
   font-weight: 700;
 }
 
@@ -3564,8 +3676,6 @@ dialog.modal.gauge-modal[open] {
   white-space: nowrap;
 }
 
-.planner-interest-lost .planner-interest-amount { color: var(--coral); }
-.planner-interest-gained .planner-interest-amount { color: var(--fern); }
 
 .planner-widget {
   position: relative;
@@ -3805,7 +3915,6 @@ a.planner-stay {
 }
 
 .payday-amount {
-  font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.65rem;
   letter-spacing: -0.03em;
@@ -3951,8 +4060,7 @@ a.planner-stay {
   width: 100%;
 }
 
-.envelope-available .money {
-  font-family: var(--font-display);
+.envelope-available > .money {
   font-size: 1.15rem;
   font-weight: 600;
 }
@@ -4567,7 +4675,6 @@ button.pull-bucket > :not(.bucket-water) {
 .transfer-end[data-type='other'] { --tone: var(--tone-other); }
 
 .transfer-amount {
-  font-family: var(--font-display);
   font-size: 2rem;
   font-weight: 650;
 }

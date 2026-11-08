@@ -43,6 +43,28 @@ final class BillListFilterTest extends TestCase
         }
     }
 
+    public function testABillCarriesTheDrawFromHolder(): void
+    {
+        $account = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 1000,
+            'holder' => '  Demo  ',
+        ]);
+        $bill = $this->bills->create([
+            'name' => 'Phone',
+            'accountId' => $account['id'],
+            'type' => 'cellular',
+            'amountMinor' => 5500,
+            'recurrence' => 'monthly',
+            'nextDueDate' => '2026-11-12',
+        ]);
+
+        self::assertSame('Demo', $bill['accountHolder']);
+        self::assertSame('checking', $bill['accountType']);
+    }
+
     public function testAmountMatchesFromTheLeftAndABlankFilterKeepsTheBill(): void
     {
         $bill = [

@@ -8,7 +8,8 @@
   import { api } from '../lib/api';
   import { dayChips, plannerDayDates, type DayBill, type DayPayday, type DayStay } from '../lib/daySquare';
   import { fitThree } from '../lib/fitThree';
-  import { formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
+  import Dollars from '../components/Dollars.svelte';
+  import { dollarClass, formatChipDate, formatDate, formatMinor, todayISO } from '../lib/money';
   import { follow } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
   import { wantGaugeLevels } from '../lib/wantGauge';
@@ -452,10 +453,6 @@
     window.setTimeout(finish, 260);
   }
 
-  function money(minor: number): string {
-    return formatMinor(minor, data?.baseCurrency ?? '', data?.exponent ?? 2);
-  }
-
   function openPlannerDay(event: MouseEvent): void {
     const target = event.target;
     if (target instanceof Element && target.closest('.calendar-entry, [data-calendar-entry]')) {
@@ -500,25 +497,25 @@
     <div class="planner-board" data-order={order.join(',')} data-saved={saved} data-spans={savedSpans}>
       <section class="hero planner-net">
         <p class="kicker">Net worth</p>
-        <p class="figure">{money(data.netWorthMinor ?? 0)}</p>
+        <p class="figure {dollarClass(data.netWorthMinor ?? 0)}">{formatMinor(data.netWorthMinor ?? 0, data.baseCurrency, data.exponent)}</p>
         <p class="muted planner-sides m-0">
           <span class="planner-assets">
             <span>Assets</span>
-            <span class="teal planner-assets-amount">{money(data.assetsMinor)}</span>
+            <Dollars class="planner-assets-amount" minor={data.assetsMinor} currency={data.baseCurrency} exponent={data.exponent} />
           </span>
           <span class="planner-liabilities">
             <span>Liabilities</span>
-            <span class="coral planner-liabilities-amount">{money(data.liabilitiesMinor)}</span>
+            <Dollars class="planner-liabilities-amount" minor={data.liabilitiesMinor} currency={data.baseCurrency} exponent={data.exponent} owe />
           </span>
         </p>
         <div class="planner-interest">
           <p class="planner-interest-lost m-0" data-interest="lost">
             <span class="planner-interest-label">Interest lost</span>
-            <span class="planner-interest-amount">{money(data.interestLostMinor ?? 0)}/mn</span>
+            <span class="planner-interest-amount"><Dollars minor={data.interestLostMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} owe suffix="/mn" /></span>
           </p>
           <p class="planner-interest-gained m-0" data-interest="gained">
             <span class="planner-interest-label">Interest gained</span>
-            <span class="planner-interest-amount">{money(data.interestGainedMinor ?? 0)}/mn</span>
+            <span class="planner-interest-amount"><Dollars minor={data.interestGainedMinor ?? 0} currency={data.baseCurrency} exponent={data.exponent} suffix="/mn" /></span>
           </p>
         </div>
       </section>
@@ -562,7 +559,11 @@
                     <p class="m-0"><strong>{data.payday.payor}</strong></p>
                     <p class="muted m-0" data-payday={data.payday.on}>{formatDate(data.payday.on)}</p>
                     <p class="payday-amount m-0">
-                      {data.payday.paycheckMinor === null ? '—' : money(data.payday.paycheckMinor)}
+                      {#if data.payday.paycheckMinor === null}
+                        —
+                      {:else}
+                        <Dollars minor={data.payday.paycheckMinor} currency={data.baseCurrency} exponent={data.exponent} />
+                      {/if}
                     </p>
                     {#if data.payorCount > 1}
                       <p class="muted m-0">{data.payorCount} payors</p>
@@ -570,7 +571,7 @@
                   {:else}
                     <p class="muted m-0">No payday yet</p>
                   {/if}
-                  <p class="muted m-0">Still coming in <span class="money">{money(data.incomeComing)}</span></p>
+                  <p class="muted m-0">Still coming in <Dollars minor={data.incomeComing} currency={data.baseCurrency} exponent={data.exponent} /></p>
                 </a>
               </div>
             {:else if id === 'calendar'}
@@ -617,7 +618,7 @@
                                 <Glyph name={chip.glyph} mini />
                                 <span class="bill-chip-name">{chip.name}</span>
                               </span>
-                              <span class="bill-chip-amount money">{formatMinor(chip.amountMinor ?? 0, chip.currency, chip.exponent)}</span>
+                              <span class="bill-chip-amount money {dollarClass(chip.amountMinor ?? 0)}">{formatMinor(chip.amountMinor ?? 0, chip.currency, chip.exponent)}</span>
                             </span>
                           {:else}
                             <span class="bill-chip" class:paid-chip={chip.paid} title={chip.name}>
@@ -625,7 +626,7 @@
                                 <Glyph name={chip.glyph} mini />
                                 <span class="bill-chip-name">{chip.name}</span>
                               </span>
-                              <span class="bill-chip-amount money">{formatMinor(chip.amountMinor ?? 0, chip.currency, chip.exponent)}</span>
+                              <span class="bill-chip-amount money {dollarClass(chip.amountMinor ?? 0)}">{formatMinor(chip.amountMinor ?? 0, chip.currency, chip.exponent)}</span>
                             </span>
                           {/if}
                         {/each}
@@ -682,9 +683,7 @@
                 {#each data.accountTotals as column (`${column.type}:${column.side}`)}
                   <span class="account-total" data-account-type={column.type} data-side={column.side}>
                     <span class="kicker">{typeLabel[column.type] ?? column.type}</span>
-                    <span class="money" class:teal={column.side === 'asset'} class:coral={column.side === 'liability'}>
-                      {money(column.balanceMinor)}
-                    </span>
+                    <Dollars minor={column.balanceMinor} currency={data.baseCurrency} exponent={data.exponent} owe={column.side === 'liability'} />
                   </span>
                 {/each}
               </a>
@@ -714,10 +713,10 @@
                       </div>
                       <div class="want-gauge-readout">
                         <p class="want-gauge-name m-0">{groupLabel[item.group]} · {item.targetPercent}%</p>
-                        <p class="want-gauge-line m-0"><span>Assigned</span> <strong>{money(item.assignedMinor)}</strong></p>
-                        <p class="want-gauge-line m-0"><span>Max</span> <strong>{money(item.targetMinor)}</strong></p>
+                        <p class="want-gauge-line m-0"><span>Assigned</span> <Dollars minor={item.assignedMinor} currency={data.baseCurrency} exponent={data.exponent} /></p>
+                        <p class="want-gauge-line m-0"><span>Max</span> <Dollars minor={item.targetMinor} currency={data.baseCurrency} exponent={data.exponent} /></p>
                         {#if levels.over}
-                          <p class="want-gauge-warning m-0">Over <strong>{money(levels.overMinor)}</strong></p>
+                          <p class="want-gauge-warning m-0">Over <Dollars minor={levels.overMinor} currency={data.baseCurrency} exponent={data.exponent} owe /></p>
                         {/if}
                       </div>
                     </button>
@@ -728,9 +727,9 @@
                 {:else}
                 <p class="envelope-available">
                   <span>Available to assign</span>
-                  <span class="money">{money(data.envelopes.availableMinor)}</span>
+                  <Dollars minor={data.envelopes.availableMinor} currency={data.baseCurrency} exponent={data.exponent} />
                   <span class="muted" title="Income still coming in this period, plus every asset marked Include in Budget.">
-                    {money(data.envelopes.assignedMinor)} assigned of {money(data.envelopes.poolMinor)}
+                    <Dollars minor={data.envelopes.assignedMinor} currency={data.baseCurrency} exponent={data.exponent} /> assigned of <Dollars minor={data.envelopes.poolMinor} currency={data.baseCurrency} exponent={data.exponent} />
                   </span>
                 </p>
                 {/if}
@@ -793,7 +792,7 @@
                             >
                               <span class="bill-swatch" style={`--tone: var(--tone-${slice.type})`}></span>
                               <span>{slice.type}</span>
-                              <span class="money">{money(slice.amountMinor)}</span>
+                              <Dollars minor={slice.amountMinor} currency={data.baseCurrency} exponent={data.exponent} owe />
                             </li>
                           {/each}
                         </ul>
@@ -834,12 +833,12 @@
                 {#if category.bills && category.bills.length > 0}
                   <ul class="m-0 text-sm muted">
                     {#each category.bills as bill (bill.id)}
-                      <li>{bill.name} · {money(bill.amountMinor)}</li>
+                      <li>{bill.name} · <Dollars minor={bill.amountMinor} currency={data.baseCurrency} exponent={data.exponent} /></li>
                     {/each}
                   </ul>
                 {/if}
               </td>
-              <td class="text-right money">{money(category.amountMinor)}</td>
+              <td class="text-right"><Dollars minor={category.amountMinor} currency={data.baseCurrency} exponent={data.exponent} /></td>
             </tr>
           {/each}
         </tbody>

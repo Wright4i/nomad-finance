@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
@@ -298,7 +299,7 @@
     <span use:tip={fieldTips.accountBalance}>Balance</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input name="balance" inputmode="decimal" bind:value={balance} />
+      <AmountInput name="balance" bind:value={balance} />
     </span>
     {#if fields.balanceMinor}<em>{fields.balanceMinor}</em>{/if}
   </label>
@@ -365,7 +366,7 @@
       <span use:tip={fieldTips.accountMinimum}>Minimum due</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
-        <input name="minimumDue" inputmode="decimal" bind:value={minimumDue} />
+        <AmountInput name="minimumDue" bind:value={minimumDue} />
       </span>
       {#if fields.minimumDueMinor}<em>{fields.minimumDueMinor}</em>{/if}
     </label>
@@ -382,7 +383,7 @@
       <span>Credit limit</span>
       <span class="money-input">
         <span class="money-mark" aria-hidden="true">$</span>
-        <input name="creditLimit" inputmode="decimal" bind:value={creditLimit} />
+        <AmountInput name="creditLimit" bind:value={creditLimit} />
       </span>
       {#if fields.creditLimitMinor}<em>{fields.creditLimitMinor}</em>{/if}
     </label>

@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
+  import AmountInput from '../components/AmountInput.svelte';
+  import Dollars from '../components/Dollars.svelte';
   import Glyph from '../components/Glyph.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { api, explain } from '../lib/api';
   import { periodShift, periodWithinReach, type PeriodLength } from '../lib/acctPeriod';
   import { balanceGoalMinor, bucketMark, fillFor, type FillBucket } from '../lib/bucketFill';
-  import { formatChipDate, formatMinor, minorToInput, parseMajor, todayISO } from '../lib/money';
+  import { formatChipDate, minorToInput, parseMajor, todayISO } from '../lib/money';
   import { prefersReducedMotion } from '../lib/motion';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { adoptUser, session } from '../lib/session.svelte.ts';
@@ -256,10 +258,10 @@
       <section class="hero">
         <button class="available-open" type="button" data-action="available" onclick={() => sourcesDialog?.showModal()}>
           <p class="kicker m-0">Available to assign</p>
-          <p class="figure">{formatMinor(sheet.availableMinor, sheet.baseCurrency, sheet.exponent)}</p>
+          <p class="figure"><Dollars minor={sheet.availableMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
         </button>
         <p class="muted m-0" title="Income still coming in this month, plus every asset marked Include in Budget.">
-          {formatMinor(sheet.assignedMinor, sheet.baseCurrency, sheet.exponent)} assigned of {formatMinor(sheet.poolMinor, sheet.baseCurrency, sheet.exponent)}
+          <Dollars minor={sheet.assignedMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /> assigned of <Dollars minor={sheet.poolMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />
         </p>
       </section>
       {/if}
@@ -276,7 +278,7 @@
                   <Glyph name={row.length} />
                   <span class="source-name">{row.payor}</span>
                   <span class="source-date">{formatChipDate(row.on)}</span>
-                  <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+                  <Dollars minor={row.amountMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />
                 </p>
               {/each}
             </section>
@@ -290,7 +292,7 @@
                   <span class="source-name">{row.name}</span>
                   {#if row.institution}<span class="source-institution">{row.institution}</span>{/if}
                   {#if row.holder}<span class="bill-detail-chip" data-chip="holder">{row.holder}</span>{/if}
-                  <strong>{formatMinor(row.amountMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+                  <Dollars minor={row.amountMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />
                 </p>
               {/each}
             </section>
@@ -305,7 +307,7 @@
                     <span class="source-name">{row.name}</span>
                     {#if row.institution}<span class="source-institution">{row.institution}</span>{/if}
                     {#if row.holder}<span class="bill-detail-chip" data-chip="holder">{row.holder}</span>{/if}
-                    <strong class="source-debit">{formatMinor(-row.uncoveredMinor, sheet.baseCurrency, sheet.exponent)}</strong>
+                    <Dollars class="source-debit" minor={row.uncoveredMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} owe />
                   </p>
                 {/if}
               {/each}
@@ -346,10 +348,10 @@
               <span class="group-name">{group.label}</span>
               {#if heading}
                 <span class="group-sums">
-                  <span data-figure="auto"><span>Auto-assigned</span> <strong>{formatMinor(heading.autoMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
-                  <span data-figure="envelope"><span>Envelope</span> <strong>{formatMinor(heading.envelopeMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
-                  <span data-figure="target"><span>Target</span> <strong>{formatMinor(heading.assignedMinor, sheet.baseCurrency, sheet.exponent)}</strong></span>
-                  <span data-figure="goal" class:over={heading.goalOver}>({heading.targetPercent}% goal - {formatMinor(heading.targetMinor, sheet.baseCurrency, sheet.exponent)})</span>
+                  <span data-figure="auto"><span>Auto-assigned</span> <Dollars minor={heading.autoMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
+                  <span data-figure="envelope"><span>Envelope</span> <Dollars minor={heading.envelopeMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
+                  <span data-figure="target"><span>Target</span> <Dollars minor={heading.assignedMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
+                  <span data-figure="goal" class:over={heading.goalOver}>(<span class="muted">{heading.targetPercent}%</span> goal - <Dollars minor={heading.targetMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />)</span>
                 </span>
               {/if}
             </h2>
@@ -386,7 +388,7 @@
                   {/if}
                   {#if mark === 'auto'}
                     <span class="bill-chip">Bill assignments</span>
-                    <strong class="bucket-locked" data-field="auto">{formatMinor(autoOf(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                    <strong class="bucket-locked" data-field="auto"><Dollars minor={autoOf(category)} currency={sheet.baseCurrency} exponent={sheet.exponent} /></strong>
                   {:else}
                     <span class="bill-chip status-spacer" aria-hidden="true">Bill assignments</span>
                     <strong class="bucket-locked status-spacer" aria-hidden="true">$0.00</strong>
@@ -396,16 +398,13 @@
                   <span>Envelope</span>
                   <span class="money-input">
                     <span class="money-mark" aria-hidden="true">$</span>
-                    <input
+                    <AmountInput
                       name={`amount-${category.id}`}
                       aria-label={`Envelope ${category.name}`}
-                      inputmode="decimal"
+                      exponent={sheet.exponent}
                       disabled={closed || !editable || category.archivedAt !== null}
-                      value={drafts[category.id] ?? ''}
-                      oninput={(event) => {
-                        drafts[category.id] = (event.currentTarget as HTMLInputElement).value;
-                        queueSave();
-                      }}
+                      bind:value={drafts[category.id]}
+                      oninput={() => queueSave()}
                       onkeydown={saveNow}
                     />
                   </span>
@@ -414,12 +413,12 @@
                 {#if mark !== 'none'}
                   <div class="bucket-field">
                     <span>Target</span>
-                    <strong class="bucket-locked" data-field="target">{formatMinor(shownTarget(category), sheet.baseCurrency, sheet.exponent)}</strong>
+                    <strong class="bucket-locked" data-field="target"><Dollars minor={shownTarget(category)} currency={sheet.baseCurrency} exponent={sheet.exponent} /></strong>
                   </div>
                 {/if}
               </article>
               {#if fill.over && fill.overBy > 0}
-                <p class="bucket-overage">Over by {formatMinor(fill.overBy, sheet.baseCurrency, sheet.exponent)}</p>
+                <p class="bucket-overage">Over by <Dollars minor={fill.overBy} currency={sheet.baseCurrency} exponent={sheet.exponent} owe /></p>
               {/if}
               </div>
             {/each}

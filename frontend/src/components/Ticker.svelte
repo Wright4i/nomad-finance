@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { formatMinor } from '../lib/money';
+  import Dollars from './Dollars.svelte';
 
   let { minor, currency, exponent = 2 }: { minor: number; currency: string; exponent?: number } = $props();
 </script>
 
-<p class="figure">{formatMinor(minor, currency, exponent)}</p>
+<p class="figure"><Dollars {minor} {currency} {exponent} /></p>

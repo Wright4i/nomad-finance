@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dayChips, plannerDayCount, plannerDayDates } from './daySquare.ts';
+import { dayChips, plannerDayCount, plannerDayDates, stayCaption } from './daySquare.ts';
 
 const stay = {
   id: 1,
@@ -60,6 +60,20 @@ test('a day lists the stay, the payday, then the bills', () => {
   assert.equal(chips[2].amountMinor, -38000);
   assert.equal(chips[3].paid, true);
   assert.equal(chips[3].amountMinor, -4000);
+});
+
+test('a stay line names the city and state and hides the dates', () => {
+  const dated = { arriveOn: '2026-11-20', departOn: '2026-11-24' };
+  assert.equal(stayCaption({ ...dated, city: 'Apache Junction', region: 'AZ' }), 'Apache Junction, AZ');
+  assert.equal(stayCaption({ ...dated, city: '  Mesa ', region: ' AZ ' }), 'Mesa, AZ');
+  assert.equal(stayCaption({ ...dated, city: 'Mesa', region: null }), 'Mesa');
+  assert.equal(stayCaption({ ...dated, city: '', region: 'AZ' }), 'AZ');
+  assert.equal(stayCaption({ ...dated, city: null, region: null }), 'Nov 20, 2026 – Nov 24, 2026');
+  assert.equal(stayCaption({ arriveOn: '2026-11-20', departOn: '2026-11-20' }), 'Stay');
+  assert.equal(stayCaption({ arriveOn: 'soon', departOn: 'later' }), 'Stay');
+  const chips = dayChips('2026-11-20', [{ ...stay, ...dated, city: 'Apache Junction', region: 'AZ' }], [], [], 'USD', 2);
+  assert.equal(chips[0].caption, 'Apache Junction, AZ');
+  assert.equal(chips[0].caption.includes('Nov'), false);
 });
 
 test('a day with nothing on it is empty', () => {

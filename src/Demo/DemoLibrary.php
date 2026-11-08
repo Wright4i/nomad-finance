@@ -109,7 +109,7 @@ final class DemoLibrary
         )->execute([gmdate('Y-m-01'), $userId]);
         // Solo full-timer in a Class C. Three paychecks are live. The other pay lengths stay archived so Show archived still has one of each.
         $checking = $this->account($userId, [
-            'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000,
+            'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000, 'holder' => 'Demo',
         ], $now);
         $this->account($userId, [
             'name' => 'Closed checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 1840, 'archived' => true,
@@ -503,7 +503,7 @@ final class DemoLibrary
         )->execute([$userId, $start, $categoryId, $amount]);
     }
 
-    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool,autopay?:string,gasFavorite?:bool,shoppingFavorite?:bool,assetFavorite?:bool,bankAutopay?:bool,billRecurrence?:string,billEvery?:int} $row */
+    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool,autopay?:string,gasFavorite?:bool,shoppingFavorite?:bool,assetFavorite?:bool,bankAutopay?:bool,billRecurrence?:string,billEvery?:int,holder?:string} $row */
     private function account(int $userId, array $row, string $now): int
     {
         $this->currencies->assert($row['currency']);
@@ -511,8 +511,8 @@ final class DemoLibrary
             'INSERT INTO accounts (
                 user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                 due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
-                archived_at, gas_favorite, shopping_favorite, asset_favorite, in_budget, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                archived_at, gas_favorite, shopping_favorite, asset_favorite, in_budget, holder, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId,
             $row['name'],
@@ -533,6 +533,7 @@ final class DemoLibrary
             !empty($row['shoppingFavorite']) ? 1 : 0,
             !empty($row['assetFavorite']) ? 1 : 0,
             $row['side'] === 'asset' && $row['type'] !== 'savings' ? 1 : 0,
+            $row['holder'] ?? null,
             $now,
             $now,
         ]);

@@ -42,6 +42,8 @@ export type Bill = {
   type: string;
   accountId: number;
   accountName: string;
+  accountType: string;
+  accountHolder: string | null;
   currency: string;
   exponent: number;
   amountMinor: number;

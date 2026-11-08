@@ -2,12 +2,13 @@
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onDestroy, onMount } from 'svelte';
+  import Dollars from '../components/Dollars.svelte';
   import Globe from '../components/Globe.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
   import { paintLeg } from '../lib/legPaint';
-  import { monthCells } from '../lib/dates';
-  import { exponentOf, formatChipDate, formatDate, formatMinor, formatMonth, todayISO } from '../lib/money';
+  import { formatStaySpan, monthCells } from '../lib/dates';
+  import { exponentOf, formatChipDate, formatDate, formatMonth, todayISO } from '../lib/money';
   import { PAST_MONTHS_DEFAULT, pastMonthChoices, stayDrawn } from '../lib/pastMonths';
   import { follow, go } from '../lib/nav.svelte.ts';
   import { session } from '../lib/session.svelte.ts';
@@ -385,13 +386,13 @@
           {#if selected.balanceDueOn}
             <span class="stay-amount-chip balance-due-chip">
               <Glyph name="balance" mini />
-              <span>{formatMinor(selected.amountDueMinor, selected.currency ?? baseCurrency, selected.exponent)} Due {formatChipDate(selected.balanceDueOn)}</span>
+              <span><Dollars minor={selected.amountDueMinor} currency={selected.currency ?? baseCurrency} exponent={selected.exponent} owe /> Due {formatChipDate(selected.balanceDueOn)}</span>
             </span>
           {/if}
           {#if selected.fuel && selected.fuel.costMinor !== null}
             <span class="stay-amount-chip fuel-amount-chip">
               <Glyph name="fuel" mini />
-              <span>Fuel {formatMinor(selected.fuel.costMinor, baseCurrency, baseExponent)}</span>
+              <span>Fuel <Dollars minor={selected.fuel.costMinor} currency={baseCurrency} exponent={baseExponent} owe /></span>
             </span>
           {/if}
           {#if selected.fuel?.milesPerGallon}
@@ -403,7 +404,7 @@
           {#if selected.fuel && selected.fuel.priceMinor != null}
             <span class="stay-amount-chip fuel-price-chip">
               <Glyph name="cash" mini />
-              <span>{formatMinor(selected.fuel.priceMinor, baseCurrency, baseExponent)}/gal</span>
+              <span><Dollars minor={selected.fuel.priceMinor} currency={baseCurrency} exponent={baseExponent} suffix="/gal" /></span>
             </span>
           {/if}
           {#if selected.fuel?.miles != null}
@@ -535,9 +536,9 @@
     <section class="grid gap-2">
       <h2 class="m-0 text-2xl">Lodging</h2>
       <p class="m-0">
-        Total {formatMinor(selected.totalMinor, selected.currency ?? baseCurrency, selected.exponent)}
-        · Deposit {formatMinor(selected.depositMinor, selected.currency ?? baseCurrency, selected.exponent)}
-        · Due {formatMinor(selected.amountDueMinor, selected.currency ?? baseCurrency, selected.exponent)}
+        Total <Dollars minor={selected.totalMinor} currency={selected.currency ?? baseCurrency} exponent={selected.exponent} owe />
+        · Deposit <Dollars minor={selected.depositMinor} currency={selected.currency ?? baseCurrency} exponent={selected.exponent} owe />
+        · Due <Dollars minor={selected.amountDueMinor} currency={selected.currency ?? baseCurrency} exponent={selected.exponent} owe />
       </p>
     </section>
   {/if}
@@ -580,25 +581,28 @@
     </div>
     {#each monthStays as trip (trip.id)}
       {@const tripIndex = trips.findIndex((item) => item.id === trip.id)}
+      {@const drivingLeg = legs.find((leg) => leg.toId === trip.id && leg.driving)}
+      {@const listedMiles = trip.fuel && trip.fuel.miles !== null ? trip.fuel.miles : drivingLeg ? drivingLeg.miles : null}
       <div
         class="stay-list stay-fill"
         data-stay-color={stayColor(trip, tripIndex)}
         style="--stay: var(--{stayColor(trip, tripIndex)})"
       >
         <div class="stay-list-copy">
-          <strong>{trip.placeName}</strong>
-          {#if trip.note}<span> · {trip.note}</span>{/if}
-          <span class="muted"> · {formatDate(trip.arriveOn)} – {formatDate(trip.departOn)}</span>
-          {#if trip.balanceDueOn}<span class="muted"> · balance due {formatDate(trip.balanceDueOn)}</span>{/if}
-          {#if trip.fuel?.miles !== null && trip.fuel}
-            <span class="muted">
-              · Fuel · {trip.fuel.miles} miles from previous stay
-              {#if trip.fuel.milesPerGallon}· {trip.fuel.milesPerGallon} mpg{/if}
-              {#if trip.fuel.costMinor !== null}· {formatMinor(trip.fuel.costMinor, baseCurrency, baseExponent)}{/if}
-            </span>
-          {:else if legs.find((leg) => leg.toId === trip.id && leg.driving)}
-            <span class="muted"> · {legs.find((leg) => leg.toId === trip.id)?.miles} miles from previous stay</span>
-          {/if}
+          <div class="bill-detail-chips items-center">
+            <span data-stay-dates>{formatStaySpan(trip.arriveOn, trip.departOn)}</span>
+            <strong class="bill-detail-chip" data-chip="place">{trip.placeName}</strong>
+            {#if trip.note}<span class="bill-detail-chip" data-chip="note">{trip.note}</span>{/if}
+            {#if trip.city}<span class="bill-detail-chip" data-chip="city">{trip.city}</span>{/if}
+            {#if trip.region}<span class="bill-detail-chip" data-chip="state">{trip.region}</span>{/if}
+            <span class="bill-detail-chip" data-chip="status">{trip.status}</span>
+            {#if trip.balanceDueOn}<span class="bill-detail-chip" data-chip="due">balance due {formatChipDate(trip.balanceDueOn)}</span>{/if}
+            {#if listedMiles !== null}<span class="bill-detail-chip" data-chip="miles">{listedMiles} miles from previous stay</span>{/if}
+            {#if trip.fuel?.milesPerGallon}<span class="bill-detail-chip" data-chip="mpg">{trip.fuel.milesPerGallon} mpg</span>{/if}
+            {#if trip.fuel && trip.fuel.costMinor !== null}
+              <span class="bill-detail-chip" data-chip="fuel">Fuel <Dollars minor={trip.fuel.costMinor} currency={baseCurrency} exponent={baseExponent} owe /></span>
+            {/if}
+          </div>
         </div>
         <div class="stay-list-actions">
           {#if trip.moveEarlier}

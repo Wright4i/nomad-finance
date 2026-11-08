@@ -1,10 +1,12 @@
 <script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import Spinner from '../components/Spinner.svelte';
   import { onMount } from 'svelte';
+  import Dollars from '../components/Dollars.svelte';
   import Glyph from '../components/Glyph.svelte';
   import { api, explain } from '../lib/api';
-  import { formatDate, formatMinor, minorToInput, parseMajor } from '../lib/money';
+  import { formatDate, minorToInput, parseMajor } from '../lib/money';
   import { follow, go } from '../lib/nav.svelte.ts';
   import type { Vehicle, VehicleReading } from '../lib/types';
   import { fieldTips } from '../lib/fieldTips';
@@ -302,7 +304,7 @@
     <span use:tip={fieldTips.fuelFallback}>Fallback price per gallon</span>
     <span class="money-input">
       <span class="money-mark" aria-hidden="true">$</span>
-      <input name="fuelPrice" inputmode="decimal" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
+      <AmountInput name="fuelPrice" placeholder="Leave empty for miles only…" bind:value={fuelPrice} />
     </span>
     {#if fields.fuelPriceMinor}<em>{fields.fuelPriceMinor}</em>{/if}
   </label>
@@ -376,8 +378,8 @@
               <tr>
                 <td data-label="Date">{formatDate(reading.postedOn)}</td>
                 <td data-label="Odometer">{formatMiles(reading.odometerMiles)}</td>
-                <td class="money" data-label="Amount">{formatMinor(reading.amountMinor)}</td>
-                <td class="money" data-label="Price per gallon">{reading.pricePerGallonMinor === null ? '—' : formatMinor(reading.pricePerGallonMinor)}</td>
+                <td data-label="Amount"><Dollars minor={reading.amountMinor} /></td>
+                <td data-label="Price per gallon">{#if reading.pricePerGallonMinor === null}—{:else}<Dollars minor={reading.pricePerGallonMinor} />{/if}</td>
                 <td data-label="Gallons">{reading.gallons ?? '—'}</td>
                 <td data-label="Miles">{formatMiles(reading.miles)}</td>
                 <td data-label="Stretch mpg">{reading.milesPerGallon ?? reading.note ?? '—'}</td>
@@ -434,7 +436,7 @@
         <span use:tip={fieldTips.fuelEditAmount}>Amount</span>
         <span class="money-input">
           <span class="money-mark" aria-hidden="true">$</span>
-          <input name="fuelAmount" inputmode="decimal" bind:value={editAmount} />
+          <AmountInput name="fuelAmount" bind:value={editAmount} />
         </span>
         {#if editFields.amountMinor}<em>{editFields.amountMinor}</em>{/if}
       </label>
@@ -442,7 +444,7 @@
         <span use:tip={fieldTips.fuelEditPrice}>Price per gallon</span>
         <span class="money-input">
           <span class="money-mark" aria-hidden="true">$</span>
-          <input name="fuelPricePerGallon" inputmode="decimal" bind:value={editPrice} />
+          <AmountInput name="fuelPricePerGallon" bind:value={editPrice} />
         </span>
         {#if editFields.pricePerGallonMinor}<em>{editFields.pricePerGallonMinor}</em>{/if}
       </label>

@@ -1,4 +1,5 @@
 import currencyRows from '../../../data/currencies.json';
+import { formatAmountInput, parseAmountMinor, settledAmount, signedAmountMinor } from './amountExpression';
 
 export type CurrencyOption = {
   code: string;
@@ -25,15 +26,15 @@ export function todayISO(): string {
 }
 
 export function minorToInput(minor: number, exponent: number): string {
-  const abs = Math.abs(minor);
-  const scale = 10 ** exponent;
-  const whole = Math.trunc(abs / scale);
-  const sign = minor < 0 ? '-' : '';
-  if (exponent === 0) {
-    return `${sign}${whole}`;
-  }
-  const frac = String(abs % scale).padStart(exponent, '0');
-  return `${sign}${whole}.${frac}`;
+  return formatAmountInput(minor, exponent);
+}
+
+export { settledAmount };
+
+export function dollarClass(minor: number): 'money-pos' | 'money-neg' | 'money-zero' {
+  if (minor > 0) return 'money-pos';
+  if (minor < 0) return 'money-neg';
+  return 'money-zero';
 }
 
 export function formatMinor(minor: number, _currency = '', _exponent = 2): string {
@@ -45,27 +46,11 @@ export function formatMinor(minor: number, _currency = '', _exponent = 2): strin
 }
 
 export function parseSignedMajor(input: string, exponent: number): number | null {
-  const trimmed = input.trim();
-  const negative = trimmed.startsWith('-');
-  const minor = parseMajor(negative ? trimmed.slice(1) : trimmed, exponent);
-  if (minor === null) {
-    return null;
-  }
-  return negative ? -minor : minor;
+  return signedAmountMinor(input, exponent);
 }
 
 export function parseMajor(input: string, exponent: number): number | null {
-  const trimmed = input.trim();
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
-    return null;
-  }
-  const [whole, frac = ''] = trimmed.split('.');
-  if (frac.length > exponent) {
-    return null;
-  }
-  const padded = frac.padEnd(exponent, '0');
-  const minor = Number(whole) * 10 ** exponent + (padded === '' ? 0 : Number(padded));
-  return Number.isSafeInteger(minor) ? minor : null;
+  return parseAmountMinor(input, exponent);
 }
 
 export function formatBps(bps: number): string {

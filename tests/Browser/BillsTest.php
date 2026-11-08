@@ -104,10 +104,78 @@ final class BillsTest extends TestCase
             Reveal::bill(self::driver(), $name, 'active');
             self::waitForText($name);
         }
+        self::driver()->executeScript(<<<'JS'
+            const article = [...document.querySelectorAll('article')].find((node) => {
+                const strong = node.querySelector('strong');
+                return strong && strong.textContent.trim() === 'Phone';
+            });
+            const opener = article ? article.querySelector('button.bill-slim') : null;
+            if (opener) opener.click();
+        JS);
+        $opened = self::wait()->until(function (): array|false {
+            $value = self::driver()->executeScript(<<<'JS'
+                const article = [...document.querySelectorAll('article')].find((node) => {
+                    const strong = node.querySelector('strong');
+                    return strong && strong.textContent.trim() === 'Phone';
+                });
+                if (!article || article.dataset.open !== 'true') return null;
+                const chip = (name) => article.querySelector(`.bill-detail-chip[data-chip="${name}"]`);
+                const paint = (node) => node ? getComputedStyle(node).color : '';
+                return {
+                    path: location.pathname,
+                    open: article.dataset.open,
+                    holder: chip('holder') ? chip('holder').textContent.trim() : '',
+                    account: paint(chip('account')),
+                    holderColor: paint(chip('holder')),
+                    bucket: paint(chip('bucket')),
+                    edit: [...article.querySelectorAll('button')].some((button) => button.textContent.trim() === 'Edit'),
+                };
+            JS);
+
+            return is_array($value) ? $value : false;
+        });
+        self::assertIsArray($opened);
+        self::assertSame('/bills', $opened['path']);
+        self::assertSame('true', $opened['open']);
+        self::assertSame('Demo', $opened['holder']);
+        self::assertNotSame('', $opened['account']);
+        self::assertNotSame($opened['account'], $opened['holderColor']);
+        self::assertNotSame($opened['account'], $opened['bucket']);
+        self::assertTrue($opened['edit']);
+        self::click('Expand all');
+        self::wait()->until(function (): bool {
+            $count = self::driver()->executeScript(<<<'JS'
+                return document.querySelectorAll('section[data-section="active"] article[data-open="true"]').length;
+            JS);
+
+            return is_int($count) && $count > 1;
+        });
+        self::click('Collapse');
+        self::wait()->until(function (): bool {
+            $count = self::driver()->executeScript(<<<'JS'
+                return document.querySelectorAll('section[data-section="active"] article[data-open="true"]').length;
+            JS);
+
+            return $count === 0;
+        });
+        self::driver()->executeScript(<<<'JS'
+            const article = [...document.querySelectorAll('article')].find((node) => {
+                const strong = node.querySelector('strong');
+                return strong && strong.textContent.trim() === 'Phone';
+            });
+            const edit = article ? [...article.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Edit') : null;
+            if (edit) edit.click();
+        JS);
+        self::waitForText('Save bill');
+        self::assertStringContainsString('/bills/', self::driver()->getCurrentURL());
+        self::clickLink('Back');
+        self::waitForText('Expand all');
+        Reveal::bill(self::driver(), 'Shower tokens', 'active');
+        self::waitForText('Shower tokens');
         $once = self::driver()->executeScript(<<<'JS'
             const article = [...document.querySelectorAll('article')].find((node) => {
-                const link = node.querySelector('a');
-                return link ? link.innerText.trim().startsWith('Shower tokens') : false;
+                const strong = node.querySelector('strong');
+                return strong ? strong.textContent.trim().startsWith('Shower tokens') : false;
             });
             const has = (label) => article ? [...article.querySelectorAll('button')].some((button) => button.textContent.trim() === label) : false;
             return { archive: has('Archive'), pause: has('Pause') };
@@ -121,8 +189,8 @@ final class BillsTest extends TestCase
         self::waitForText('Old meal kit');
         $archived = self::driver()->executeScript(<<<'JS'
             const article = [...document.querySelectorAll('article')].find((node) => {
-                const link = node.querySelector('a');
-                return link ? link.innerText.trim().startsWith('Old meal kit') : false;
+                const strong = node.querySelector('strong');
+                return strong ? strong.textContent.trim().startsWith('Old meal kit') : false;
             });
             const has = (label) => article ? [...article.querySelectorAll('button')].some((button) => button.textContent.trim() === label) : false;
             return { restore: has('Unarchive'), delete: has('Delete') };
@@ -136,8 +204,8 @@ final class BillsTest extends TestCase
         Reveal::bill(self::driver(), 'Travel card', 'active');
         $actions = self::driver()->executeScript(<<<'JS'
             const article = (name) => [...document.querySelectorAll('article')].find((node) => {
-                const link = node.querySelector('a');
-                return link ? link.innerText.trim().startsWith(name) : false;
+                const strong = node.querySelector('strong');
+                return strong ? strong.textContent.trim().startsWith(name) : false;
             });
             const has = (node, label) => node ? [...node.querySelectorAll('button')].some((button) => button.textContent.trim() === label) : false;
             return {
@@ -175,10 +243,10 @@ final class BillsTest extends TestCase
         self::assertGreaterThan($day['ruleTop'], $day['cards'][0]['top']);
         self::assertEqualsWithDelta($day['cards'][0]['top'], $day['cards'][1]['top'], 2);
         self::assertGreaterThan($day['cards'][0]['left'], $day['cards'][1]['left']);
-        self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}$/', $day['cards'][0]['money']);
-        self::assertMatchesRegularExpression('/^\$[\d,]+\.\d{2}$/', $day['cards'][1]['money']);
+        self::assertMatchesRegularExpression('/^-?\$[\d,]+\.\d{2}$/', $day['cards'][0]['money']);
+        self::assertMatchesRegularExpression('/^-?\$[\d,]+\.\d{2}$/', $day['cards'][1]['money']);
         Reveal::bill(self::driver(), 'Shower tokens', 'active');
-        self::clickLinkContaining('Shower tokens');
+        self::openBill('Shower tokens');
         $kept = self::wait()->until(function (): string|false {
             $value = self::driver()->executeScript(<<<'JS'
                 const input = document.querySelector('input[name="otherLabel"]');
@@ -206,6 +274,15 @@ final class BillsTest extends TestCase
             JS);
 
             return is_string($text) && str_contains($text, 'Adds this to the bucket');
+        });
+        $amountField = self::driver()->findElement(WebDriverBy::name('amount'));
+        $amountField->clear();
+        $amountField->sendKeys('(20+5)*(20/2)');
+        $amountField->sendKeys("\t");
+        self::wait()->until(function (): bool {
+            $value = self::driver()->findElement(WebDriverBy::name('amount'))->getAttribute('value');
+
+            return $value === '250.00';
         });
         self::click('other');
         self::waitForText('Other name');
@@ -285,7 +362,7 @@ final class BillsTest extends TestCase
         self::assertSame('Emergency fund', self::selectedAccount());
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Travel card', 'active');
-        self::clickLinkContaining('Travel card');
+        self::openBill('Travel card');
         self::assertSame('Emergency fund', self::selectedAccount());
 
         self::clickLink('Accounts');
@@ -307,7 +384,7 @@ final class BillsTest extends TestCase
         self::assertSame('Wallet', self::selectedAccount());
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Travel card', 'active');
-        self::clickLinkContaining('Travel card');
+        self::openBill('Travel card');
         self::assertSame('Wallet', self::selectedAccount());
     }
 
@@ -340,10 +417,18 @@ final class BillsTest extends TestCase
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by))->click();
     }
 
-    private static function clickLinkContaining(string $label): void
+    private static function openBill(string $name): void
     {
-        $by = WebDriverBy::xpath('//a[contains(normalize-space(.), ' . self::quote($label) . ')]');
-        self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by))->click();
+        $quoted = json_encode($name, JSON_THROW_ON_ERROR);
+        self::driver()->executeScript(<<<JS
+            const name = {$quoted};
+            const article = [...document.querySelectorAll('article')].find((node) => {
+                const strong = node.querySelector('strong');
+                return strong && strong.textContent.trim().startsWith(name);
+            });
+            const edit = article ? [...article.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Edit') : null;
+            if (edit) edit.click();
+        JS);
     }
 
     private static function type(string $name, string $value): void
