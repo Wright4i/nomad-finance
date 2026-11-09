@@ -637,11 +637,11 @@ final class TripService
         return $this->fuelByTrip = $map;
     }
 
-    /** @return list<array{id:int,latitude:string,longitude:string,travel:string}> */
+    /** @return list<array{id:int,latitude:string,longitude:string,travel:string,arrive_on:string,depart_on:string}> */
     private function stops(): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, latitude, longitude, travel FROM trips
+            'SELECT id, latitude, longitude, travel, arrive_on, depart_on FROM trips
              WHERE user_id = ?
              ORDER BY route_order, id'
         );
@@ -656,6 +656,8 @@ final class TripService
                 'latitude' => (string) $row['latitude'],
                 'longitude' => (string) $row['longitude'],
                 'travel' => ($row['travel'] ?? 'drive') === 'fly' ? 'fly' : 'drive',
+                'arrive_on' => (string) $row['arrive_on'],
+                'depart_on' => (string) $row['depart_on'],
             ];
         }
 

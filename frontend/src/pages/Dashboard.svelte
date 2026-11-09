@@ -840,10 +840,10 @@
                         </p>
                         <div class="want-gauge-track">
                           <span class="want-gauge-assigned"></span>
+                          {#if levels.over}
+                            <span class="want-gauge-over"></span>
+                          {/if}
                         </div>
-                        {#if levels.over}
-                          <span class="want-gauge-over"></span>
-                        {/if}
                       </div>
                       <div class="want-gauge-readout">
                         <p class="want-gauge-name m-0">{groupLabel[item.group]} · {item.targetPercent}%</p>

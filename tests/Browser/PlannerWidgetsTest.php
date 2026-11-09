@@ -336,6 +336,17 @@ final class PlannerWidgetsTest extends TestCase
                         splitAboveFuel: Boolean(split && fuel && split.getBoundingClientRect().bottom <= fuel.getBoundingClientRect().top + 2),
                     };
                 })(),
+                billsLayout: (() => {
+                    const body = document.querySelector('[data-section="bills"] .planner-widget-body');
+                    const pie = document.querySelector('[data-section="bills"] .bill-pie');
+                    if (!body || !pie) return null;
+                    return {
+                        bodyScroll: body.scrollHeight,
+                        bodyClient: body.clientHeight,
+                        overflowY: getComputedStyle(body).overflowY,
+                        pieFits: pie.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom + 1,
+                    };
+                })(),
                 staysFilterInk: (() => {
                     const button = document.querySelector('[data-section="calendar"] .planner-calendar-filter[data-filter="stays"]');
                     const glyph = button ? button.querySelector('.glyph') : null;
@@ -424,6 +435,9 @@ final class PlannerWidgetsTest extends TestCase
         );
         self::assertTrue($seen['accountsLayout']['hasSplit']);
         self::assertTrue($seen['accountsLayout']['splitAboveFuel']);
+        self::assertIsArray($seen['billsLayout']);
+        self::assertLessThanOrEqual((int) $seen['billsLayout']['bodyClient'] + 1, (int) $seen['billsLayout']['bodyScroll']);
+        self::assertTrue($seen['billsLayout']['pieFits']);
         self::assertIsArray($seen['staysFilterInk']);
         self::assertTrue($seen['staysFilterInk']['pressed']);
         self::assertSame($seen['staysFilterInk']['button'], $seen['staysFilterInk']['glyph']);
@@ -1041,6 +1055,7 @@ final class PlannerWidgetsTest extends TestCase
         self::assertTrue($wideBudget['gaugesShareRow']);
         self::assertFalse($wideBudget['gaugeOverflow']);
         self::assertTrue($wideBudget['gaugePercentsCentered']);
+        self::assertTrue($wideBudget['overFitsTrack']);
 
         self::sizeWidget('envelopes', 1);
         $stackedBudget = self::plannerShrinkMetrics();
@@ -1302,6 +1317,16 @@ final class PlannerWidgetsTest extends TestCase
                 const tMid = (t.left + t.right) / 2;
                 return Math.abs(cMid - tMid) < 2;
             });
+            const overFitsTrack = [...document.querySelectorAll('.planner-gauges .want-gauge.over')].every((gauge) => {
+                const track = gauge.querySelector('.want-gauge-track');
+                const over = gauge.querySelector('.want-gauge-over');
+                if (!track || !over) return true;
+                const trackBox = track.getBoundingClientRect();
+                const overBox = over.getBoundingClientRect();
+                return overBox.width <= trackBox.width + 1
+                    && overBox.left >= trackBox.left - 1
+                    && overBox.right <= trackBox.right + 1;
+            });
             return {
                 liabilitiesFit: fits(liabilities, net),
                 interestLostFit: fits(interestLost, net),
@@ -1312,6 +1337,7 @@ final class PlannerWidgetsTest extends TestCase
                 netFigureFull,
                 interestLostVisible,
                 gaugePercentsCentered,
+                overFitsTrack,
                 netWidth: net ? net.width : 0,
                 gaugeCount: gauges.length,
                 gaugeTops: tops,

@@ -67,14 +67,23 @@ final class Drive
     }
 
     /**
-     * @param list<array{id:int,latitude:string,longitude:string,travel?:string}> $stops
-     *     Route order. The destination's travel chooses the leg.
+     * @param list<array{
+     *     id:int,
+     *     latitude:string,
+     *     longitude:string,
+     *     travel?:string,
+     *     arrive_on?:string,
+     *     depart_on?:string
+     * }> $stops Route order. The destination's travel chooses the leg.
      * @return list<array{fromId:int,toId:int,miles:int,driving:bool,travel:string,coordinates:list<array{0:float,1:float}>}>
      */
     public function legs(array $stops): array
     {
         $legs = [];
-        for ($i = 1, $count = count($stops); $i < $count; $i++) {
+        /** @var list<array{fromId:int,toId:int,miles:int,driving:bool,travel:string,coordinates:list<array{0:float,1:float}>}> $afterReturn */
+        $afterReturn = [];
+        $count = count($stops);
+        for ($i = 1; $i < $count; $i++) {
             $from = $stops[$i - 1];
             $to = $stops[$i];
             $travel = ($to['travel'] ?? 'drive') === 'fly' ? 'fly' : 'drive';
@@ -89,46 +98,182 @@ final class Drive
                 ];
                 continue;
             }
-            $driven = $this->road($from, $to);
-            if ($driven !== null) {
-                $legs[] = [
-                    'fromId' => $from['id'],
-                    'toId' => $to['id'],
-                    'miles' => self::miles((int) round($driven['meters'])),
-                    'driving' => true,
-                    'travel' => 'drive',
-                    'coordinates' => $driven['coordinates'],
-                ];
+            if (($from['travel'] ?? 'drive') === 'fly') {
+                $base = $this->ongoingAtDepart($stops, $i - 1);
+                if ($base !== null && !$this->relocationFromFlight($from, $to, $base)) {
+                    if ($this->driveFromBaseAfterReturn($to, $base)) {
+                        $afterReturn[] = $this->connect($base, $to);
+                    }
+                    continue;
+                }
+            }
+            $legs[] = $this->connect($from, $to);
+        }
+
+        for ($i = 0; $i < $count; $i++) {
+            $flight = $stops[$i];
+            if (($flight['travel'] ?? 'drive') !== 'fly') {
                 continue;
             }
-            if ($this->roads) {
-                $legs[] = [
-                    'fromId' => $from['id'],
-                    'toId' => $to['id'],
-                    'miles' => 0,
-                    'driving' => false,
-                    'travel' => 'drive',
-                    'coordinates' => [],
-                ];
+            $next = $stops[$i + 1] ?? null;
+            $base = $this->ongoingAtDepart($stops, $i);
+            if ($base === null || ($next !== null && $this->relocationFromFlight($flight, $next, $base))) {
                 continue;
             }
-            $meters = self::haversineMeters(
-                (float) $from['latitude'],
-                (float) $from['longitude'],
-                (float) $to['latitude'],
-                (float) $to['longitude'],
-            );
             $legs[] = [
+                'fromId' => $flight['id'],
+                'toId' => $base['id'],
+                'miles' => 0,
+                'driving' => false,
+                'travel' => 'fly',
+                'coordinates' => [],
+            ];
+        }
+
+        foreach ($afterReturn as $leg) {
+            $legs[] = $leg;
+        }
+
+        return $legs;
+    }
+
+    /**
+     * @param array{id:int,latitude:string,longitude:string} $from
+     * @param array{id:int,latitude:string,longitude:string} $to
+     * @return array{fromId:int,toId:int,miles:int,driving:bool,travel:string,coordinates:list<array{0:float,1:float}>}
+     */
+    private function connect(array $from, array $to): array
+    {
+        $driven = $this->road($from, $to);
+        if ($driven !== null) {
+            return [
                 'fromId' => $from['id'],
                 'toId' => $to['id'],
-                'miles' => self::miles($meters),
+                'miles' => self::miles((int) round($driven['meters'])),
+                'driving' => true,
+                'travel' => 'drive',
+                'coordinates' => $driven['coordinates'],
+            ];
+        }
+        if ($this->roads) {
+            return [
+                'fromId' => $from['id'],
+                'toId' => $to['id'],
+                'miles' => 0,
                 'driving' => false,
                 'travel' => 'drive',
                 'coordinates' => [],
             ];
         }
+        $meters = self::haversineMeters(
+            (float) $from['latitude'],
+            (float) $from['longitude'],
+            (float) $to['latitude'],
+            (float) $to['longitude'],
+        );
 
-        return $legs;
+        return [
+            'fromId' => $from['id'],
+            'toId' => $to['id'],
+            'miles' => self::miles($meters),
+            'driving' => false,
+            'travel' => 'drive',
+            'coordinates' => [],
+        ];
+    }
+
+    /**
+     * @param array{arrive_on?:string,depart_on?:string} $inner
+     * @param array{arrive_on?:string,depart_on?:string} $outer
+     */
+    private function nestedInside(array $inner, array $outer): bool
+    {
+        $innerArrive = $inner['arrive_on'] ?? '';
+        $innerDepart = $inner['depart_on'] ?? '';
+        $outerArrive = $outer['arrive_on'] ?? '';
+        $outerDepart = $outer['depart_on'] ?? '';
+        if ($innerArrive === '' || $innerDepart === '' || $outerArrive === '' || $outerDepart === '') {
+            return false;
+        }
+
+        return strcmp($innerArrive, $outerArrive) >= 0 && strcmp($innerDepart, $outerDepart) <= 0;
+    }
+
+    /**
+     * After a one-way flight the route may continue by road from the flight city.
+     * A nested stay or a handoff that starts when the base ends still returns to the base first.
+     *
+     * @param array{travel?:string,depart_on?:string} $flight
+     * @param array{travel?:string,arrive_on?:string,depart_on?:string} $next
+     * @param array{arrive_on?:string,depart_on?:string} $base
+     */
+    private function relocationFromFlight(array $flight, array $next, array $base): bool
+    {
+        if (($next['travel'] ?? 'drive') === 'fly') {
+            return false;
+        }
+        if ($this->nestedInside($next, $base)) {
+            return false;
+        }
+        $baseDepart = $base['depart_on'] ?? '';
+        $nextArrive = $next['arrive_on'] ?? '';
+        $flightDepart = $flight['depart_on'] ?? '';
+        if ($baseDepart === '' || $nextArrive === '' || $flightDepart === '') {
+            return false;
+        }
+        if (strcmp($nextArrive, $baseDepart) >= 0) {
+            return false;
+        }
+
+        return strcmp($nextArrive, $flightDepart) >= 0;
+    }
+
+    /** @param array{arrive_on?:string,depart_on?:string} $next */
+    private function driveFromBaseAfterReturn(array $next, array $base): bool
+    {
+        if ($this->nestedInside($next, $base)) {
+            return true;
+        }
+        $baseDepart = $base['depart_on'] ?? '';
+        $nextArrive = $next['arrive_on'] ?? '';
+
+        return $baseDepart !== '' && $nextArrive !== '' && strcmp($nextArrive, $baseDepart) >= 0;
+    }
+
+    /**
+     * @param list<array{
+     *     id:int,
+     *     latitude:string,
+     *     longitude:string,
+     *     arrive_on?:string,
+     *     depart_on?:string
+     * }> $stops
+     * @return array{id:int,latitude:string,longitude:string}|null
+     */
+    private function ongoingAtDepart(array $stops, int $flightIndex): ?array
+    {
+        $flight = $stops[$flightIndex];
+        $depart = $flight['depart_on'] ?? '';
+        $arrive = $flight['arrive_on'] ?? '';
+        if ($depart === '' || $arrive === '') {
+            return null;
+        }
+        for ($j = $flightIndex - 1; $j >= 0; $j--) {
+            $stay = $stops[$j];
+            $baseArrive = $stay['arrive_on'] ?? '';
+            $baseDepart = $stay['depart_on'] ?? '';
+            if ($baseArrive === '' || $baseDepart === '') {
+                continue;
+            }
+            if (strcmp($arrive, $baseArrive) < 0) {
+                continue;
+            }
+            if (strcmp($depart, $baseArrive) >= 0 && strcmp($depart, $baseDepart) <= 0) {
+                return $stay;
+            }
+        }
+
+        return null;
     }
 
     /**

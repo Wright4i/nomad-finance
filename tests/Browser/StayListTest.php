@@ -12,6 +12,7 @@ use Facebook\WebDriver\WebDriverBy;
 use Facebook\WebDriver\WebDriverDimension;
 use Facebook\WebDriver\WebDriverExpectedCondition;
 use Facebook\WebDriver\WebDriverWait;
+use PHPUnit\Framework\Attributes\Depends;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -291,6 +292,30 @@ final class StayListTest extends TestCase
         }
 
         throw new RuntimeException('The PHP server did not start. See var/browser-server.log.');
+    }
+
+    #[Depends('testTheStayListDropsTheYearAndChipsTheFacts')]
+    public function testANewStayStartsOnTheShoppingFavorite(): void
+    {
+        self::clickLink('Add a stay');
+        self::assertSame('Travel card', self::selectedStayAccount());
+    }
+
+    private static function selectedStayAccount(): string
+    {
+        $value = self::wait()->until(function (): string|false {
+            $text = self::driver()->executeScript(<<<'JS'
+                const select = document.querySelector('select[name="accountId"]');
+                const option = select && select.selectedOptions[0];
+                const label = option ? option.textContent.trim() : '';
+                return label !== '' && label !== 'None' ? label : '';
+            JS);
+
+            return is_string($text) && $text !== '' ? $text : false;
+        });
+        self::assertIsString($value);
+
+        return $value;
     }
 
     private static function reservePort(): int

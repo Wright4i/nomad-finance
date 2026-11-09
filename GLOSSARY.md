@@ -16,10 +16,10 @@ _Avoid_: Bucket, bill type
 The one open fuel account a fuel log starts on. At most one. The account that holds it holds no other favorite.
 
 **Shopping favorite**:
-The one open credit account a need log or a want log starts on. At most one. The account that holds it holds no other favorite.
+The one open credit account a need log, a want log, or a new stay starts on. At most one. The account that holds it holds no other favorite.
 
 **Asset favorite**:
-The one open asset a new bill, a transfer, and a new stay start on. A locked bill draws from it. At most one. A vault marks that card. The account that holds it holds no other favorite.
+The one open asset a new bill and a transfer start on. A locked bill draws from it. At most one. A vault marks that card. The account that holds it holds no other favorite.
 _Avoid_: Starred account, default account
 
 **Tracking account**:

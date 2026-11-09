@@ -11,7 +11,7 @@
   import { go } from '../lib/nav.svelte.ts';
   import { tripsView } from '../lib/tripsView.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
-  import { payFromAccount } from '../lib/payFrom';
+  import { stayAccount } from '../lib/payFrom';
   import { fieldTips } from '../lib/fieldTips';
   import { tip } from '../lib/tip';
 import type { Account, Trip } from '../lib/types';
@@ -64,7 +64,7 @@ import type { Account, Trip } from '../lib/types';
     try {
       const accountData = await api<{ accounts: Account[] }>('/api/accounts');
       accounts = accountData.accounts;
-      const open = payFromAccount(accounts) ?? accounts[0];
+      const open = stayAccount(accounts) ?? accounts[0];
       if (!id && open) accountId = String(open.id);
       if (!id) return;
       const data = await api<{ trip: Trip }>(`/api/trips/${id}?today=${todayISO()}`);
