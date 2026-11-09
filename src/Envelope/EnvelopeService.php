@@ -40,6 +40,7 @@ final class EnvelopeService
     {
         $today = $this->day($today);
         $this->fillIfWaiting($today);
+        (new TripService($this->pdo, $this->actor, $this->currencies, $this->drive))->syncAllFuelBills($today);
         $this->prepare($today);
         if ($useAcctPeriod) {
             $this->adoptEnvelopes($today);
@@ -1128,10 +1129,6 @@ final class EnvelopeService
                 $total += (int) $bill['amountMinor'];
             }
         }
-        foreach ($this->stayFuel($window['start'], $window['end'], $today) as $stay) {
-            $total += $stay['costMinor'];
-        }
-
         return $total;
     }
 
@@ -1171,16 +1168,11 @@ final class EnvelopeService
      */
     private function windowBillSums(string $start, string $end, bool $overdue, string $today): array
     {
-        $picture = $this->withStayFuel(
-            (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
-                $today,
-                $start,
-                $end,
-                $overdue,
-            ),
+        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
             $start,
             $end,
-            $today,
+            $overdue,
         );
         $sums = [];
         foreach ($picture['bills'] as $categoryId => $bills) {
@@ -1777,16 +1769,11 @@ final class EnvelopeService
             $end = $month['end'];
         }
 
-        return $this->withStayFuel(
-            (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
-                $today,
-                $start,
-                $end,
-                $overdue,
-            ),
+        return (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
             $start,
             $end,
-            $today,
+            $overdue,
         );
     }
 
@@ -2090,32 +2077,6 @@ final class EnvelopeService
         }
 
         return $span;
-    }
-
-    /**
-     * @param array{bills: array<int, list<array{id:int,name:string,amountMinor:int}>>, leftOut: list<string>} $picture
-     * @return array{bills: array<int, list<array{id:int,name:string,amountMinor:int}>>, leftOut: list<string>}
-     */
-    private function withStayFuel(array $picture, string $start, string $end, string $today): array
-    {
-        $fuelId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'fuel');
-        foreach ($this->stayFuel($start, $end, $today) as $stay) {
-            $picture['bills'][$fuelId][] = [
-                'id' => -$stay['id'],
-                'name' => $stay['name'],
-                'amountMinor' => $stay['costMinor'],
-            ];
-        }
-
-        return $picture;
-    }
-
-    /** @return list<array{id:int,name:string,costMinor:int}> */
-    private function stayFuel(string $start, string $end, string $today): array
-    {
-        $trips = new TripService($this->pdo, $this->actor, $this->currencies, $this->drive ?? new Drive(true));
-
-        return $trips->fuelEstimates($start, $end, $today);
     }
 
     /** A bill saved before any pay period existed fills on the next load. */

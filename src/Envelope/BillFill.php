@@ -31,6 +31,8 @@ final class BillFill
     public function apply(string $today): void
     {
         $today = $this->day($today);
+        (new TripService($this->pdo, $this->actor, $this->currencies, $this->drive ?? new Drive(false)))
+            ->syncAllFuelBills($today);
         $home = $this->home();
         if ($home === null) {
             return;
@@ -44,9 +46,9 @@ final class BillFill
             $nextId = $this->storePeriod($home, $next['start'], $next['end']);
         }
         $picture = $this->picture($today, true);
-        $this->write($openId, $this->withFuel($picture['open'], $open['start'], $today));
+        $this->write($openId, $picture['open']);
         if ($nextId !== null && $next !== null) {
-            $this->write($nextId, $this->withFuel($picture['next'], $next['start'], $today));
+            $this->write($nextId, $picture['next']);
         }
         $this->syncAmounts($today);
     }
@@ -174,25 +176,6 @@ final class BillFill
         $rows = $stmt->fetchAll();
 
         return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
-    }
-
-    /**
-     * Trip fuel joins the fuel bucket's auto-assigned amount.
-     * The bill list stays bills only; the screen adds the same stays beside them.
-     *
-     * @param array<int, int> $filled
-     * @return array<int, int>
-     */
-    private function withFuel(array $filled, string $day, string $today): array
-    {
-        $month = Dates::parse($day);
-        $fuelId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'fuel');
-        $trips = new TripService($this->pdo, $this->actor, $this->currencies, $this->drive ?? new Drive(false));
-        foreach ($trips->fuelEstimates($month->format('Y-m-01'), $month->format('Y-m-t'), $today) as $stay) {
-            $filled[$fuelId] = ($filled[$fuelId] ?? 0) + $stay['costMinor'];
-        }
-
-        return $filled;
     }
 
     /** @param array<int, int> $filled */

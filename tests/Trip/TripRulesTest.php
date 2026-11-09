@@ -16,6 +16,7 @@ use App\Tests\Support\DemoSession;
 use App\Trip\Drive;
 use App\Trip\Fuel;
 use App\Trip\TripService;
+use App\Vehicle\VehicleService;
 use PDO;
 use PHPUnit\Framework\TestCase;
 
@@ -709,6 +710,52 @@ final class TripRulesTest extends TestCase
             self::assertSame(422, $e->status);
             self::assertArrayHasKey('travel', $e->fields);
         }
+    }
+
+    public function testAStaySyncsAnActiveFuelBillOnTheFuelBucket(): void
+    {
+        $this->accounts->create([
+            'name' => 'Fuel 1',
+            'type' => 'fuel',
+            'currency' => 'USD',
+            'balanceMinor' => 0,
+            'gasFavorite' => true,
+        ]);
+        $vehicles = new VehicleService($this->pdo, new Actor($this->pdo));
+        $vehicles->create([
+            'name' => 'Coach',
+            'kind' => 'rv',
+            'mpgMinTenths' => 60,
+            'mpgMaxTenths' => 120,
+            'currentOdometerMiles' => 1000,
+            'fuelPriceMinor' => 400,
+            'starred' => true,
+        ]);
+        $this->trips->create($this->fields([
+            'placeName' => 'First',
+            'arriveOn' => '2026-11-10',
+            'departOn' => '2026-11-12',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $second = $this->trips->create($this->fields([
+            'placeName' => 'Second',
+            'arriveOn' => '2026-11-14',
+            'departOn' => '2026-11-16',
+            'latitude' => '34.05',
+            'longitude' => '-118.24',
+            'totalMinor' => 0,
+            'amountDueMinor' => 0,
+            'accountId' => null,
+        ]));
+        $stmt = $this->pdo->prepare("SELECT name, type, status, amount_minor FROM bills WHERE trip_id = ? AND type = 'fuel'");
+        $stmt->execute([(int) $second['id']]);
+        $fuel = $stmt->fetch();
+        self::assertIsArray($fuel);
+        self::assertSame('Second', $fuel['name']);
+        self::assertSame('active', $fuel['status']);
+        self::assertGreaterThan(0, (int) $fuel['amount_minor']);
     }
 
     /** @return list<array<string, mixed>> */

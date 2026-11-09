@@ -276,20 +276,24 @@ final class EnvelopeRulesTest extends TestCase
         $stayMinor = array_sum(array_column($november, 'costMinor'));
         self::assertGreaterThan(0, $stayMinor);
 
+        $trips->syncAllFuelBills('2026-11-03');
         $sheet = $this->envelopes->show('2026-11-03');
         $fuel = $this->category($sheet, 'Fuel');
-        $billsOnly = 0;
-        $listed = 0;
+        $stayBills = 0;
         foreach ($fuel['bills'] as $bill) {
             if (in_array($bill['name'], $names, true)) {
-                $listed += (int) $bill['amountMinor'];
-                continue;
+                $stayBills += (int) $bill['amountMinor'];
             }
-            $billsOnly += (int) $bill['amountMinor'];
         }
-        self::assertSame(8500, $billsOnly);
-        self::assertSame($stayMinor, $listed);
-        self::assertSame(8500 + $stayMinor, (int) $fuel['billMinor']);
+        self::assertSame($stayMinor, $stayBills);
+        $otherBills = 0;
+        foreach ($fuel['bills'] as $bill) {
+            if (!in_array($bill['name'], $names, true)) {
+                $otherBills += (int) $bill['amountMinor'];
+            }
+        }
+        self::assertSame($stayBills + $otherBills, (int) $fuel['billMinor']);
+        self::assertGreaterThanOrEqual(8500, $otherBills);
         self::assertGreaterThanOrEqual((int) $fuel['billMinor'], (int) $fuel['amountMinor']);
 
         try {

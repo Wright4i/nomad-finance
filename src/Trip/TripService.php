@@ -113,6 +113,7 @@ final class TripService
         ]);
         $id = (int) $this->pdo->lastInsertId();
         $this->syncDueBill($id, $data, $today);
+        $this->refill($today);
 
         return $this->get($id, $today);
     }
@@ -169,6 +170,7 @@ final class TripService
             $this->reseatRoute($id, $data['arriveOn'], $data['departOn'], $data['placeName']);
         }
         $this->syncDueBill($id, $data, $today);
+        $this->refill($today);
 
         return $this->get($id, $today);
     }
@@ -229,6 +231,7 @@ final class TripService
         ]);
         $this->moveByTrip = null;
         $this->fuelByTrip = null;
+        $this->refill(gmdate('Y-m-d'));
     }
 
     public function delete(int $id, bool $confirm): void
@@ -266,14 +269,13 @@ final class TripService
         $dueOn = is_string($data['balanceDueOn']) ? $data['balanceDueOn'] : '';
         $accountId = $data['accountId'];
         $accountId = is_int($accountId) ? $accountId : null;
-        $stmt = $this->pdo->prepare('SELECT id FROM bills WHERE trip_id = ?');
+        $stmt = $this->pdo->prepare("SELECT id FROM bills WHERE trip_id = ? AND type = 'lodging'");
         $stmt->execute([$tripId]);
         $found = $stmt->fetchColumn();
         $billId = $found === false ? null : (int) $found;
         if ($amount < 1 || $dueOn === '' || $accountId === null) {
             if ($billId !== null) {
                 $this->pdo->prepare('DELETE FROM bills WHERE id = ? AND trip_id = ?')->execute([$billId, $tripId]);
-                $this->refill($today);
             }
 
             return;
@@ -300,7 +302,95 @@ final class TripService
                  WHERE id = ? AND trip_id = ?'
             )->execute([$name, $accountId, $categoryId, $amount, $currency, $dueOn, $dueOn, $now, $billId, $tripId]);
         }
-        $this->refill($today);
+    }
+
+    /**
+     * One fuel bill per stay that still has a cost estimate. Paid and archived rows are left alone.
+     * A finished stay drops an active bill. Estimates refresh on each bill fill.
+     */
+    public function syncAllFuelBills(string $today): void
+    {
+        $today = $this->dayOrToday($today);
+        $this->fuelByTrip = null;
+        $stmt = $this->pdo->prepare('SELECT id FROM trips WHERE user_id = ? ORDER BY route_order, id');
+        $stmt->execute([$this->actor->id()]);
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                break;
+            }
+            $this->syncFuelBill((int) $row['id'], $today);
+        }
+    }
+
+    private function syncFuelBill(int $tripId, string $today): void
+    {
+        $trip = $this->row($tripId);
+        $arrive = (string) $trip['arrive_on'];
+        $depart = (string) $trip['depart_on'];
+        $stmt = $this->pdo->prepare("SELECT id, status FROM bills WHERE trip_id = ? AND type = 'fuel'");
+        $stmt->execute([$tripId]);
+        $existing = $stmt->fetch();
+        $billId = is_array($existing) ? (int) $existing['id'] : null;
+        $status = is_array($existing) ? (string) $existing['status'] : '';
+        if ($billId !== null && !in_array($status, ['active', 'paused'], true)) {
+            return;
+        }
+        if (self::status($arrive, $depart, $today) === 'done') {
+            if ($billId !== null && $status === 'active') {
+                $this->pdo->prepare('DELETE FROM bills WHERE id = ? AND trip_id = ?')->execute([$billId, $tripId]);
+            }
+
+            return;
+        }
+        $estimate = $this->fuelFor($tripId);
+        $amount = $estimate['costMinor'] ?? null;
+        if (!is_int($amount) || $amount < 1) {
+            if ($billId !== null) {
+                $this->pdo->prepare('DELETE FROM bills WHERE id = ? AND trip_id = ?')->execute([$billId, $tripId]);
+            }
+
+            return;
+        }
+        $accountId = $this->fuelAccountId();
+        if ($accountId === null) {
+            return;
+        }
+        $currencyStmt = $this->pdo->prepare('SELECT currency FROM accounts WHERE id = ? AND user_id = ?');
+        $currencyStmt->execute([$accountId, $this->actor->id()]);
+        $currency = $currencyStmt->fetchColumn();
+        $currency = is_string($currency) && $currency !== '' ? $currency : 'USD';
+        $categoryId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'fuel');
+        $name = (string) $trip['place_name'];
+        $now = gmdate('c');
+        if ($billId === null) {
+            $this->pdo->prepare(
+                'INSERT INTO bills (
+                    name, type, account_id, category_id, amount_minor, currency,
+                    recurrence, anchor_date, next_due_date, autopay, status, created_at, updated_at, trip_id
+                 ) VALUES (?, \'fuel\', ?, ?, ?, ?, \'once\', ?, ?, 0, \'active\', ?, ?, ?)'
+            )->execute([$name, $accountId, $categoryId, $amount, $currency, $arrive, $arrive, $now, $now, $tripId]);
+        } else {
+            $this->pdo->prepare(
+                'UPDATE bills SET
+                    name = ?, account_id = ?, category_id = ?, amount_minor = ?, currency = ?,
+                    anchor_date = ?, next_due_date = ?, updated_at = ?
+                 WHERE id = ? AND trip_id = ?'
+            )->execute([$name, $accountId, $categoryId, $amount, $currency, $arrive, $arrive, $now, $billId, $tripId]);
+        }
+    }
+
+    private function fuelAccountId(): ?int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id FROM accounts
+             WHERE user_id = ? AND archived_at IS NULL AND type = \'fuel\'
+             ORDER BY gas_favorite DESC, id ASC
+             LIMIT 1'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $found = $stmt->fetchColumn();
+
+        return $found === false ? null : (int) $found;
     }
 
     private function refill(string $today): void
