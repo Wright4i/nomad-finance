@@ -250,9 +250,16 @@ final class EnvelopesTest extends TestCase
         preg_match('/assigned of\s+(\$[\d,]+\.\d{2})/', $hero['of'], $ofMatch);
         $ofCents = self::cents($ofMatch[1]);
         self::assertGreaterThan(self::cents($hero['text']), $ofCents);
-        self::assertSame('(50% goal - ' . self::money(intdiv($ofCents * 50 + 50, 100)) . ')', $headings['needs']['goal']);
-        self::assertSame('(30% goal - ' . self::money(intdiv($ofCents * 30 + 50, 100)) . ')', $headings['wants']['goal']);
-        self::assertSame('(20% goal - ' . self::money(intdiv($ofCents * 20 + 50, 100)) . ')', $headings['savings']['goal']);
+        foreach (['needs' => 50, 'wants' => 30, 'savings' => 20] as $group => $percent) {
+            $goalCents = intdiv($ofCents * $percent + 50, 100);
+            preg_match('/\$(\d[\d,]*\.\d{2})/', $headings[$group]['target'], $targetMatch);
+            self::assertIsArray($targetMatch);
+            $remain = self::money(max(0, $goalCents - self::cents('$' . $targetMatch[1])));
+            self::assertSame(
+                '(' . $percent . '% goal - ' . self::money($goalCents) . ' · Remaining ' . $remain . ')',
+                $headings[$group]['goal'],
+            );
+        }
         self::clickAvailable();
         $sources = self::driver()->executeScript(<<<'JS'
             const dialog = document.querySelector('dialog.modal[open]');
@@ -816,6 +823,18 @@ final class EnvelopesTest extends TestCase
                     const targetSpread = targets.length >= 2 ? Math.max(...targets) - Math.min(...targets) : 0;
                     if (envelopeSpread >= 2 || targetSpread >= 2) {
                         return { ok: false, envelopeSpread, targetSpread, names: group.tiles.map((tile) => tile.name + ' e' + tile.envelope + ' h' + tile.status + ' ' + tile.chip) };
+                    }
+                }
+                for (const tile of board.querySelectorAll('.envelope-tile')) {
+                    const input = tile.querySelector('.money-input input');
+                    const autoMoney = tile.querySelector('[data-field="auto"] .money');
+                    const targetMoney = tile.querySelector('[data-field="target"] .money');
+                    if (!input || !autoMoney || !targetMoney) continue;
+                    const envelopeSize = parseFloat(getComputedStyle(input).fontSize);
+                    const autoSize = parseFloat(getComputedStyle(autoMoney).fontSize);
+                    const targetSize = parseFloat(getComputedStyle(targetMoney).fontSize);
+                    if (autoSize + 0.5 < envelopeSize || targetSize + 0.5 < envelopeSize) {
+                        return { ok: false, name: tile.querySelector('strong')?.innerText ?? '', envelopeSize, autoSize, targetSize };
                     }
                 }
             }

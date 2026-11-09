@@ -30,6 +30,7 @@
   let bankAutopay = $state(false);
   let billRecurrence = $state<'daily' | 'monthly' | 'yearly'>('monthly');
   let billEvery = $state(1);
+  let liabilityBillType = $state<'debt' | 'vehicle'>('debt');
   let gasFavorite = $state(false);
   let shoppingFavorite = $state(false);
   let assetFavorite = $state(false);
@@ -46,6 +47,7 @@
   let loading = $state(id !== null);
 
   let showLiability = $derived(type === 'credit' || type === 'loan' || type === 'fuel');
+  let showLiabilityBucket = $derived(type === 'loan');
   let showLimit = $derived(type === 'credit' || type === 'fuel');
   let showSide = $derived(type === 'other');
   let showBudget = $derived(type === 'checking' || type === 'savings' || type === 'cash' || (type === 'other' && side === 'asset'));
@@ -91,6 +93,7 @@
       bankAutopay = account.bankAutopay;
       billRecurrence = account.billRecurrence === 'daily' || account.billRecurrence === 'yearly' ? account.billRecurrence : 'monthly';
       billEvery = account.billEvery >= 1 && account.billEvery <= 11 ? account.billEvery : 1;
+      liabilityBillType = account.liabilityBillType === 'vehicle' ? 'vehicle' : 'debt';
       gasFavorite = account.gasFavorite;
       shoppingFavorite = account.shoppingFavorite;
       assetFavorite = account.assetFavorite;
@@ -108,6 +111,7 @@
     if (option !== 'fuel') gasFavorite = false;
     if (option !== 'credit') shoppingFavorite = false;
     if (option !== 'checking' && option !== 'savings' && option !== 'cash' && option !== 'other') assetFavorite = false;
+    if (option !== 'loan') liabilityBillType = 'debt';
     if (budgetTouched) return;
     const asset = option === 'checking' || option === 'savings' || option === 'cash' || (option === 'other' && side === 'asset');
     inBudget = asset && option !== 'savings';
@@ -168,6 +172,7 @@
       bankAutopay: showLiability && bankAutopay,
       billRecurrence: showLiability ? billRecurrence : 'monthly',
       billEvery: showLiability ? billEvery : 1,
+      liabilityBillType: showLiabilityBucket ? liabilityBillType : 'debt',
       institution,
       holder,
       notes,
@@ -315,6 +320,16 @@
     {#if fields.interestBps}<em>{fields.interestBps}</em>{/if}
   </label>
   {#if showLiability}
+    {#if showLiabilityBucket}
+      <label class="field">
+        <span use:tip={fieldTips.accountLiabilityBucket}>Bucket</span>
+        <select name="liabilityBillType" bind:value={liabilityBillType}>
+          <option value="debt">Debt</option>
+          <option value="vehicle">Vehicle</option>
+        </select>
+        {#if fields.liabilityBillType}<em>{fields.liabilityBillType}</em>{/if}
+      </label>
+    {/if}
     <label class="flex items-center gap-2">
       <input class="w-auto" type="checkbox" name="bankAutopay" bind:checked={bankAutopay} onchange={(event) => { if (event.currentTarget.checked && autopayChoice === 'none') autopayChoice = 'minimum'; }} />
       <span use:tip={fieldTips.accountBankAutopay}>Autopay is on at the bank</span>

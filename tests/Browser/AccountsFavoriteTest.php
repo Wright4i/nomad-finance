@@ -197,6 +197,25 @@ final class AccountsFavoriteTest extends TestCase
         self::assertSame('/accounts', (string) parse_url((string) self::driver()->getCurrentURL(), PHP_URL_PATH));
     }
 
+    #[Depends('testAnArchivedAccountCanBeDeleted')]
+    public function testLoanEditShowsDebtAndVehicleBuckets(): void
+    {
+        self::driver()->get(self::$base . '/accounts/new');
+        self::waitForText('Save account');
+        self::click('loan');
+        self::waitForText('Bucket');
+        $select = self::driver()->findElements(WebDriverBy::name('liabilityBillType'));
+        self::assertCount(1, $select);
+        $options = $select[0]->findElements(WebDriverBy::cssSelector('option'));
+        self::assertCount(2, $options);
+        self::assertSame('Debt', trim($options[0]->getText()));
+        self::assertSame('Vehicle', trim($options[1]->getText()));
+
+        self::click('credit');
+        self::waitForText('Autopay is on at the bank');
+        self::assertCount(0, self::driver()->findElements(WebDriverBy::name('liabilityBillType')));
+    }
+
     private static function assertFavoriteMarks(): void
     {
         $marks = self::driver()->executeScript(<<<'JS'

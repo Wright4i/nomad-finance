@@ -15,6 +15,7 @@ export const fieldTips = {
   accountBudget: 'On adds this balance to available to assign.',
   accountInterest: 'Lost on a card or loan. Gained on savings.',
   accountBankAutopay: 'On creates the bill. Off leaves no bill.',
+  accountLiabilityBucket: 'The locked bucket for the autopay bill. Auto loans can use Vehicle.',
   accountRecurrence: 'How often that generated bill comes due.',
   accountBillEvery: '1–11 of that unit.',
   accountBillAmount: 'Minimum, or the balance. Zero hides the bill.',
@@ -64,7 +65,7 @@ export const fieldTips = {
   stayDeparture: 'Both days count. On or after arrival.',
   stayTravel: 'Fly skips the road. Drive asks for it.',
   stayBalanceDue: 'Above $0 with this date creates one lodging bill. The stay does not move a balance.',
-  stayAccount: 'Starts on the default asset. The lodging bill draws from here.',
+  stayAccount: 'Starts on the shopping favorite. The lodging bill draws from here.',
   stayTotal: 'Deposit = total − amount due. The deposit is not stored.',
   stayAmountDue: 'Copied from the total when the total changes.',
 

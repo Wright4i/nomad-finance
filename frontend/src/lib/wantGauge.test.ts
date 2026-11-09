@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { lockedBucketMaxMinor, wantGaugeGoalPercent, wantGaugeLevels } from './wantGauge.ts';
+import { lockedBucketMaxMinor, wantGaugeGoalPercent, wantGaugeLevels, wantGaugeSpendLevels } from './wantGauge.ts';
 
 test('a locked bucket max is the saved target, otherwise the bill amount', () => {
   assert.equal(lockedBucketMaxMinor(5000, 2200), 5000);
@@ -18,6 +18,29 @@ test('goal percent is assigned over goal, rounded', () => {
   assert.equal(wantGaugeGoalPercent(0, 10000), 0);
   assert.equal(wantGaugeGoalPercent(0, 0), 0);
   assert.equal(wantGaugeGoalPercent(500, 0), null);
+});
+
+test('a log spends down the envelope and only goes over past available', () => {
+  const full = wantGaugeSpendLevels(25000, 0);
+  assert.equal(full.remainingLevel, 1);
+  assert.equal(full.remainingMinor, 25000);
+  assert.equal(full.over, false);
+
+  const partial = wantGaugeSpendLevels(25000, 19000);
+  assert.equal(partial.remainingLevel, 0.24);
+  assert.equal(partial.remainingMinor, 6000);
+  assert.equal(partial.over, false);
+
+  const exact = wantGaugeSpendLevels(25000, 25000);
+  assert.equal(exact.remainingLevel, 0);
+  assert.equal(exact.remainingMinor, 0);
+  assert.equal(exact.over, false);
+
+  const past = wantGaugeSpendLevels(25000, 30000);
+  assert.equal(past.remainingLevel, 0);
+  assert.equal(past.remainingMinor, 0);
+  assert.equal(past.over, true);
+  assert.equal(past.overMinor, 5000);
 });
 
 test('the fill is assigned over max and caps at full before an amount is typed', () => {

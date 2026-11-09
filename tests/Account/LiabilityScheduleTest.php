@@ -8,6 +8,7 @@ use App\Account\AccountService;
 use App\Account\LiabilityBill;
 use App\Auth\Actor;
 use App\Bill\BillService;
+use App\Category\SystemBuckets;
 use App\Database\Database;
 use App\Money\CurrencyCatalog;
 use App\Tests\Support\DemoSession;
@@ -17,6 +18,8 @@ use PHPUnit\Framework\TestCase;
 final class LiabilityScheduleTest extends TestCase
 {
     private PDO $pdo;
+
+    private int $demoId;
 
     private AccountService $accounts;
 
@@ -30,7 +33,7 @@ final class LiabilityScheduleTest extends TestCase
         $this->pdo = Database::connect($this->path, dirname(__DIR__, 2) . '/db/migrations');
         $catalog = new CurrencyCatalog();
         $actor = new Actor($this->pdo);
-        DemoSession::start($this->pdo);
+        $this->demoId = DemoSession::start($this->pdo);
         $this->accounts = new AccountService($this->pdo, $catalog, $actor);
         $this->bills = new BillService($this->pdo, $catalog, $actor);
     }
@@ -41,6 +44,31 @@ final class LiabilityScheduleTest extends TestCase
         if (is_file($this->path)) {
             unlink($this->path);
         }
+    }
+
+    public function testLoanAutopayCanFileOnVehicle(): void
+    {
+        $loan = $this->accounts->create([
+            'name' => 'Rig loan',
+            'type' => 'loan',
+            'currency' => 'USD',
+            'balanceMinor' => 120000,
+            'minimumDueMinor' => 45000,
+            'dueDay' => 10,
+            'autopayChoice' => 'minimum',
+            'bankAutopay' => true,
+            'liabilityBillType' => 'vehicle',
+        ]);
+        $bill = $this->one('Rig loan');
+        self::assertIsArray($bill);
+        self::assertSame('vehicle', $bill['type']);
+        $vehicleBucket = SystemBuckets::idForType($this->pdo, $this->demoId, 'vehicle');
+        self::assertSame($vehicleBucket, $bill['categoryId']);
+
+        $this->accounts->update($loan['id'], $this->body($loan['id'], ['liabilityBillType' => 'debt']));
+        $bill = $this->one('Rig loan');
+        self::assertIsArray($bill);
+        self::assertSame('debt', $bill['type']);
     }
 
     public function testBankAutopayBuildsTheBillAndAZeroAmountLeavesTheCalendar(): void

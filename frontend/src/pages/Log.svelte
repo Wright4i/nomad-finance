@@ -2,6 +2,7 @@
   import AmountInput from '../components/AmountInput.svelte';
   import Note from '../components/Note.svelte';
   import { onMount } from 'svelte';
+  import { session } from '../lib/session.svelte.ts';
   import DateField from '../components/DateField.svelte';
   import Dollars from '../components/Dollars.svelte';
   import Glyph from '../components/Glyph.svelte';
@@ -13,7 +14,7 @@
   import { fieldTips } from '../lib/fieldTips';
   import { tip } from '../lib/tip';
 import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from '../lib/types';
-  import { lockedBucketMaxMinor, wantGaugeLevels } from '../lib/wantGauge';
+  import { wantGaugeSpendLevels } from '../lib/wantGauge';
 
   const typesByKind = {
     need: [
@@ -64,16 +65,18 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     if (!match) return null;
     return sheet.categories.find((item) => item.id === match.id) ?? null;
   });
-  let wantAssignedMinor = $derived(wantBucket?.amountMinor ?? 0);
-  let wantMaxMinor = $derived(
-    wantBucket ? lockedBucketMaxMinor(wantBucket.target?.amountMinor, wantBucket.billMinor ?? wantBucket.amountMinor) : 0,
+  let wantEnvelopeMinor = $derived(
+    wantBucket
+      ? Math.max(0, (wantBucket.amountMinor ?? 0) - (wantBucket.billMinor ?? 0))
+      : 0,
   );
   let wantTypedMinor = $derived.by(() => {
     if (!sheet) return 0;
     const parsed = parseMajor(amount, sheet.exponent);
     return parsed !== null && parsed > 0 ? parsed : 0;
   });
-  let wantLevels = $derived(wantGaugeLevels(wantAssignedMinor, wantMaxMinor, wantTypedMinor));
+  let wantLevels = $derived(wantGaugeSpendLevels(wantEnvelopeMinor, wantTypedMinor));
+  let wantTone = $derived(kind === 'need' ? 'needs' : 'wants');
 
   function applyVehicle(current: Vehicle | null): void {
     if (!current) return;
@@ -103,6 +106,10 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     return `${Math.trunc(tenths / 10)}.${tenths % 10}`;
   }
 
+  async function loadBudget(): Promise<void> {
+    sheet = await api<EnvelopeSheet>(`/api/budget?today=${todayISO()}&acctPeriod=1`).catch(() => null);
+  }
+
   onMount(async () => {
     try {
       const [accountData, vehicleData, categoryData] = await Promise.all([
@@ -119,10 +126,17 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
         applyVehicle(starred);
       }
       pickAccount('fuel');
-      sheet = await api<EnvelopeSheet>(`/api/budget?today=${todayISO()}`).catch(() => null);
+      await loadBudget();
     } catch (err) {
       message = explain(err).message;
     }
+  });
+
+  $effect(() => {
+    if (!session.user) return;
+    session.user.acctPeriodStart;
+    session.user.acctPeriodLength;
+    void loadBudget();
   });
 
   function chooseKind(next: 'fuel' | 'need' | 'want'): void {
@@ -284,35 +298,31 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     </label>
     {#if wantBucket && sheet}
       <div
-        class="want-gauge"
+        class="want-gauge want-gauge-spend"
         class:over={wantLevels.over}
         class:neutral={wantLevels.neutral}
         data-want-gauge
         data-bucket={wantBucket.name}
-        data-assigned-minor={wantAssignedMinor}
-        data-max-minor={wantMaxMinor}
+        data-envelope-minor={wantEnvelopeMinor}
+        data-remaining-minor={wantLevels.remainingMinor}
         data-over={wantLevels.over ? '1' : '0'}
         data-neutral={wantLevels.neutral ? '1' : '0'}
-        style={`--assigned: ${wantLevels.assignedLevel}; --preview: ${wantLevels.previewLevel}`}
+        style={`--tone: var(--tone-${wantTone}); --assigned: ${wantLevels.remainingLevel}; --preview: 0`}
       >
-        <div class="want-gauge-meter">
-          <div class="want-gauge-track">
-            <span class="want-gauge-assigned"></span>
-            <span class="want-gauge-preview"></span>
+        <div class="want-gauge-stack">
+          <div class="want-gauge-meter">
+            <div class="want-gauge-track">
+              <span class="want-gauge-assigned"></span>
+            </div>
           </div>
           {#if wantLevels.over}
-            {#key wantLevels.overMinor}
-              <span class="want-gauge-over"></span>
-            {/key}
+            <p class="want-gauge-below m-0">Over <Dollars minor={wantLevels.overMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} owe /></p>
           {/if}
         </div>
         <div class="want-gauge-readout">
           <p class="want-gauge-name m-0">{wantBucket.name}</p>
-          <p class="want-gauge-line m-0"><span>Assigned</span> <Dollars minor={wantAssignedMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
-          <p class="want-gauge-line m-0"><span>Max</span> <Dollars minor={wantMaxMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
-          {#if wantLevels.over}
-            <p class="want-gauge-warning m-0">Over <Dollars minor={wantLevels.overMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} owe /></p>
-          {/if}
+          <p class="want-gauge-line m-0"><span>Left</span> <Dollars minor={wantLevels.remainingMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
+          <p class="want-gauge-line m-0"><span>Envelope</span> <Dollars minor={wantEnvelopeMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
         </div>
       </div>
     {/if}

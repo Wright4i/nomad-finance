@@ -332,6 +332,74 @@ final class EnvelopeRulesTest extends TestCase
         self::assertGreaterThanOrEqual((int) $nextFuel['billMinor'], (int) $nextFuel['amountMinor']);
     }
 
+    public function testAnOpenLiabilityLogShrinksTheStoredGroceriesEnvelope(): void
+    {
+        $this->pdo->prepare('UPDATE user SET envelope_adopted = 1 WHERE id = ?')->execute([$this->ownerId]);
+        $sheet = $this->envelopes->show('2026-11-07', null, null, false, true);
+        $groceries = $this->category($sheet, 'Groceries');
+        $beforeBills = $this->billMinor($sheet, 'Groceries');
+        $envelope = 25000;
+        $saved = $this->envelopes->save([
+            'today' => '2026-11-07',
+            'payCycleId' => $sheet['payCycleId'],
+            'amounts' => $this->totalsWithEnvelopes($sheet, ['Groceries' => $envelope]),
+            'acctPeriod' => '1',
+        ]);
+        self::assertSame($envelope, $this->amount($saved, 'Groceries') - $this->billMinor($saved, 'Groceries'));
+
+        $logged = $this->bills->log([
+            'kind' => 'need',
+            'type' => 'groceries',
+            'name' => 'Market',
+            'accountId' => $this->accountId('Travel card'),
+            'amountMinor' => 10000,
+            'date' => '2026-11-07',
+            'today' => '2026-11-07',
+        ]);
+        self::assertSame('active', $logged['status']);
+
+        $after = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame($beforeBills + 10000, $this->billMinor($after, 'Groceries'));
+        self::assertSame($envelope - 10000, $this->amount($after, 'Groceries') - $this->billMinor($after, 'Groceries'));
+        $stmt = $this->pdo->prepare('SELECT envelope_minor FROM categories WHERE id = ?');
+        $stmt->execute([(int) $groceries['id']]);
+        self::assertSame($envelope - 10000, (int) $stmt->fetchColumn());
+    }
+
+    public function testAPaidAssetNeedLogShrinksTheStoredGroceriesEnvelope(): void
+    {
+        $this->pdo->prepare('UPDATE user SET envelope_adopted = 1 WHERE id = ?')->execute([$this->ownerId]);
+        $sheet = $this->envelopes->show('2026-11-07', null, null, false, true);
+        $groceries = $this->category($sheet, 'Groceries');
+        $beforeBills = $this->billMinor($sheet, 'Groceries');
+        $envelope = 25000;
+        $saved = $this->envelopes->save([
+            'today' => '2026-11-07',
+            'payCycleId' => $sheet['payCycleId'],
+            'amounts' => $this->totalsWithEnvelopes($sheet, ['Groceries' => $envelope]),
+            'acctPeriod' => '1',
+        ]);
+        self::assertSame($envelope, $this->amount($saved, 'Groceries') - $this->billMinor($saved, 'Groceries'));
+
+        $logged = $this->bills->log([
+            'kind' => 'need',
+            'type' => 'groceries',
+            'name' => 'Cash market',
+            'accountId' => $this->accountId('Everyday checking'),
+            'amountMinor' => 10000,
+            'date' => '2026-11-07',
+            'today' => '2026-11-07',
+        ]);
+        self::assertSame('paid', $logged['status']);
+
+        $after = $this->envelopes->show('2026-11-07', null, null, false, true);
+        self::assertSame($beforeBills, $this->billMinor($after, 'Groceries'));
+        self::assertSame($envelope - 10000, $this->amount($after, 'Groceries') - $this->billMinor($after, 'Groceries'));
+        $stmt = $this->pdo->prepare('SELECT envelope_minor FROM categories WHERE id = ?');
+        $stmt->execute([(int) $groceries['id']]);
+        self::assertSame($envelope - 10000, (int) $stmt->fetchColumn());
+    }
+
     public function testRecalculateReplacesTheMonthAndALogLeavesTheBucketsAlone(): void
     {
         $sheet = $this->envelopes->show('2026-11-03');

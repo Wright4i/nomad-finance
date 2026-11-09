@@ -76,14 +76,16 @@ final class AccountService
                 'INSERT INTO accounts (
                     user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                     due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
+                    liability_bill_type,
                     institution, holder, notes, gas_favorite, shopping_favorite, asset_favorite,
                     in_budget, created_at, updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $this->actor->id(),
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
+                $data['liabilityBillType'],
                 $data['institution'], $data['holder'], $data['notes'],
                 $data['gasFavorite'], $data['shoppingFavorite'], $data['assetFavorite'],
                 $data['inBudget'], $now, $now,
@@ -121,7 +123,7 @@ final class AccountService
                 'UPDATE accounts SET
                     name = ?, type = ?, side = ?, currency = ?, balance_minor = ?, interest_bps = ?,
                     minimum_due_minor = ?, due_day = ?, credit_limit_minor = ?, autopay_choice = ?,
-                    bank_autopay = ?, bill_recurrence = ?, bill_every = ?,
+                    bank_autopay = ?, bill_recurrence = ?, bill_every = ?, liability_bill_type = ?,
                     institution = ?, holder = ?, notes = ?,
                     gas_favorite = ?, shopping_favorite = ?, asset_favorite = ?,
                     in_budget = ?, updated_at = ?
@@ -130,6 +132,7 @@ final class AccountService
                 $data['name'], $data['type'], $data['side'], $data['currency'], $data['balanceMinor'],
                 $data['interestBps'], $data['minimumDueMinor'], $data['dueDay'], $data['creditLimitMinor'],
                 $data['autopayChoice'], $data['bankAutopay'], $data['billRecurrence'], $data['billEvery'],
+                $data['liabilityBillType'],
                 $data['institution'], $data['holder'], $data['notes'],
                 $data['gasFavorite'], $data['shoppingFavorite'], $data['assetFavorite'],
                 $data['inBudget'], $now,
@@ -269,6 +272,7 @@ final class AccountService
         $bank = 0;
         $billRecurrence = 'monthly';
         $billEvery = 1;
+        $liabilityBillType = 'debt';
         $liability = in_array($type, self::LIABILITY, true);
         if ($liability) {
             $choice = is_string($input['autopayChoice'] ?? null)
@@ -318,6 +322,14 @@ final class AccountService
             }
             if ($bank === 1 && $autopay === 'minimum' && !is_int($minimum)) {
                 $errors['minimumDueMinor'] = 'Enter the minimum due.';
+            }
+            if ($type === 'loan') {
+                $rawBillType = $input['liabilityBillType'] ?? (is_array($existing) ? ($existing['liabilityBillType'] ?? 'debt') : 'debt');
+                if (!is_string($rawBillType) || !in_array($rawBillType, ['debt', 'vehicle'], true)) {
+                    $errors['liabilityBillType'] = 'Choose Debt or Vehicle.';
+                } else {
+                    $liabilityBillType = $rawBillType;
+                }
             }
         }
         if ($type === 'credit' || $type === 'fuel') {
@@ -398,6 +410,7 @@ final class AccountService
             'bankAutopay' => $bank,
             'billRecurrence' => $billRecurrence,
             'billEvery' => $billEvery,
+            'liabilityBillType' => $liabilityBillType,
             'institution' => is_string($institution) ? $institution : null,
             'holder' => is_string($holder) ? $holder : null,
             'notes' => is_string($notes) ? $notes : null,
@@ -619,6 +632,9 @@ final class AccountService
             'bankAutopay' => (int) ($row['bank_autopay'] ?? 0) === 1,
             'billRecurrence' => (string) ($row['bill_recurrence'] ?? 'monthly'),
             'billEvery' => max(1, (int) ($row['bill_every'] ?? 1)),
+            'liabilityBillType' => in_array((string) ($row['liability_bill_type'] ?? 'debt'), ['debt', 'vehicle'], true)
+                ? (string) $row['liability_bill_type']
+                : 'debt',
             'institution' => $row['institution'],
             'holder' => $row['holder'],
             'notes' => $row['notes'],

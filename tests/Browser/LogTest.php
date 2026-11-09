@@ -355,6 +355,35 @@ final class LogTest extends TestCase
         self::assertSame($checking - 400, self::accountBalance('Everyday checking'));
     }
 
+    #[Depends('testANeedLogOmitsFuelAndSavingIsNotALog')]
+    public function testNeedLogShowsGroceriesEnvelopeForTheAcctPeriod(): void
+    {
+        self::clickLink('Budget');
+        self::waitForText('Groceries');
+        self::typeAssigned('Groceries', '42.00');
+        self::wait()->until(function (): bool {
+            $value = self::driver()->executeScript(<<<'JS'
+                const tile = [...document.querySelectorAll('.bucket-tile')].find((node) => (node.querySelector('strong')?.innerText || '') === 'Groceries');
+                const input = tile ? tile.querySelector('input[name^="amount-"]') : null;
+                return input ? input.value : '';
+            JS);
+
+            return $value === '42.00';
+        });
+        self::clickLink('New log');
+        self::waitForText('Save log');
+        self::click('Need');
+        self::waitForText('Groceries');
+        self::wait()->until(function (): bool {
+            $text = self::driver()->executeScript(<<<'JS'
+                const gauge = document.querySelector('[data-want-gauge][data-bucket="Groceries"]');
+                return gauge ? gauge.innerText : '';
+            JS);
+
+            return is_string($text) && str_contains($text, 'Envelope') && str_contains($text, '$42.00');
+        });
+    }
+
     /** @return list<string> */
     private static function logTypes(): array
     {
@@ -384,6 +413,15 @@ final class LogTest extends TestCase
         self::assertIsInt($account['balance']);
 
         return ['id' => $account['id'], 'balance' => $account['balance']];
+    }
+
+    private static function typeAssigned(string $name, string $value): void
+    {
+        $by = WebDriverBy::cssSelector('input[aria-label="Envelope ' . $name . '"]');
+        $input = self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($by));
+        self::driver()->executeScript('arguments[0].focus(); arguments[0].select();', [$input]);
+        $input->clear();
+        $input->sendKeys($value);
     }
 
     private static function chooseAccount(string $label): void

@@ -26,6 +26,7 @@ export type Account = {
   bankAutopay: boolean;
   billRecurrence: 'daily' | 'monthly' | 'yearly';
   billEvery: number;
+  liabilityBillType: 'debt' | 'vehicle';
   institution: string | null;
   holder: string | null;
   notes: string | null;

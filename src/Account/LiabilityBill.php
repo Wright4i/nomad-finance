@@ -52,7 +52,13 @@ final class LiabilityBill
             return;
         }
 
-        $billType = $type === 'fuel' ? 'fuel' : 'debt';
+        $billType = match ($type) {
+            'fuel' => 'fuel',
+            'loan' => in_array((string) ($account['liability_bill_type'] ?? 'debt'), ['debt', 'vehicle'], true)
+                ? (string) $account['liability_bill_type']
+                : 'debt',
+            default => 'debt',
+        };
         $categoryId = SystemBuckets::idForType($this->pdo, $this->actor->id(), $billType);
         $drawFrom = $this->drawFrom($accountId);
         $dueDay = (int) ($account['due_day'] ?? 1);

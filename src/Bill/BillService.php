@@ -855,8 +855,8 @@ final class BillService
     /**
      * A fuel, need, or want log moves the account balance by the same amount.
      * On a liability the amount owed rises and the bill stays open. On an asset the balance falls and the bill is paid.
-     * An open log raises that bucket's auto-assigned amount, and the envelope shrinks by the same
-     * amount when it has room, so the target stays. A fuel log still advances the odometer.
+     * A need or want log lowers the stored envelope by its amount. A liability log also raises
+     * that bucket's auto-assigned amount by the same amount, so the target stays. A fuel log still advances the odometer.
      * A need log does not accept Fuel. Savings is a bill or a transfer, not a log.
      *
      * @param array<string, mixed> $input
@@ -1041,6 +1041,9 @@ final class BillService
         }
 
         $this->fill->apply($today);
+        if (!$paid) {
+            $this->shrinkStoredEnvelope($categoryId, $amount);
+        }
 
         return $this->get($id);
     }
@@ -1105,8 +1108,25 @@ final class BillService
             throw $e;
         }
         $this->fill->apply($today);
+        $this->shrinkStoredEnvelope($categoryId, $amount);
 
         return $this->get($id);
+    }
+
+    private function shrinkStoredEnvelope(int $categoryId, int $amount): void
+    {
+        if ($amount < 1) {
+            return;
+        }
+        $stmt = $this->pdo->prepare('SELECT envelope_minor FROM categories WHERE id = ? AND user_id = ?');
+        $stmt->execute([$categoryId, $this->actor->id()]);
+        $held = $stmt->fetchColumn();
+        if ($held === false) {
+            return;
+        }
+        $next = max(0, (int) $held - $amount);
+        $this->pdo->prepare('UPDATE categories SET envelope_minor = ? WHERE id = ? AND user_id = ?')
+            ->execute([$next, $categoryId, $this->actor->id()]);
     }
 
     /** @param array<string, string> $errors */

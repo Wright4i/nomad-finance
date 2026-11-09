@@ -163,6 +163,20 @@
     return balanceGoalMinor(asFill(category)) ?? targetOf(category);
   }
 
+  function liveGroupTotals(groupId: string): { autoMinor: number; envelopeMinor: number; assignedMinor: number } {
+    let autoMinor = 0;
+    let envelopeMinor = 0;
+    let assignedMinor = 0;
+    for (const category of inGroup(groupId)) {
+      const auto = autoOf(category);
+      const envelope = typedEnvelope(category) ?? 0;
+      autoMinor += auto;
+      envelopeMinor += envelope;
+      assignedMinor += auto + envelope;
+    }
+    return { autoMinor, envelopeMinor, assignedMinor };
+  }
+
   function queueSave(): void {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
@@ -341,17 +355,28 @@
         {@const rows = inGroup(group.id)}
         {@const hidden = showArchived ? archivedIn(group.id) : []}
         {@const heading = sheet.groups.find((item) => item.group === group.id)}
+        {@const live = heading ? liveGroupTotals(group.id) : null}
+        {@const goalRemaining = heading && live && heading.targetMinor > 0 && live.assignedMinor < heading.targetMinor
+          ? heading.targetMinor - live.assignedMinor
+          : 0}
+        {@const liveGoalOver = heading && live ? heading.targetMinor > 0 && live.assignedMinor > heading.targetMinor : false}
         {#if rows.length > 0 || hidden.length > 0}
           <section class="grid gap-3">
             <h2 class="group-title text-2xl" data-group={group.id} style={`--tone: var(--tone-${group.id})`}>
               <Glyph name={group.id} />
               <span class="group-name">{group.label}</span>
-              {#if heading}
+              {#if heading && live}
                 <span class="group-sums">
-                  <span data-figure="auto"><span>Auto-assigned</span> <Dollars minor={heading.autoMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
-                  <span data-figure="envelope"><span>Envelope</span> <Dollars minor={heading.envelopeMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
-                  <span data-figure="target"><span>Target</span> <Dollars minor={heading.assignedMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
-                  <span data-figure="goal" class:over={heading.goalOver}>(<span class="muted">{heading.targetPercent}%</span> goal - <Dollars minor={heading.targetMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />)</span>
+                  <span data-figure="auto"><span>Auto-assigned</span> <Dollars minor={live.autoMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
+                  <span data-figure="envelope"><span>Envelope</span> <Dollars minor={live.envelopeMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
+                  <span data-figure="target"><span>Target</span> <Dollars minor={live.assignedMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></span>
+                  <span data-figure="goal" class:over={liveGoalOver}>
+                    (<span class="muted">{heading.targetPercent}%</span> goal - <Dollars minor={heading.targetMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />
+                    {#if heading.targetMinor > 0}
+                      · Remaining <Dollars minor={goalRemaining} currency={sheet.baseCurrency} exponent={sheet.exponent} />
+                    {/if}
+                    )
+                  </span>
                 </span>
               {/if}
             </h2>

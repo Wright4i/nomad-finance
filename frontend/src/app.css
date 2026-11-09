@@ -899,6 +899,14 @@ a.planner-stay:active {
   opacity: 0.72;
 }
 
+.group-sums [data-figure='auto'] .money,
+.group-sums [data-figure='envelope'] .money,
+.group-sums [data-figure='target'] .money {
+  font-size: 1em;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
 .group-sums [data-figure='goal'] {
   font-size: 0.82rem;
   font-weight: 650;
@@ -2844,12 +2852,26 @@ a.bucket-tile .money {
 }
 
 .bucket-tile.envelope-tile {
+  --bucket-field-amount-size: 1.05rem;
   aspect-ratio: auto;
   flex: 1 1 auto;
   width: 100%;
   min-height: max(9.5rem, min-content);
   align-content: start;
   border-radius: 5%;
+}
+
+.bucket-tile.envelope-tile .money-input input {
+  font-size: var(--bucket-field-amount-size);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.bucket-tile.envelope-tile .bucket-locked,
+.bucket-tile.envelope-tile .bucket-locked .money {
+  font-size: var(--bucket-field-amount-size);
+  font-weight: 650;
+  line-height: 1.2;
 }
 
 .bucket-tile.envelope-tile > span:not(.bucket-water) {
@@ -3402,7 +3424,7 @@ a.bucket-tile > .account-balance {
 .want-gauge-assigned {
   bottom: 0;
   height: calc(var(--assigned, 0) * 100%);
-  background: color-mix(in oklab, var(--tone-wants) 78%, transparent);
+  background: color-mix(in oklab, var(--tone, var(--tone-wants)) 78%, transparent);
 }
 
 .want-gauge-preview {
@@ -3410,9 +3432,22 @@ a.bucket-tile > .account-balance {
   height: calc(var(--preview, 0) * 100%);
   background: repeating-linear-gradient(
     -45deg,
-    color-mix(in oklab, var(--tone-wants) 92%, white) 0 6px,
-    color-mix(in oklab, var(--tone-wants) 38%, transparent) 6px 12px
+    color-mix(in oklab, var(--tone, var(--tone-wants)) 92%, white) 0 6px,
+    color-mix(in oklab, var(--tone, var(--tone-wants)) 38%, transparent) 6px 12px
   );
+}
+
+.want-gauge-spend .want-gauge-stack {
+  display: grid;
+  gap: 0.35rem;
+  align-content: end;
+}
+
+.want-gauge-spend .want-gauge-below {
+  color: var(--coral);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .want-gauge-over {
@@ -3598,6 +3633,7 @@ dialog.modal.gauge-modal[open] {
 
 .planner-board {
   --planner-widget-height: 13.75rem;
+  --planner-bills-height: 16.25rem;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.75rem;
@@ -3609,6 +3645,11 @@ dialog.modal.gauge-modal[open] {
   box-sizing: border-box;
   height: var(--planner-widget-height);
   max-height: var(--planner-widget-height);
+}
+
+.planner-widget[data-section="bills"].card {
+  height: var(--planner-bills-height);
+  max-height: var(--planner-bills-height);
 }
 
 .planner-net[data-span="1"] { grid-column: span 1; }
@@ -4635,6 +4676,9 @@ a.planner-stay {
 
 .planner-board .want-gauge-over {
   animation: none;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .envelope-available {
@@ -4694,6 +4738,11 @@ a.planner-stay {
 .planner-board .bill-legend {
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
   gap: 0.2rem 0.75rem;
+  align-self: start;
+  max-height: 8.75rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 @container planner (max-width: 24rem) {

@@ -39,6 +39,39 @@ export function wantGaugeGoalPercent(assignedMinor: number, goalMinor: number): 
   return Math.round((assigned * 100) / goal);
 }
 
+export type WantGaugeSpendLevels = {
+  /** Fill height: envelope left after this spend, over the starting envelope. */
+  remainingLevel: number;
+  over: boolean;
+  overMinor: number;
+  remainingMinor: number;
+  neutral: boolean;
+};
+
+/** Preview for a need or want log: typing spends down the envelope, not on top of it. */
+export function wantGaugeSpendLevels(availableMinor: number, typedMinor: number): WantGaugeSpendLevels {
+  const available = positive(availableMinor);
+  const typed = positive(typedMinor);
+  if (available === 0) {
+    return {
+      remainingLevel: 0,
+      over: typed > 0,
+      overMinor: typed,
+      remainingMinor: 0,
+      neutral: true,
+    };
+  }
+  const remaining = available - typed;
+  const over = remaining < 0;
+  return {
+    remainingLevel: over ? 0 : remaining / available,
+    over,
+    overMinor: over ? typed - available : 0,
+    remainingMinor: over ? 0 : remaining,
+    neutral: false,
+  };
+}
+
 export function wantGaugeLevels(assignedMinor: number, maxMinor: number, typedMinor: number): WantGaugeLevels {
   const assigned = positive(assignedMinor);
   const max = positive(maxMinor);
