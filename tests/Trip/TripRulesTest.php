@@ -573,6 +573,47 @@ final class TripRulesTest extends TestCase
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
+    public function testClearingAmountDueRemovesAnUnpaidDueBillButKeepsAPaidOne(): void
+    {
+        $trip = $this->trips->create($this->fields([
+            'placeName' => 'Keep paid due',
+            'arriveOn' => '2026-12-01',
+            'departOn' => '2026-12-05',
+            'totalMinor' => 10000,
+            'amountDueMinor' => 4000,
+            'balanceDueOn' => '2026-12-15',
+        ]));
+        $due = $this->lodgingBill((int) $trip['id'], 'due');
+        $bills = new BillService($this->pdo, new CurrencyCatalog(), new Actor($this->pdo));
+        $bills->markPaid((int) $due['id'], ['paidOn' => '2026-12-15']);
+        $this->trips->update((int) $trip['id'], $this->fields([
+            'placeName' => 'Keep paid due',
+            'arriveOn' => '2026-12-01',
+            'departOn' => '2026-12-05',
+            'totalMinor' => 10000,
+            'amountDueMinor' => 0,
+            'balanceDueOn' => '2026-12-15',
+        ]));
+        $kept = $this->lodgingBill((int) $trip['id'], 'due');
+        self::assertSame('paid', $kept['status']);
+        self::assertSame(4000, (int) $kept['amount_minor']);
+
+        $open = $this->stay(9000, 3000, '2027-04-01', '2027-04-04', 'Drop unpaid due');
+        $this->trips->update((int) $open['id'], $this->fields([
+            'placeName' => 'Drop unpaid due',
+            'arriveOn' => '2027-04-01',
+            'departOn' => '2027-04-04',
+            'totalMinor' => 9000,
+            'amountDueMinor' => 0,
+            'balanceDueOn' => '2027-04-02',
+        ]));
+        $stmt = $this->pdo->prepare(
+            "SELECT COUNT(*) FROM bills WHERE trip_id = ? AND type = 'lodging' AND lodging_part = 'due'"
+        );
+        $stmt->execute([(int) $open['id']]);
+        self::assertSame(0, (int) $stmt->fetchColumn());
+    }
+
     public function testMarkingTheDueBillClearsAmountDueOnTheStay(): void
     {
         $trip = $this->trips->create($this->fields([
@@ -655,13 +696,16 @@ final class TripRulesTest extends TestCase
             'balanceDueOn' => '2026-11-22',
             'accountId' => (int) $wallet['id'],
         ]));
-        self::assertSame([], $this->lodgingBills());
+        $keptDue = $this->dueBillsFor((int) $trip['id']);
+        self::assertCount(1, $keptDue);
+        self::assertSame('paid', $keptDue[0]['status']);
+        self::assertSame((int) $paid['id'], (int) $keptDue[0]['id']);
 
-        $this->stay(0, 0, '2027-02-01', '2027-02-03', 'Open camp');
-        self::assertSame([], $this->lodgingBills());
+        $openCamp = $this->stay(0, 0, '2027-02-01', '2027-02-03', 'Open camp');
+        self::assertSame([], $this->dueBillsFor((int) $openCamp['id']));
 
         $dated = $this->stay(5000, 5000, '2027-03-01', '2027-03-04', 'Due camp');
-        self::assertCount(1, $this->lodgingBills());
+        self::assertCount(1, $this->dueBillsFor((int) $dated['id']));
         $this->trips->update((int) $dated['id'], $this->fields([
             'placeName' => 'Due camp',
             'arriveOn' => '2027-03-01',
@@ -671,7 +715,7 @@ final class TripRulesTest extends TestCase
             'balanceDueOn' => '',
             'accountId' => $this->accountId,
         ]));
-        self::assertSame([], $this->lodgingBills());
+        self::assertSame([], $this->dueBillsFor((int) $dated['id']));
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
@@ -798,6 +842,18 @@ final class TripRulesTest extends TestCase
     private function lodgingBills(): array
     {
         $stmt = $this->pdo->query("SELECT * FROM bills WHERE trip_id IS NOT NULL AND type = 'lodging' AND lodging_part = 'due' ORDER BY id");
+        $rows = $stmt->fetchAll();
+
+        return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function dueBillsFor(int $tripId): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM bills WHERE trip_id = ? AND type = 'lodging' AND lodging_part = 'due' ORDER BY id"
+        );
+        $stmt->execute([$tripId]);
         $rows = $stmt->fetchAll();
 
         return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];

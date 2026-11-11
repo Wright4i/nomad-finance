@@ -152,7 +152,7 @@ final class TripLodgingSync
         $billId = is_array($existing) ? (int) $existing['id'] : null;
         $status = is_array($existing) ? (string) $existing['status'] : '';
         if ($amount < 1 || $dueOn === '' || $accountId === null) {
-            if ($billId !== null) {
+            if ($billId !== null && in_array($status, ['active', 'paused'], true)) {
                 $this->pdo->prepare('DELETE FROM bills WHERE id = ? AND trip_id = ?')->execute([$billId, $tripId]);
             }
 
