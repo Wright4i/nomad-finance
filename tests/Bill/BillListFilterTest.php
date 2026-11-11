@@ -190,4 +190,38 @@ final class BillListFilterTest extends TestCase
         );
         self::assertSame(['Overdue dinner'], $closed);
     }
+
+    public function testAPaidOneOffListsOnItsDueDateInsideTheAccountingPeriod(): void
+    {
+        $checking = $this->accounts->create([
+            'name' => 'Checking',
+            'type' => 'checking',
+            'currency' => 'USD',
+            'balanceMinor' => 25000,
+        ]);
+        $bill = $this->bills->create([
+            'name' => 'Alexandra resort',
+            'type' => 'lodging',
+            'accountId' => $checking['id'],
+            'amountMinor' => 5000,
+            'recurrence' => 'once',
+            'nextDueDate' => '2026-12-01',
+            'today' => '2026-11-11',
+        ]);
+        $this->pdo->prepare(
+            "UPDATE bills SET status = 'paid', last_paid_on = '2026-11-11' WHERE id = ?"
+        )->execute([(int) $bill['id']]);
+
+        $november = array_column(
+            $this->bills->section('paid', 4, [], '2026-11-01', '2026-11-30', '2026-11-11')['bills'],
+            'name',
+        );
+        self::assertNotContains('Alexandra resort', $november);
+
+        $december = array_column(
+            $this->bills->section('paid', 4, [], '2026-12-01', '2026-12-31', '2026-11-11')['bills'],
+            'name',
+        );
+        self::assertContains('Alexandra resort', $december);
+    }
 }

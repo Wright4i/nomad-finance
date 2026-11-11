@@ -112,8 +112,7 @@ final class TripService
             $now,
         ]);
         $id = (int) $this->pdo->lastInsertId();
-        $this->syncDueBill($id, $data, $today);
-        $this->refill($today);
+        $this->lodging()->syncAll($id, $data, $today);
 
         return $this->get($id, $today);
     }
@@ -169,8 +168,7 @@ final class TripService
         ) {
             $this->reseatRoute($id, $data['arriveOn'], $data['departOn'], $data['placeName']);
         }
-        $this->syncDueBill($id, $data, $today);
-        $this->refill($today);
+        $this->lodging()->syncAll($id, $data, $today);
 
         return $this->get($id, $today);
     }
@@ -257,51 +255,9 @@ final class TripService
         return 'underway';
     }
 
-    /**
-     * One lodging bill for a stay that still has an amount due and a balance-due date.
-     * The same row is updated. Clearing either field removes it. The account balance stays put.
-     *
-     * @param array<string, mixed> $data
-     */
-    private function syncDueBill(int $tripId, array $data, string $today): void
+    private function lodging(): TripLodgingSync
     {
-        $amount = (int) $data['amountDueMinor'];
-        $dueOn = is_string($data['balanceDueOn']) ? $data['balanceDueOn'] : '';
-        $accountId = $data['accountId'];
-        $accountId = is_int($accountId) ? $accountId : null;
-        $stmt = $this->pdo->prepare("SELECT id FROM bills WHERE trip_id = ? AND type = 'lodging'");
-        $stmt->execute([$tripId]);
-        $found = $stmt->fetchColumn();
-        $billId = $found === false ? null : (int) $found;
-        if ($amount < 1 || $dueOn === '' || $accountId === null) {
-            if ($billId !== null) {
-                $this->pdo->prepare('DELETE FROM bills WHERE id = ? AND trip_id = ?')->execute([$billId, $tripId]);
-            }
-
-            return;
-        }
-        $currencyStmt = $this->pdo->prepare('SELECT currency FROM accounts WHERE id = ? AND user_id = ?');
-        $currencyStmt->execute([$accountId, $this->actor->id()]);
-        $currency = $currencyStmt->fetchColumn();
-        $currency = is_string($currency) && $currency !== '' ? $currency : 'USD';
-        $categoryId = SystemBuckets::idForType($this->pdo, $this->actor->id(), 'lodging');
-        $now = gmdate('c');
-        $name = (string) $data['placeName'];
-        if ($billId === null) {
-            $this->pdo->prepare(
-                'INSERT INTO bills (
-                    name, type, account_id, category_id, amount_minor, currency,
-                    recurrence, anchor_date, next_due_date, autopay, status, created_at, updated_at, trip_id
-                 ) VALUES (?, \'lodging\', ?, ?, ?, ?, \'once\', ?, ?, 0, \'active\', ?, ?, ?)'
-            )->execute([$name, $accountId, $categoryId, $amount, $currency, $dueOn, $dueOn, $now, $now, $tripId]);
-        } else {
-            $this->pdo->prepare(
-                'UPDATE bills SET
-                    name = ?, account_id = ?, category_id = ?, amount_minor = ?, currency = ?,
-                    anchor_date = ?, next_due_date = ?, updated_at = ?
-                 WHERE id = ? AND trip_id = ?'
-            )->execute([$name, $accountId, $categoryId, $amount, $currency, $dueOn, $dueOn, $now, $billId, $tripId]);
-        }
+        return new TripLodgingSync($this->pdo, $this->actor, $this->currencies, $this->drive);
     }
 
     /**
@@ -588,7 +544,13 @@ final class TripService
      */
     private function present(array $row, string $today, ?int $index = null): array
     {
-        $deposit = (int) $row['total_minor'] - (int) $row['amount_due_minor'];
+        $tripId = (int) $row['id'];
+        $storedDue = (int) $row['amount_due_minor'];
+        $dueSettled = $this->lodging()->dueSettled($tripId);
+        $amountDue = $dueSettled ? 0 : $storedDue;
+        $nominalDeposit = (int) $row['total_minor'] - $storedDue;
+        $depositPaid = $this->lodging()->depositPaidMinor($tripId);
+        $deposit = max(0, $nominalDeposit - $depositPaid);
         $currency = $row['currency'] === null ? null : 'USD';
 
         return [
@@ -617,14 +579,14 @@ final class TripService
             'currency' => $currency,
             'exponent' => 2,
             'totalMinor' => (int) $row['total_minor'],
-            'amountDueMinor' => (int) $row['amount_due_minor'],
+            'amountDueMinor' => $amountDue,
             'travel' => ($row['travel'] ?? 'drive') === 'fly' ? 'fly' : 'drive',
             'routeOrder' => (int) ($row['route_order'] ?? 0),
             'moveEarlier' => $this->movesFor((int) $row['id'])['moveEarlier'],
             'moveLater' => $this->movesFor((int) $row['id'])['moveLater'],
             'depositMinor' => $deposit,
-            'depositCharged' => false,
-            'dueCharged' => false,
+            'depositCharged' => $nominalDeposit > 0 && $depositPaid >= $nominalDeposit,
+            'dueCharged' => $dueSettled,
             'otherSpentMinor' => 0,
             'fuel' => $this->fuelFor((int) $row['id']),
             'color' => StayTone::name($index ?? $this->colorIndex((int) $row['id'])),

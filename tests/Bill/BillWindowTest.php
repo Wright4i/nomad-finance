@@ -34,6 +34,12 @@ final class BillWindowTest extends TestCase
             'nextDueDate' => '2026-11-11',
             'lastPaidOn' => null,
         ], 'paid'));
+        self::assertSame('2026-12-01', BillWindow::shownOn([
+            'status' => 'paid',
+            'recurrence' => 'once',
+            'nextDueDate' => '2026-12-01',
+            'lastPaidOn' => '2026-11-11',
+        ], 'paid'));
     }
 
     public function testTheInitialWindowIsAFewDaysAndTheNextIncludesLaterRecords(): void

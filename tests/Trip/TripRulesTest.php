@@ -559,10 +559,44 @@ final class TripRulesTest extends TestCase
         self::assertSame('Comment 1', $still['ratingComment']);
     }
 
+    public function testMarkingADepositBillLowersTheDepositDue(): void
+    {
+        $trip = $this->stay(8000, 5000, '2026-12-01', '2026-12-05', 'Deposit camp');
+        self::assertSame(3000, $trip['depositMinor']);
+        $deposit = $this->lodgingBill((int) $trip['id'], 'deposit');
+        self::assertSame(3000, (int) $deposit['amount_minor']);
+        $bills = new BillService($this->pdo, new CurrencyCatalog(), new Actor($this->pdo));
+        $bills->markPaid((int) $deposit['id'], ['paidOn' => '2026-12-01']);
+        $after = $this->trips->get((int) $trip['id'], '2026-11-03');
+        self::assertSame(0, $after['depositMinor']);
+        self::assertTrue($after['depositCharged']);
+        self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
+    }
+
+    public function testMarkingTheDueBillClearsAmountDueOnTheStay(): void
+    {
+        $trip = $this->trips->create($this->fields([
+            'placeName' => 'Due later',
+            'arriveOn' => '2026-12-01',
+            'departOn' => '2026-12-05',
+            'totalMinor' => 10000,
+            'amountDueMinor' => 4000,
+            'balanceDueOn' => '2026-12-15',
+        ]));
+        self::assertSame(4000, $trip['amountDueMinor']);
+        $due = $this->lodgingBill((int) $trip['id'], 'due');
+        $bills = new BillService($this->pdo, new CurrencyCatalog(), new Actor($this->pdo));
+        $paid = $bills->markPaid((int) $due['id'], ['paidOn' => '2026-12-15']);
+        self::assertSame('2026-12-15', $paid['lastPaidOn']);
+        $after = $this->trips->get((int) $trip['id'], '2026-11-03');
+        self::assertSame(0, $after['amountDueMinor']);
+        self::assertTrue($after['dueCharged']);
+    }
+
     public function testAStayDueBecomesOneLodgingBillAndEditsKeepThatBill(): void
     {
         $trip = $this->stay(12000, 4000, '2026-11-20', '2026-11-24', 'Mesa camp');
-        $created = $this->stayBills();
+        $created = $this->lodgingBills();
         self::assertCount(1, $created);
         self::assertSame('Mesa camp', $created[0]['name']);
         self::assertSame('lodging', $created[0]['type']);
@@ -591,7 +625,8 @@ final class TripRulesTest extends TestCase
             'balanceDueOn' => '2026-11-22',
             'accountId' => (int) $wallet['id'],
         ]));
-        $edited = $this->stayBills();
+        self::assertSame(9500, $this->trips->get((int) $trip['id'], '2026-11-03')['depositMinor']);
+        $edited = $this->lodgingBills();
         self::assertCount(1, $edited);
         self::assertSame((int) $created[0]['id'], (int) $edited[0]['id']);
         self::assertSame('Mesa camp', $edited[0]['name']);
@@ -620,13 +655,13 @@ final class TripRulesTest extends TestCase
             'balanceDueOn' => '2026-11-22',
             'accountId' => (int) $wallet['id'],
         ]));
-        self::assertSame([], $this->stayBills());
+        self::assertSame([], $this->lodgingBills());
 
         $this->stay(0, 0, '2027-02-01', '2027-02-03', 'Open camp');
-        self::assertSame([], $this->stayBills());
+        self::assertSame([], $this->lodgingBills());
 
         $dated = $this->stay(5000, 5000, '2027-03-01', '2027-03-04', 'Due camp');
-        self::assertCount(1, $this->stayBills());
+        self::assertCount(1, $this->lodgingBills());
         $this->trips->update((int) $dated['id'], $this->fields([
             'placeName' => 'Due camp',
             'arriveOn' => '2027-03-01',
@@ -636,7 +671,7 @@ final class TripRulesTest extends TestCase
             'balanceDueOn' => '',
             'accountId' => $this->accountId,
         ]));
-        self::assertSame([], $this->stayBills());
+        self::assertSame([], $this->lodgingBills());
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
     }
 
@@ -654,9 +689,10 @@ final class TripRulesTest extends TestCase
             'placeName' => 'Stay 1',
             'arriveOn' => '2026-12-01',
             'departOn' => '2026-12-05',
-            'totalMinor' => 8000,
+            'totalMinor' => 0,
             'amountDueMinor' => 0,
-            'balanceDueOn' => '2026-12-01',
+            'balanceDueOn' => '',
+            'accountId' => null,
         ]));
         self::assertNotNull($this->accounts->archive($this->accountId)['archivedAt']);
         self::assertSame(20000, $this->accounts->get($this->accountId)['balanceMinor']);
@@ -759,11 +795,25 @@ final class TripRulesTest extends TestCase
     }
 
     /** @return list<array<string, mixed>> */
-    private function stayBills(): array
+    private function lodgingBills(): array
     {
-        $rows = $this->pdo->query('SELECT * FROM bills WHERE trip_id IS NOT NULL ORDER BY id')->fetchAll();
+        $stmt = $this->pdo->query("SELECT * FROM bills WHERE trip_id IS NOT NULL AND type = 'lodging' AND lodging_part = 'due' ORDER BY id");
+        $rows = $stmt->fetchAll();
 
         return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
+    }
+
+    /** @return array<string, mixed> */
+    private function lodgingBill(int $tripId, string $part): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM bills WHERE trip_id = ? AND type = 'lodging' AND lodging_part = ?"
+        );
+        $stmt->execute([$tripId, $part]);
+        $row = $stmt->fetch();
+        self::assertIsArray($row);
+
+        return $row;
     }
 
     /** @param array<string, mixed> $extra

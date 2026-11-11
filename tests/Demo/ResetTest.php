@@ -219,11 +219,14 @@ final class ResetTest extends TestCase
             'Camp soap',
             'Camp store',
             'Cash buffer',
+            'Catalina',
             'Cattail Cove',
             'Clinic visit',
             'Cottonwood',
+            'Cottonwood',
             'County night',
             'DEF fluid',
+            'Devils Garden',
             'Diner',
             'Dog food',
             'Emergency move',
@@ -269,6 +272,9 @@ final class ResetTest extends TestCase
             'Streaming',
             'Travel card',
             'Urgent care',
+            'Usery Mountain',
+            'Wahweap',
+            'Watchman',
         ], $names);
     }
 

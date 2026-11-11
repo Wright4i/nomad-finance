@@ -10,6 +10,7 @@ use App\Envelope\BillFill;
 use App\Http\ApiException;
 use App\Money\CurrencyCatalog;
 use App\Support\Dates;
+use App\Trip\TripLodgingSync;
 use PDO;
 
 final class BillService
@@ -343,14 +344,10 @@ final class BillService
         if ($existing['status'] !== 'active') {
             throw new ApiException(409, 'Only an active bill can be marked paid.');
         }
-        try {
-            $paidOn = Dates::parse(is_string($input['paidOn'] ?? null) ? $input['paidOn'] : '')->format('Y-m-d');
-        } catch (\InvalidArgumentException) {
-            throw new ApiException(422, 'Check the highlighted fields.', ['paidOn' => 'Use a YYYY-MM-DD date.']);
-        }
 
         $now = gmdate('c');
         if ($existing['recurrence'] === 'once') {
+            $paidOn = (string) $existing['next_due_date'];
             $this->pdo->prepare(
                 "UPDATE bills SET status = 'paid', last_paid_on = ?, updated_at = ? WHERE id = ?"
             )->execute([$paidOn, $now, $id]);
@@ -366,6 +363,8 @@ final class BillService
                 'UPDATE bills SET last_paid_on = ?, next_due_date = ?, updated_at = ? WHERE id = ?'
             )->execute([$due, $next, $now, $id]);
         }
+
+        $this->syncStayLodging($existing, $input);
 
         return $this->get($id);
     }
@@ -394,6 +393,8 @@ final class BillService
                 'UPDATE bills SET last_paid_on = NULL, next_due_date = ?, updated_at = ? WHERE id = ?'
             )->execute([$previous, $now, $id]);
         }
+
+        $this->syncStayLodging($existing, []);
 
         return $this->get($id);
     }
@@ -750,6 +751,19 @@ final class BillService
     }
 
     /** @param array<string, mixed> $input */
+    /** @param array<string, mixed> $existing
+     *  @param array<string, mixed> $input
+     */
+    private function syncStayLodging(array $existing, array $input): void
+    {
+        $tripId = $existing['trip_id'] ?? null;
+        $part = $existing['lodging_part'] ?? null;
+        if ($tripId === null || (string) $existing['type'] !== 'lodging' || !is_string($part) || !in_array($part, ['deposit', 'due'], true)) {
+            return;
+        }
+        (new TripLodgingSync($this->pdo, $this->actor, $this->currencies))->refreshTrip((int) $tripId, $this->today($input));
+    }
+
     private function today(array $input): string
     {
         $today = $input['today'] ?? null;

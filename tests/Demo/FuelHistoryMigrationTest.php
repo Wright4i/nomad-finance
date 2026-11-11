@@ -37,7 +37,7 @@ final class FuelHistoryMigrationTest extends TestCase
         $pdo->exec('PRAGMA foreign_keys = OFF');
         foreach ($files as $file) {
             $base = basename($file);
-            if ($base === '024_dollars_drop_postings.sql' || $base === '025_locked_buckets_fuel_payroll.sql' || $base === '032_vehicle_kinds.sql' || $base === '033_stay_bill.sql' || $base === '034_account_star.sql' || $base === '035_bill_every.sql' || $base === '036_liability_schedule.sql' || $base === '039_account_in_budget.sql' || $base === '040_account_holder.sql' || $base === '041_payroll_posted.sql' || $base === '043_account_favorites.sql' || $base === '044_drop_account_star.sql' || $base === '047_vehicle_archive.sql' || $base === '048_account_liability_bill_type.sql' || $base === '049_bills_trip_fuel.sql') {
+            if ($base === '024_dollars_drop_postings.sql' || $base === '025_locked_buckets_fuel_payroll.sql' || $base === '032_vehicle_kinds.sql' || $base === '033_stay_bill.sql' || $base === '034_account_star.sql' || $base === '035_bill_every.sql' || $base === '036_liability_schedule.sql' || $base === '039_account_in_budget.sql' || $base === '040_account_holder.sql' || $base === '041_payroll_posted.sql' || $base === '043_account_favorites.sql' || $base === '044_drop_account_star.sql' || $base === '047_vehicle_archive.sql' || $base === '048_account_liability_bill_type.sql' || $base === '049_bills_trip_fuel.sql' || $base === '050_bills_lodging_part.sql' || $base === '051_bill_paid_on_due.sql') {
                 continue;
             }
             $sql = file_get_contents($file);
@@ -93,7 +93,7 @@ final class FuelHistoryMigrationTest extends TestCase
         $record = $pdo->prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)');
         foreach ($files as $file) {
             $id = basename($file);
-            if ($id === '024_dollars_drop_postings.sql' || $id === '025_locked_buckets_fuel_payroll.sql' || $id === '032_vehicle_kinds.sql' || $id === '033_stay_bill.sql' || $id === '034_account_star.sql' || $id === '035_bill_every.sql' || $id === '036_liability_schedule.sql' || $id === '039_account_in_budget.sql' || $id === '040_account_holder.sql' || $id === '041_payroll_posted.sql' || $id === '043_account_favorites.sql' || $id === '044_drop_account_star.sql' || $id === '047_vehicle_archive.sql' || $id === '048_account_liability_bill_type.sql' || $id === '049_bills_trip_fuel.sql') {
+            if ($id === '024_dollars_drop_postings.sql' || $id === '025_locked_buckets_fuel_payroll.sql' || $id === '032_vehicle_kinds.sql' || $id === '033_stay_bill.sql' || $id === '034_account_star.sql' || $id === '035_bill_every.sql' || $id === '036_liability_schedule.sql' || $id === '039_account_in_budget.sql' || $id === '040_account_holder.sql' || $id === '041_payroll_posted.sql' || $id === '043_account_favorites.sql' || $id === '044_drop_account_star.sql' || $id === '047_vehicle_archive.sql' || $id === '048_account_liability_bill_type.sql' || $id === '049_bills_trip_fuel.sql' || $id === '050_bills_lodging_part.sql' || $id === '051_bill_paid_on_due.sql') {
                 continue;
             }
             $record->execute([$id, $now]);

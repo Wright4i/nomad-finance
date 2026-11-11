@@ -340,7 +340,7 @@ import type { Account, Bill, Category } from '../lib/types';
     {/if}
     <a class="btn" href="/bills" onclick={(event) => { event.preventDefault(); returnToBills(); }}>Back</a>
     {#if id && status === 'active'}
-      <button class="btn" type="button" disabled={saving} onclick={() => act('paid', { paidOn: todayISO() })}>Mark paid</button>
+      <button class="btn" type="button" disabled={saving} onclick={() => act('paid', { paidOn: nextDueDate })}>Mark paid</button>
       {#if !locked && recurrence === 'once'}
         <button class="btn" type="button" disabled={saving} onclick={() => act('archive')}>Archive</button>
       {:else if !locked}

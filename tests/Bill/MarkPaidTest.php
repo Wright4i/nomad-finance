@@ -133,8 +133,9 @@ final class MarkPaidTest extends TestCase
             'recurrence' => 'once',
             'nextDueDate' => '2026-04-01',
         ]);
-        $paid = $this->bills->markPaid($bill['id'], ['paidOn' => '2026-04-01']);
+        $paid = $this->bills->markPaid($bill['id'], ['paidOn' => '2026-11-03']);
         self::assertSame('paid', $paid['status']);
+        self::assertSame('2026-04-01', $paid['lastPaidOn']);
         self::assertSame('2026-04-01', $paid['nextDueDate']);
         self::assertSame(8000, $this->bills->paidMinor());
 

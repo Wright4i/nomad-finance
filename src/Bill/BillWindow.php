@@ -35,6 +35,9 @@ final class BillWindow
             if ($status !== 'paid' && !$repeating) {
                 return null;
             }
+            if ($status === 'paid' && ($bill['recurrence'] ?? '') === 'once') {
+                return $due !== '' ? $due : $paidOn;
+            }
 
             return $paidOn ?? ($due !== '' ? $due : null);
         }

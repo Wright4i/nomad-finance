@@ -215,10 +215,17 @@ import type { Account, Bill } from '../lib/types';
 
   type Row = Bill & { shownOn: string };
 
+  function paidShownOn(bill: Bill): string {
+    if (bill.recurrence === 'once' && bill.status === 'paid') {
+      return bill.nextDueDate;
+    }
+    return bill.lastPaidOn ?? bill.nextDueDate;
+  }
+
   function rows(section: SectionKey): Row[] {
     const bills = loaded[section];
     if (section === 'paid') {
-      return bills.map((bill) => ({ ...bill, shownOn: bill.lastPaidOn ?? bill.nextDueDate }));
+      return bills.map((bill) => ({ ...bill, shownOn: paidShownOn(bill) }));
     }
     return bills.map((bill) => ({ ...bill, shownOn: bill.nextDueDate }));
   }
@@ -330,7 +337,7 @@ import type { Account, Bill } from '../lib/types';
                   <div class="flex flex-wrap gap-2">
                     <button class="btn" type="button" onclick={() => go(`/bills/${bill.id}`)}>Edit</button>
                     {#if !unpay && bill.status === 'active'}
-                      <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: todayISO() })}>Mark paid</button>
+                      <button class="btn" type="button" onclick={() => act(bill.id, 'paid', { paidOn: bill.nextDueDate })}>Mark paid</button>
                       {#if !bill.locked && bill.recurrence === 'once'}
                         <button class="btn" type="button" onclick={() => act(bill.id, 'archive')}>Archive</button>
                       {:else if !bill.locked}

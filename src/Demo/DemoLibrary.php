@@ -405,20 +405,26 @@ final class DemoLibrary
             $city, $region, $address, $accountId, $total, $due, $balanceDue,
             $rating, $comment, $travel, $routeOrder, $now, $now,
         ]);
+        $tripId = (int) $this->pdo->lastInsertId();
+        $deposit = $total - $due;
+        if ($deposit > 0) {
+            $this->stayLodgingBill($userId, $accountId, $tripId, $place, $deposit, $arrive, $now, 'deposit');
+        }
         if ($due > 0 && $balanceDue !== null && $balanceDue !== '') {
-            $this->stayBill($userId, $accountId, (int) $this->pdo->lastInsertId(), $place, $due, $balanceDue, $now);
+            $this->stayLodgingBill($userId, $accountId, $tripId, $place, $due, $balanceDue, $now, 'due');
         }
     }
 
-    /** The lodging reminder for a seeded stay. It does not move the account balance. */
-    private function stayBill(
+    /** A lodging reminder for a seeded stay. It does not move the account balance. */
+    private function stayLodgingBill(
         int $userId,
         int $accountId,
         int $tripId,
         string $place,
-        int $due,
-        string $balanceDue,
+        int $amount,
+        string $dueOn,
         string $now,
+        string $part,
     ): void {
         $owner = $this->pdo->prepare('SELECT currency FROM accounts WHERE id = ?');
         $owner->execute([$accountId]);
@@ -428,9 +434,10 @@ final class DemoLibrary
         $this->pdo->prepare(
             'INSERT INTO bills (
                 name, type, account_id, category_id, amount_minor, currency,
-                recurrence, anchor_date, next_due_date, autopay, status, created_at, updated_at, trip_id
-             ) VALUES (?, \'lodging\', ?, ?, ?, ?, \'once\', ?, ?, 0, \'active\', ?, ?, ?)'
-        )->execute([$place, $accountId, $bucketId, $due, $currency, $balanceDue, $balanceDue, $now, $now, $tripId]);
+                recurrence, anchor_date, next_due_date, autopay, status, created_at, updated_at,
+                trip_id, lodging_part
+             ) VALUES (?, \'lodging\', ?, ?, ?, ?, \'once\', ?, ?, 0, \'active\', ?, ?, ?, ?)'
+        )->execute([$place, $accountId, $bucketId, $amount, $currency, $dueOn, $dueOn, $now, $now, $tripId, $part]);
     }
 
     private function fuelBill(
