@@ -39,6 +39,8 @@ composer start
 
 Open http://127.0.0.1:8080. Slim serves the built UI from `public/build`. Leave `FINANCE_NEW_USER` unset on a public host so visitors cannot create another login. Set `FINANCE_NEW_USER=1` only when you want the New user button.
 
+`GET /api/homepage/today` is for a trusted dashboard widget. It stays off until you set `FINANCE_HOMEPAGE_TOKEN`. Each request must send that value in the `X-Homepage-Token` header. The response uses the owner's books for today's calendar notes and current stay. `FINANCE_HOMEPAGE_TZ` picks the calendar day; it defaults to `America/Los_Angeles`.
+
 ## Tests
 
 ```bash

@@ -12,6 +12,8 @@ final class SettingsTest extends TestCase
     {
         putenv('FINANCE_DB');
         putenv('FINANCE_NEW_USER');
+        putenv('FINANCE_HOMEPAGE_TOKEN');
+        putenv('FINANCE_HOMEPAGE_TZ');
     }
 
     public function testFinanceDbOverridesTheDefaultPath(): void
@@ -38,5 +40,20 @@ final class SettingsTest extends TestCase
         putenv('FINANCE_NEW_USER=1');
         $open = require dirname(__DIR__, 2) . '/config/settings.php';
         self::assertTrue($open['allowNewUser']);
+    }
+
+    public function testHomepageTokenAndTimezone(): void
+    {
+        putenv('FINANCE_HOMEPAGE_TOKEN');
+        putenv('FINANCE_HOMEPAGE_TZ');
+        $defaults = require dirname(__DIR__, 2) . '/config/settings.php';
+        self::assertSame('', $defaults['homepageToken']);
+        self::assertSame('America/Los_Angeles', $defaults['homepageTimezone']);
+
+        putenv('FINANCE_HOMEPAGE_TOKEN=secret');
+        putenv('FINANCE_HOMEPAGE_TZ=UTC');
+        $set = require dirname(__DIR__, 2) . '/config/settings.php';
+        self::assertSame('secret', $set['homepageToken']);
+        self::assertSame('UTC', $set['homepageTimezone']);
     }
 }

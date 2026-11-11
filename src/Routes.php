@@ -18,9 +18,11 @@ use App\Trip\PlaceSearch;
 use App\Trip\TripService;
 use App\Vehicle\VehicleService;
 use App\PayCycle\PayCycleService;
+use App\Homepage\HomepageTodayService;
 use App\Http\AuthMiddleware;
 use App\Http\Csrf;
 use App\Http\CsrfMiddleware;
+use App\Http\HomepageMiddleware;
 use App\Http\Json;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -44,6 +46,8 @@ final class Routes
         private readonly Actor $actor,
         private readonly DemoLibrary $demo,
         private readonly TransferService $transfers,
+        private readonly HomepageTodayService $homepageToday,
+        private readonly HomepageMiddleware $homepageGate,
     ) {
     }
 
@@ -63,8 +67,10 @@ final class Routes
         $actor = $this->actor;
         $demo = $this->demo;
         $transfers = $this->transfers;
+        $homepageToday = $this->homepageToday;
+        $homepageGate = $this->homepageGate;
 
-        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo, $transfers): void {
+        $app->group('/api', function (RouteCollectorProxy $group) use ($auth, $accounts, $bills, $categories, $payCycle, $envelopes, $dashboard, $trips, $places, $vehicles, $entries, $actor, $demo, $transfers, $homepageToday, $homepageGate): void {
             $group->get('/session', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
                 return Json::write($response, [
                     'needsSetup' => $auth->needsSetup(),
@@ -73,6 +79,10 @@ final class Routes
                     'user' => $auth->current(),
                 ]);
             });
+
+            $group->get('/homepage/today', function (ServerRequestInterface $request, ResponseInterface $response) use ($homepageToday) {
+                return Json::write($response, $homepageToday->show());
+            })->add($homepageGate);
 
             $group->group('', function (RouteCollectorProxy $open) use ($auth): void {
                 $open->post('/setup', function (ServerRequestInterface $request, ResponseInterface $response) use ($auth) {
