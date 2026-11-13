@@ -13,6 +13,7 @@
   import { todayISO } from '../lib/money';
   import { tip } from '../lib/tip';
   import { PERIOD_LENGTHS, periodEnd, periodShift, periodWithinReach, type PeriodLength } from '../lib/acctPeriod';
+  import { buildStamp } from '../lib/buildStamp';
 
   const navAutoCollapseMaxPx = 1279;
 
@@ -287,7 +288,7 @@
         <p class="brand text-5xl m-0 text-[var(--teal)]" use:tip={collapsed ? 'Nomad Finance' : ''}>
           <span class="brand-mark">N</span><span class="brand-word">omad</span>
         </p>
-        <p class="kicker mt-2">Finance</p>
+        <p class="kicker mt-2">Finance <span class="build-stamp" data-build-stamp>{buildStamp}</span></p>
       </div>
     </div>
     <hr class="nav-rule" />
