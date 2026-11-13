@@ -9,7 +9,6 @@
   import { api, explain } from '../lib/api';
   import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates';
   import { minorToInput, parseMajor, todayISO } from '../lib/money';
-  import { go } from '../lib/nav.svelte.ts';
   import { accountLabel } from '../lib/accountLabel';
   import { fieldTips } from '../lib/fieldTips';
   import { tip } from '../lib/tip';
@@ -59,24 +58,23 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
   let sheet = $state<EnvelopeSheet | null>(null);
 
   let spendTypes = $derived(kind === 'need' ? typesByKind.need : typesByKind.want);
-  let wantBucket = $derived.by((): EnvelopeCategory | null => {
+  let logBucket = $derived.by((): EnvelopeCategory | null => {
     if (!sheet) return null;
     const match = categories.find((item) => item.locked && item.billType === spendType);
     if (!match) return null;
     return sheet.categories.find((item) => item.id === match.id) ?? null;
   });
-  let wantEnvelopeMinor = $derived(
-    wantBucket
-      ? Math.max(0, (wantBucket.amountMinor ?? 0) - (wantBucket.billMinor ?? 0))
-      : 0,
+  let logAutoMinor = $derived(logBucket?.billMinor ?? 0);
+  let logEnvelopeMinor = $derived(
+    logBucket ? Math.max(0, (logBucket.amountMinor ?? 0) - logAutoMinor) : 0,
   );
-  let wantTypedMinor = $derived.by(() => {
+  let logTypedMinor = $derived.by(() => {
     if (!sheet) return 0;
     const parsed = parseMajor(amount, sheet.exponent);
     return parsed !== null && parsed > 0 ? parsed : 0;
   });
-  let wantLevels = $derived(wantGaugeSpendLevels(wantEnvelopeMinor, wantTypedMinor));
-  let wantTone = $derived(kind === 'need' ? 'needs' : 'wants');
+  let logSpendLevels = $derived(wantGaugeSpendLevels(logEnvelopeMinor, logTypedMinor));
+  let logTone = $derived(kind === 'need' ? 'needs' : 'wants');
 
   function applyVehicle(current: Vehicle | null): void {
     if (!current) return;
@@ -157,9 +155,24 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     accountId = shopping ? String(shopping.id) : '';
   }
 
-  function bucketName(): string {
-    const match = categories.find((item) => item.locked && item.billType === spendType);
-    return match?.name ?? spendType;
+  async function resetForAnotherLog(): Promise<void> {
+    name = '';
+    amount = '';
+    notes = '';
+    fields = {};
+    message = '';
+    postedOn = todayISO();
+    odometerTouched = false;
+    priceTouched = false;
+    saving = false;
+    try {
+      const vehicleData = await api<{ vehicles: Vehicle[] }>('/api/vehicles');
+      vehicles = vehicleData.vehicles;
+      applyVehicle(vehicle);
+      await loadBudget();
+    } catch (err) {
+      message = explain(err).message;
+    }
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -203,7 +216,7 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
     saving = true;
     try {
       await api('/api/logs', { method: 'POST', body });
-      go('/calendar');
+      await resetForAnotherLog();
     } catch (err) {
       const problem = explain(err);
       message = problem.message;
@@ -290,40 +303,57 @@ import type { Account, Category, EnvelopeCategory, EnvelopeSheet, Vehicle } from
         {/each}
       </div>
     </div>
-    <p class="m-0">Bucket <strong>{bucketName()}</strong></p>
     <label class="field">
       <span>Name</span>
       <input name="name" bind:value={name} />
       {#if fields.name}<em>{fields.name}</em>{/if}
     </label>
-    {#if wantBucket && sheet}
-      <div
-        class="want-gauge want-gauge-spend"
-        class:over={wantLevels.over}
-        class:neutral={wantLevels.neutral}
-        data-want-gauge
-        data-bucket={wantBucket.name}
-        data-envelope-minor={wantEnvelopeMinor}
-        data-remaining-minor={wantLevels.remainingMinor}
-        data-over={wantLevels.over ? '1' : '0'}
-        data-neutral={wantLevels.neutral ? '1' : '0'}
-        style={`--tone: var(--tone-${wantTone}); --assigned: ${wantLevels.remainingLevel}; --preview: 0`}
-      >
-        <div class="want-gauge-stack">
-          <div class="want-gauge-meter">
-            <div class="want-gauge-track">
-              <span class="want-gauge-assigned"></span>
-            </div>
+    {#if logBucket && sheet}
+      <div class="bucket-cell log-bucket-cell">
+        <article
+          class="bucket-tile envelope-tile log-bucket-tile"
+          class:over={logSpendLevels.over}
+          data-log-bucket
+          data-bucket={logBucket.name}
+          data-envelope-minor={logEnvelopeMinor}
+          data-auto-minor={logAutoMinor}
+          data-after-minor={logSpendLevels.afterMinor}
+          data-over={logSpendLevels.over ? '1' : '0'}
+          style={`--tone: var(--tone-${logTone}); --level: ${logSpendLevels.remainingLevel}`}
+        >
+          <span class="bucket-water" aria-hidden="true">
+            <span class="bucket-wave"></span>
+            <span class="bucket-wave"></span>
+            <span class="bucket-wave"></span>
+          </span>
+          <span class="bucket-name">
+            <Glyph name="lock" mini />
+            <strong>{logBucket.name}</strong>
+          </span>
+          <div class="bucket-field bucket-status">
+            <span class="bill-chip">Bill assignments</span>
+            <strong class="bucket-locked" data-field="auto">
+              <Dollars minor={logAutoMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />
+            </strong>
           </div>
-          {#if wantLevels.over}
-            <p class="want-gauge-below m-0">Over <Dollars minor={wantLevels.overMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} owe /></p>
-          {/if}
-        </div>
-        <div class="want-gauge-readout">
-          <p class="want-gauge-name m-0">{wantBucket.name}</p>
-          <p class="want-gauge-line m-0"><span>Left</span> <Dollars minor={wantLevels.remainingMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
-          <p class="want-gauge-line m-0"><span>Envelope</span> <Dollars minor={wantEnvelopeMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} /></p>
-        </div>
+          <div class="bucket-field">
+            <span>Envelope</span>
+            <strong class="bucket-locked" data-field="envelope">
+              <Dollars minor={logEnvelopeMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />
+            </strong>
+          </div>
+          <div class="bucket-field" data-field="after">
+            <span>After</span>
+            <strong class="bucket-locked">
+              <Dollars minor={logSpendLevels.afterMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} />
+            </strong>
+          </div>
+        </article>
+        {#if logSpendLevels.over && logSpendLevels.overMinor > 0}
+          <p class="bucket-overage">
+            Over by <Dollars minor={logSpendLevels.overMinor} currency={sheet.baseCurrency} exponent={sheet.exponent} owe />
+          </p>
+        {/if}
       </div>
     {/if}
   {/if}

@@ -254,16 +254,15 @@ final class LogTest extends TestCase
         self::type('amount', '20');
         self::replace('odometer', '10600');
         self::click('Save log');
-        self::waitForPath('/calendar');
+        self::waitForText('New log');
+        self::assertSame('', self::driver()->findElement(WebDriverBy::name('amount'))->getAttribute('value'));
 
-        self::driver()->get(self::$base . '/log');
-        self::waitForText('Save log');
-        self::waitForAccount();
         self::click('Want');
         self::type('name', 'Logged Dinner');
         self::type('amount', '15');
         self::click('Save log');
-        self::waitForPath('/calendar');
+        self::waitForText('New log');
+        self::assertSame('', self::driver()->findElement(WebDriverBy::name('name'))->getAttribute('value'));
 
         self::driver()->get(self::$base . '/bills');
         Reveal::bill(self::driver(), 'Logged Dinner', 'active');
@@ -318,7 +317,7 @@ final class LogTest extends TestCase
         self::type('name', 'Logged Groceries');
         self::type('amount', '12');
         self::click('Save log');
-        self::waitForPath('/calendar');
+        self::waitForText('New log');
 
         self::driver()->get(self::$base . '/bills');
         Reveal::bill(self::driver(), 'Logged Groceries', 'active');
@@ -348,7 +347,7 @@ final class LogTest extends TestCase
         self::type('name', 'Logged Milk');
         self::type('amount', '4');
         self::click('Save log');
-        self::waitForPath('/calendar');
+        self::waitForText('New log');
         self::driver()->get(self::$base . '/bills');
         Reveal::bill(self::driver(), 'Logged Milk', 'paid');
         self::waitForText('Logged Milk');
@@ -376,11 +375,12 @@ final class LogTest extends TestCase
         self::waitForText('Groceries');
         self::wait()->until(function (): bool {
             $text = self::driver()->executeScript(<<<'JS'
-                const gauge = document.querySelector('[data-want-gauge][data-bucket="Groceries"]');
-                return gauge ? gauge.innerText : '';
+                const tile = document.querySelector('[data-log-bucket][data-bucket="Groceries"]');
+                return tile ? tile.innerText : '';
             JS);
 
-            return is_string($text) && str_contains($text, 'Envelope') && str_contains($text, '$42.00');
+            return is_string($text) && str_contains($text, 'Envelope') && str_contains($text, '$42.00')
+                && str_contains($text, 'Bill assignments') && str_contains($text, 'After');
         });
     }
 

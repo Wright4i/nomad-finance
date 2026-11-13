@@ -3392,6 +3392,18 @@ a.bucket-tile > .account-balance {
   color: #fff7f7;
 }
 
+.log-bucket-cell {
+  max-width: 14rem;
+}
+
+.log-bucket-tile .bucket-name {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  min-height: 3.2rem;
+}
+
 .want-gauge {
   display: grid;
   grid-template-columns: 4.25rem minmax(0, 1fr);

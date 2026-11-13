@@ -86,7 +86,7 @@ final class WantLogGaugeTest extends TestCase
         parent::onNotSuccessfulTest($t);
     }
 
-    public function testAWantLogShowsTheMatchingLockedBucketAndWarnsWhenTheAmountPassesMax(): void
+    public function testAWantLogBucketShowsEnvelopeWaterAndAfterAmount(): void
     {
         self::driver()->get(self::$base . '/');
         self::type('name', 'Ada');
@@ -100,115 +100,85 @@ final class WantLogGaugeTest extends TestCase
         self::waitForText('Available to assign');
         self::clickLink('New log');
         self::click('Want');
-        self::waitForGauge();
+        self::waitForBucket();
 
-        $restaurants = self::gauge();
+        $restaurants = self::bucket();
         $books = self::lockedBooks();
         self::assertSame($books['restaurants']['name'], $restaurants['bucket']);
-        self::assertSame($books['restaurants']['assigned'], $restaurants['assigned']);
-        self::assertSame($books['restaurants']['max'], $restaurants['max']);
-        self::assertStringContainsString('Assigned', $restaurants['text']);
-        self::assertStringContainsString('Max', $restaurants['text']);
-        self::assertStringContainsString($restaurants['assignedDollars'], $restaurants['text']);
-        self::assertStringContainsString($restaurants['maxDollars'], $restaurants['text']);
-        self::assertStringNotContainsString('USD', $restaurants['text']);
-        self::assertEquals(0, $restaurants['preview']);
-        self::assertSame($restaurants['assigned'] > $restaurants['max'] ? '1' : '0', $restaurants['over']);
+        self::assertSame($books['restaurants']['envelope'], $restaurants['envelope']);
+        self::assertSame($books['restaurants']['auto'], $restaurants['auto']);
+        self::assertSame($books['restaurants']['envelope'], $restaurants['after']);
+        self::assertStringContainsString('Bill assignments', $restaurants['text']);
+        self::assertStringContainsString('Envelope', $restaurants['text']);
+        self::assertStringContainsString('After', $restaurants['text']);
+        self::assertEquals(3, $restaurants['waves']);
+        if ($restaurants['envelope'] > 0) {
+            self::assertEqualsWithDelta(1, $restaurants['level'], 0.01);
+        } else {
+            self::assertEquals(0, $restaurants['level']);
+        }
+        self::assertSame('0', $restaurants['over']);
 
         self::click('shopping');
-        self::wait()->until(fn (): bool => self::gauge()['bucket'] === $books['shopping']['name']);
-        $shopping = self::gauge();
-        self::assertSame($books['shopping']['assigned'], $shopping['assigned']);
-        self::assertSame($books['shopping']['max'], $shopping['max']);
+        self::wait()->until(fn (): bool => self::bucket()['bucket'] === $books['shopping']['name']);
+        $shopping = self::bucket();
+        self::assertSame($books['shopping']['envelope'], $shopping['envelope']);
+        self::assertSame($books['shopping']['auto'], $shopping['auto']);
         self::assertNotSame($restaurants['bucket'], $shopping['bucket']);
 
-        self::click('entertainment');
-        self::wait()->until(fn (): bool => self::gauge()['bucket'] === $books['entertainment']['name']);
-        $entertainment = self::gauge();
-        self::assertSame($books['entertainment']['assigned'], $entertainment['assigned']);
-        self::assertSame($books['entertainment']['max'], $entertainment['max']);
-        if ($entertainment['assigned'] === 0 && $entertainment['max'] === 0) {
-            self::assertSame('1', $entertainment['neutral']);
-            self::assertEquals(0, $entertainment['preview']);
-            self::type('amount', '4');
-            self::wait()->until(fn (): bool => self::gauge()['over'] === '1');
-            $keyed = self::gauge();
-            self::assertEquals(0, $keyed['preview']);
-            self::assertStringContainsString('Over', $keyed['text']);
-            self::assertStringContainsString('$4.00', $keyed['text']);
-            self::clearAmount();
-        }
-
         self::click('restaurants');
-        self::wait()->until(fn (): bool => self::gauge()['bucket'] === $books['restaurants']['name']);
-        $open = self::gauge();
-        if ($open['max'] - $open['assigned'] < 2000) {
-            $raised = $open['assigned'] + 10000;
-            self::raiseMax($books['restaurants']['id'], $raised);
+        self::wait()->until(fn (): bool => self::bucket()['bucket'] === $books['restaurants']['name']);
+        if ($books['restaurants']['envelope'] < 2000) {
+            $raised = 10000;
+            self::raiseEnvelope($books['restaurants']['id'], $raised);
             self::driver()->navigate()->refresh();
             self::click('Want');
-            self::wait()->until(fn (): bool => self::gauge()['max'] === $raised);
+            self::wait()->until(fn (): bool => self::bucket()['envelope'] === $raised);
         }
 
-        $roomy = self::gauge();
-        self::assertGreaterThanOrEqual(2000, $roomy['max'] - $roomy['assigned']);
+        $open = self::bucket();
+        self::assertGreaterThanOrEqual(2000, $open['envelope']);
         self::type('amount', '10');
-        self::wait()->until(fn (): bool => self::gauge()['preview'] > 4);
-        $under = self::gauge();
+        self::wait()->until(fn (): bool => self::bucket()['after'] === $open['envelope'] - 1000);
+        $under = self::bucket();
         self::assertSame('0', $under['over']);
-        self::assertGreaterThan(0, $under['preview']);
-        self::assertStringContainsString('repeating-linear-gradient', $under['stripes']);
-        self::assertNull($under['overAnimation']);
-        self::assertStringNotContainsString('Over', $under['text']);
+        self::assertGreaterThan(0, $under['level']);
+        self::assertLessThan(1, $under['level']);
 
         self::type('amount', '500');
-        self::wait()->until(function (): bool {
-            $gauge = self::gauge();
-
-            return $gauge['over'] === '1'
-                && abs($gauge['track'] - ($gauge['assignedHeight'] + $gauge['preview'])) < 2;
-        });
-        $over = self::gauge();
-        self::assertStringContainsString('Over', $over['text']);
-        self::assertStringContainsString('repeating-linear-gradient', $over['stripes']);
-        self::assertGreaterThan(0, $over['preview']);
-        self::assertEqualsWithDelta($over['track'], $over['assignedHeight'] + $over['preview'], 2.0);
-        self::assertNotNull($over['overColor']);
-        self::assertGreaterThan($over['overColor']['g'], $over['overColor']['r']);
-        self::assertGreaterThan($over['overColor']['b'], $over['overColor']['r']);
-        self::assertStringContainsString('want-gauge-shake', (string) $over['overAnimation']);
+        self::wait()->until(fn (): bool => self::bucket()['over'] === '1');
+        $over = self::bucket();
+        self::assertLessThan(0, $over['after']);
+        self::assertStringContainsString('Over by', (string) self::driver()->findElement(WebDriverBy::cssSelector('.log-bucket-cell'))->getText());
 
         self::click('Fuel');
         self::wait()->until(function (): bool {
-            $gone = self::driver()->executeScript('return document.querySelector("[data-want-gauge]") === null');
+            $gone = self::driver()->executeScript('return document.querySelector("[data-log-bucket]") === null');
             $odometer = self::driver()->executeScript('return document.querySelector(\'input[name="odometer"]\') !== null');
 
             return $gone === true && $odometer === true;
         });
     }
 
-    /** @return array<string, array{id:int,name:string,assigned:int,max:int}> */
+    /** @return array<string, array{id:int,name:string,envelope:int,auto:int}> */
     private static function lockedBooks(): array
     {
-        /** @var array<string, array{id:int,name:string,assigned:int,max:int}> $books */
+        /** @var array<string, array{id:int,name:string,envelope:int,auto:int}> $books */
         $books = self::driver()->executeAsyncScript(<<<'JS'
             const done = arguments[arguments.length - 1];
             const now = new Date();
             const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const maxOf = (row) => {
-                const cap = row.target && row.target.amountMinor > 0 ? row.target.amountMinor : 0;
-                if (cap > 0) return cap;
-                const bills = row.billMinor != null ? row.billMinor : row.amountMinor;
-                return bills > 0 ? bills : 0;
-            };
             Promise.all([
-                fetch('/api/budget?today=' + today, { headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((response) => response.json()),
+                fetch('/api/budget?today=' + today + '&acctPeriod=1', { headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((response) => response.json()),
                 fetch('/api/buckets', { headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((response) => response.json()),
             ]).then(([sheet, listed]) => {
                 const read = (type) => {
                     const cat = listed.categories.find((item) => item.locked && item.billType === type);
                     const row = cat && sheet.categories.find((item) => item.id === cat.id);
-                    return row ? { id: row.id, name: row.name, assigned: row.amountMinor, max: maxOf(row) } : null;
+                    if (!row) return null;
+                    const auto = row.billMinor != null ? row.billMinor : 0;
+                    const envelope = Math.max(0, (row.amountMinor != null ? row.amountMinor : 0) - auto);
+                    return { id: row.id, name: row.name, envelope, auto };
                 };
                 done({
                     restaurants: read('restaurants'),
@@ -225,102 +195,86 @@ final class WantLogGaugeTest extends TestCase
         return $books;
     }
 
-    private static function raiseMax(int $categoryId, int $maxMinor): void
+    private static function raiseEnvelope(int $categoryId, int $envelopeMinor): void
     {
         $saved = self::driver()->executeAsyncScript(<<<'JS'
             const categoryId = arguments[0];
-            const maxMinor = arguments[1];
+            const envelopeMinor = arguments[1];
             const done = arguments[arguments.length - 1];
             const now = new Date();
             const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             fetch('/api/session', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
                 .then((response) => response.json())
-                .then((session) => fetch('/api/budget?today=' + today, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+                .then((session) => fetch('/api/budget?today=' + today + '&acctPeriod=1', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
                     .then((response) => response.json())
-                    .then((sheet) => fetch('/api/budget', {
-                        method: 'PUT',
-                        credentials: 'same-origin',
-                        headers: {
-                            Accept: 'application/json',
-                            'Content-Type': 'application/json',
-                            'X-CSRF-Token': session.csrfToken,
-                        },
-                        body: JSON.stringify({
-                            today,
-                            payCycleId: sheet.payCycleId,
-                            amounts: sheet.categories.map((row) => ({ categoryId: row.id, amountMinor: row.amountMinor })),
-                            maximums: [{ categoryId, amountMinor: maxMinor }],
-                        }),
-                    })))
+                    .then((sheet) => {
+                        const row = sheet.categories.find((item) => item.id === categoryId);
+                        const auto = row && row.billMinor != null ? row.billMinor : 0;
+                        return fetch('/api/budget', {
+                            method: 'PUT',
+                            credentials: 'same-origin',
+                            headers: {
+                                Accept: 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': session.csrfToken,
+                            },
+                            body: JSON.stringify({
+                                today,
+                                payCycleId: sheet.payCycleId,
+                                amounts: sheet.categories.map((cat) => ({
+                                    categoryId: cat.id,
+                                    amountMinor: cat.id === categoryId ? auto + envelopeMinor : cat.amountMinor,
+                                })),
+                            }),
+                        });
+                    }))
                 .then(async (response) => {
                     const data = await response.json();
                     const row = (data.categories || []).find((item) => item.id === categoryId);
-                    done({ ok: response.status, max: row && row.target ? row.target.amountMinor : null, message: data.error || '' });
+                    const auto = row && row.billMinor != null ? row.billMinor : 0;
+                    done({
+                        ok: response.status,
+                        envelope: row ? Math.max(0, row.amountMinor - auto) : null,
+                        message: data.error || '',
+                    });
                 })
-                .catch((err) => done({ ok: 0, max: null, message: String(err) }));
-        JS, [$categoryId, $maxMinor]);
+                .catch((err) => done({ ok: 0, envelope: null, message: String(err) }));
+        JS, [$categoryId, $envelopeMinor]);
         self::assertIsArray($saved);
         self::assertSame(200, $saved['ok'], (string) ($saved['message'] ?? ''));
-        self::assertSame($maxMinor, $saved['max']);
+        self::assertSame($envelopeMinor, $saved['envelope']);
     }
 
-    /** @return array{bucket:string,assigned:int,max:int,over:string,neutral:string,text:string,assignedDollars:string,maxDollars:string,preview:float,assignedHeight:float,track:float,stripes:string,overAnimation:?string,overColor:?array{r:int,g:int,b:int}} */
-    private static function gauge(): array
+    /** @return array{bucket:string,envelope:int,auto:int,after:int,over:string,text:string,level:float,waves:int} */
+    private static function bucket(): array
     {
-        /** @var array{bucket:string,assigned:int,max:int,over:string,neutral:string,text:string,assignedDollars:string,maxDollars:string,preview:float,assignedHeight:float,track:float,stripes:string,overAnimation:?string,overColor:?array{r:int,g:int,b:int}} $gauge */
-        $gauge = self::driver()->executeScript(<<<'JS'
-            const gauge = document.querySelector('[data-want-gauge]');
-            if (!gauge) return null;
-            const money = (minor) => {
-                const abs = Math.abs(Math.trunc(Number(minor)));
-                const whole = Math.trunc(abs / 100).toLocaleString('en-US');
-                const frac = String(abs % 100).padStart(2, '0');
-                return `$${whole}.${frac}`;
-            };
-            const preview = gauge.querySelector('.want-gauge-preview');
-            const assigned = gauge.querySelector('.want-gauge-assigned');
-            const track = gauge.querySelector('.want-gauge-track');
-            const over = gauge.querySelector('.want-gauge-over');
-            const overStyle = over ? getComputedStyle(over) : null;
-            const color = overStyle ? overStyle.backgroundColor.match(/\d+/g) : null;
+        /** @var array{bucket:string,envelope:int,auto:int,after:int,over:string,text:string,level:float,waves:int} $bucket */
+        $bucket = self::driver()->executeScript(<<<'JS'
+            const tile = document.querySelector('[data-log-bucket]');
+            if (!tile) return null;
+            const level = getComputedStyle(tile).getPropertyValue('--level').trim();
             return {
-                bucket: gauge.dataset.bucket,
-                assigned: Number(gauge.dataset.assignedMinor),
-                max: Number(gauge.dataset.maxMinor),
-                over: gauge.dataset.over,
-                neutral: gauge.dataset.neutral,
-                text: gauge.textContent,
-                assignedDollars: money(gauge.dataset.assignedMinor),
-                maxDollars: money(gauge.dataset.maxMinor),
-                preview: preview ? preview.getBoundingClientRect().height : 0,
-                assignedHeight: assigned ? assigned.getBoundingClientRect().height : 0,
-                track: track ? track.getBoundingClientRect().height : 0,
-                stripes: preview ? getComputedStyle(preview).backgroundImage : '',
-                overAnimation: overStyle ? overStyle.animationName : null,
-                overColor: color ? { r: Number(color[0]), g: Number(color[1]), b: Number(color[2]) } : null,
+                bucket: tile.dataset.bucket,
+                envelope: Number(tile.dataset.envelopeMinor),
+                auto: Number(tile.dataset.autoMinor),
+                after: Number(tile.dataset.afterMinor),
+                over: tile.dataset.over,
+                text: tile.textContent,
+                level: level === '' ? 0 : Number(level),
+                waves: tile.querySelectorAll('.bucket-wave').length,
             };
         JS);
-        if (!is_array($gauge)) {
-            throw new NoSuchElementException('The want gauge is not on screen.');
+        if (!is_array($bucket)) {
+            throw new NoSuchElementException('The log bucket is not on screen.');
         }
 
-        return $gauge;
+        return $bucket;
     }
 
-    private static function clearAmount(): void
-    {
-        self::driver()->executeScript(<<<'JS'
-            const input = document.querySelector('input[name="amount"]');
-            input.value = '';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        JS);
-        self::wait()->until(fn (): bool => self::gauge()['over'] === '0');
-    }
-
-    private static function waitForGauge(): void
+    private static function waitForBucket(): void
     {
         self::wait()->until(function (): bool {
-            $ready = self::driver()->executeScript('return document.querySelector("[data-want-gauge]") !== null');
+            $ready = self::driver()->executeScript('return document.querySelector("[data-log-bucket]") !== null');
 
             return $ready === true;
         });
@@ -360,7 +314,7 @@ final class WantLogGaugeTest extends TestCase
 
     private static function wait(): WebDriverWait
     {
-        return new WebDriverWait(self::driver(), 15);
+        return new WebDriverWait(self::$driver, 15);
     }
 
     private static function driver(): ChromeDriver
