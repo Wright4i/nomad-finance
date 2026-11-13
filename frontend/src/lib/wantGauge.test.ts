@@ -29,6 +29,7 @@ test('a log spends down the envelope and only goes over past available', () => {
   const partial = wantGaugeSpendLevels(25000, 19000);
   assert.equal(partial.remainingLevel, 0.24);
   assert.equal(partial.remainingMinor, 6000);
+  assert.equal(partial.afterMinor, 6000);
   assert.equal(partial.over, false);
 
   const exact = wantGaugeSpendLevels(25000, 25000);
@@ -39,6 +40,7 @@ test('a log spends down the envelope and only goes over past available', () => {
   const past = wantGaugeSpendLevels(25000, 30000);
   assert.equal(past.remainingLevel, 0);
   assert.equal(past.remainingMinor, 0);
+  assert.equal(past.afterMinor, -5000);
   assert.equal(past.over, true);
   assert.equal(past.overMinor, 5000);
 });

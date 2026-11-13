@@ -44,7 +44,10 @@ export type WantGaugeSpendLevels = {
   remainingLevel: number;
   over: boolean;
   overMinor: number;
+  /** Envelope minus the typed amount when not over; zero when over. */
   remainingMinor: number;
+  /** Envelope minus the typed amount; may be negative. */
+  afterMinor: number;
   neutral: boolean;
 };
 
@@ -53,21 +56,24 @@ export function wantGaugeSpendLevels(availableMinor: number, typedMinor: number)
   const available = positive(availableMinor);
   const typed = positive(typedMinor);
   if (available === 0) {
+    const after = -typed;
     return {
       remainingLevel: 0,
       over: typed > 0,
       overMinor: typed,
       remainingMinor: 0,
+      afterMinor: after,
       neutral: true,
     };
   }
-  const remaining = available - typed;
-  const over = remaining < 0;
+  const after = available - typed;
+  const over = after < 0;
   return {
-    remainingLevel: over ? 0 : remaining / available,
+    remainingLevel: over ? 0 : after / available,
     over,
     overMinor: over ? typed - available : 0,
-    remainingMinor: over ? 0 : remaining,
+    remainingMinor: over ? 0 : after,
+    afterMinor: after,
     neutral: false,
   };
 }

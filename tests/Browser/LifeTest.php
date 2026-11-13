@@ -214,9 +214,8 @@ final class LifeTest extends TestCase
         self::replace('odometer', '10600');
         self::waitForText('100 mi.');
         self::click('Save log');
-        self::wait()->until(function (): bool {
-            return str_contains(self::driver()->getCurrentURL(), '/calendar');
-        });
+        self::waitForText('New log');
+        self::assertSame('', self::driver()->findElement(WebDriverBy::name('amount'))->getAttribute('value'));
         self::clickLink('Accounts');
         self::waitForText('$2,450.00');
         self::clickLink('New log');
