@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { formatDate, formatMonth, formatSlashSpan, formatStaySpan, isoToInput, maskDateInput, monthCells, monthOf, parseDateInput, shiftYearMonth } from './dates.ts'
+
+test('a full date reads as a short month, a day, and a four-digit year', () => {
+  assert.equal(formatDate('2026-11-05'), 'Nov 5, 2026')
+  assert.equal(formatDate('2026-11-01'), 'Nov 1, 2026')
+  assert.equal(formatDate('2027-02-01'), 'Feb 1, 2027')
+})
+
+test('a stay list drops the year and keeps an en dash', () => {
+  assert.equal(formatStaySpan('2026-11-20', '2026-11-24'), 'Nov 20 - Nov 24')
+  assert.equal(formatStaySpan('2026-11-24', '2026-12-01'), 'Nov 24 - Dec 1')
+  assert.equal(formatStaySpan('2026-11-20', '2026-11-20'), 'Nov 20 - Nov 20')
+  assert.equal(formatStaySpan('2026-12-12', '2027-01-08'), 'Dec 12 - Jan 8')
+  assert.equal(formatStaySpan('2026-12-31', '2027-01-01'), 'Dec 31 - Jan 1')
+})
+
+test('a stay list keeps the year when the month and day would read as a shorter stay', () => {
+  assert.equal(formatStaySpan('2026-11-20', '2027-11-24'), 'Nov 20, 2026 - Nov 24, 2027')
+  assert.equal(formatStaySpan('2026-11-20', '2027-11-20'), 'Nov 20, 2026 - Nov 20, 2027')
+  assert.equal(formatStaySpan('2026-01-01', '2027-01-02'), 'Jan 1, 2026 - Jan 2, 2027')
+  assert.equal(formatStaySpan('2026-11-20', '2028-01-08'), 'Nov 20, 2026 - Jan 8, 2028')
+  assert.equal(formatStaySpan('nope', '2026-11-20'), 'nope - Nov 20, 2026')
+})
+
+test('a collapsed period reads as month/day-month/day', () => {
+  assert.equal(formatSlashSpan('2026-10-16', '2026-11-15'), '10/16-11/15')
+  assert.equal(formatSlashSpan('2026-11-01', '2026-11-30'), '11/1-11/30')
+})
+
+test('a month with no day reads as a short month and a four-digit year', () => {
+  assert.equal(formatMonth('2026-11'), 'Nov 2026')
+  assert.equal(formatMonth('2026-11-05'), 'Nov 2026')
+  assert.equal(formatMonth('2026-12'), 'Dec 2026')
+})
+
+test('MM / DD / YYYY parses to the ISO value the API stores', () => {
+  assert.equal(isoToInput('2026-11-05'), '11 / 05 / 2026')
+  assert.equal(maskDateInput('11052026'), '11 / 05 / 2026')
+  assert.equal(maskDateInput('11 / 05 / 2026'), '11 / 05 / 2026')
+  assert.equal(parseDateInput('11 / 05 / 2026'), '2026-11-05')
+  assert.equal(parseDateInput(' 02 / 29 / 2024 '), '2024-02-29')
+  assert.equal(parseDateInput('02 / 29 / 2000'), '2000-02-29')
+})
+
+test('a calendar day is the ISO date the field stores', () => {
+  const november = monthCells(2026, 11)
+  assert.equal(november[0], '2026-11-01')
+  assert.equal(november[14], '2026-11-15')
+  assert.equal(november.at(-1), '2026-11-30')
+  assert.equal(november.length, 30)
+
+  const october = monthCells(2026, 10)
+  assert.deepEqual(october.slice(0, 5), [null, null, null, null, '2026-10-01'])
+  assert.equal(october.filter((day) => day !== null).length, 31)
+  assert.equal(october.at(-1), '2026-10-31')
+
+  const leap = monthCells(2024, 2)
+  assert.equal(leap[4], '2024-02-01')
+  assert.equal(leap.at(-1), '2024-02-29')
+  assert.equal(monthCells(2026, 2).at(-1), '2026-02-28')
+
+  assert.deepEqual(monthCells(2026, 0), [])
+  assert.deepEqual(monthCells(2026, 13), [])
+  assert.deepEqual(monthCells(999, 1), [])
+  assert.deepEqual(shiftYearMonth(2026, 1, -1), { year: 2025, month: 12 })
+  assert.deepEqual(shiftYearMonth(2026, 12, 1), { year: 2027, month: 1 })
+  assert.deepEqual(monthOf('2026-11-15'), { year: 2026, month: 11 })
+  assert.equal(monthOf('02 / 15 / 2026'), null)
+})
+
+test('a partial or impossible date is refused', () => {
+  assert.equal(parseDateInput(''), null)
+  assert.equal(parseDateInput('11 / 05 / 202'), null)
+  assert.equal(parseDateInput('11 / 5 / 2026'), null)
+  assert.equal(parseDateInput('11/05/2026'), null)
+  assert.equal(parseDateInput('2026-11-05'), null)
+  assert.equal(parseDateInput('13 / 01 / 2026'), null)
+  assert.equal(parseDateInput('00 / 10 / 2026'), null)
+  assert.equal(parseDateInput('02 / 31 / 2026'), null)
+  assert.equal(parseDateInput('02 / 29 / 2025'), null)
+  assert.equal(parseDateInput('02 / 29 / 1900'), null)
+  assert.equal(parseDateInput('04 / 31 / 2026'), null)
+})

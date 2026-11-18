@@ -1,0 +1,12 @@
+/vendor/
+/frontend/node_modules/
+/public/build/
+/data/*.sqlite
+/data/*.sqlite-journal
+/data/*.sqlite-wal
+/data/*.sqlite-shm
+/.env
+/.phpunit.cache/
+/var/
+/frontend/dist/
+.DS_Store

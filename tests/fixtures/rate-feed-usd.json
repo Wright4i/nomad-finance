@@ -1,0 +1,10 @@
+{
+  "result": "success",
+  "base_code": "USD",
+  "rates": {
+    "USD": 1,
+    "EUR": 0.893426,
+    "JPY": 158.39919,
+    "THB": 33.757532
+  }
+}

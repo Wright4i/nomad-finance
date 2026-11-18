@@ -1,0 +1,2054 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Envelope;
+
+use App\Auth\Actor;
+use App\Envelope\BillFill;
+use App\Http\ApiException;
+use App\Money\CurrencyCatalog;
+use App\Category\SystemBuckets;
+use App\PayCycle\PayCycleService;
+use App\PayCycle\Period;
+use App\Account\FloatCover;
+use App\AcctPeriod\AcctPeriod;
+use App\Support\Dates;
+use App\Target\TargetService;
+use App\Trip\Drive;
+use App\Trip\TripService;
+use PDO;
+use Throwable;
+
+final class EnvelopeService
+{
+    public function __construct(
+        private readonly PDO $pdo,
+        private readonly Actor $actor,
+        private readonly CurrencyCatalog $currencies,
+        private readonly TargetService $targets,
+        private readonly PayCycleService $payCycles,
+        private readonly ?Drive $drive = null,
+    ) {
+    }
+
+    /** @var ?array{start:string,end:string,length:string,phase:string} */
+    private ?array $viewWindow = null;
+
+    /** @return array<string, mixed> */
+    public function show(string $today, ?int $payCycleId = null, ?int $periodId = null, bool $upcoming = false, bool $useAcctPeriod = false): array
+    {
+        $today = $this->day($today);
+        $this->fillIfWaiting($today);
+        (new TripService($this->pdo, $this->actor, $this->currencies, $this->drive))->syncAllFuelBills($today);
+        $this->prepare($today);
+        if ($useAcctPeriod) {
+            $this->adoptEnvelopes($today);
+        }
+        $acctPeriod = $useAcctPeriod ? $this->storedAcctPeriod($today) : null;
+        $this->viewWindow = $acctPeriod === null ? null : [
+            'start' => $acctPeriod['start'],
+            'end' => $acctPeriod['end'],
+            'length' => $acctPeriod['length'],
+            'phase' => $acctPeriod['phase'],
+        ];
+        $viewPeriodId = $periodId;
+        if ($acctPeriod !== null && $acctPeriod['phase'] === 'closed' && $periodId === null && !$upcoming) {
+            $viewPeriodId = $this->closedPayPeriodId($payCycleId, $acctPeriod['start'], $today);
+        }
+        try {
+            $sheet = $this->present($today, $payCycleId, $viewPeriodId, $upcoming, true);
+        } finally {
+            $this->viewWindow = null;
+        }
+        $sheet['acctPeriod'] = $this->storedAcctPeriod($today);
+        if ($acctPeriod !== null) {
+            $sheet = $this->alignAcctPeriod($sheet, $acctPeriod, $today);
+        }
+
+        return $sheet;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function save(array $input): array
+    {
+        $today = $this->day(is_string($input['today'] ?? null) ? $input['today'] : '');
+        $acctSpan = null;
+        if ($this->usesAcctPeriod($input)) {
+            $acctSpan = $this->acctSpanFor($input, $today);
+            if ($acctSpan['phase'] === 'closed') {
+                throw new ApiException(409, 'A closed period can be read.');
+            }
+            if ($acctSpan['phase'] === 'current') {
+                $this->guardLockedFloors($input, $acctSpan['start'], $acctSpan['end'], $today);
+            }
+            if ($acctSpan['phase'] === 'future' || $acctSpan['phase'] === 'current') {
+                return $this->saveAcctPeriodPlan($input, $acctSpan, $today);
+            }
+        }
+        $this->prepare($today);
+        $cycle = $this->cycle($this->asInt($input['payCycleId'] ?? null) ?? 0);
+        if ($cycle['archived_at'] !== null) {
+            throw new ApiException(409, 'Unarchive this pay cycle before assigning.');
+        }
+
+        $upcoming = ($input['upcoming'] ?? false) === true || ($input['upcoming'] ?? null) === 1 || ($input['upcoming'] ?? null) === '1';
+        if ($acctSpan !== null && $acctSpan['phase'] === 'current' && !$upcoming) {
+            $cycle = $this->cycleInsideWindow($cycle, $acctSpan, $today);
+        }
+        if ($upcoming) {
+            $next = $this->nextSpan($cycle, $today);
+            if ($next === null) {
+                throw new ApiException(422, 'This pay cycle has no next period to plan.');
+            }
+            $periodId = $this->storePeriod($cycle, $next['start'], $next['end']);
+            $period = ['id' => $periodId];
+            $spanStart = $next['start'];
+        } else {
+            $open = $this->openSpan($cycle, $today);
+            $period = $this->periodRow((int) $cycle['id'], $open['start']);
+            if ($period === null) {
+                throw new ApiException(404, 'Pay period not found.');
+            }
+            $spanStart = (string) $period['period_start'];
+        }
+
+        $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
+        $maximums = array_key_exists('maximums', $input)
+            ? $this->maximums(is_array($input['maximums']) ? $input['maximums'] : null)
+            : null;
+        $lockedIds = $this->lockedIds();
+        $floors = $acctSpan !== null
+            ? $this->windowBillSums($acctSpan['start'], $acctSpan['end'], true, $today)
+            : $this->monthBillSums($spanStart, !$upcoming, $today);
+        $tooLow = [];
+        foreach ($amounts as $categoryId => $typed) {
+            if (!isset($lockedIds[$categoryId])) {
+                continue;
+            }
+            $floor = $floors[$categoryId] ?? 0;
+            if ($typed < $floor) {
+                $tooLow['amount-' . $categoryId] = 'Assigned cannot be lower than the bills.';
+            }
+        }
+        if ($tooLow !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $tooLow);
+        }
+        $this->pdo->beginTransaction();
+        try {
+            $kept = $this->pdo->prepare('SELECT category_id, amount_minor, filled_minor FROM assignments WHERE pay_period_id = ?');
+            $kept->execute([(int) $period['id']]);
+            $prior = [];
+            while ($row = $kept->fetch()) {
+                if (is_array($row)) {
+                    $prior[(int) $row['category_id']] = [
+                        'amount' => (int) $row['amount_minor'],
+                        'filled' => (int) $row['filled_minor'],
+                    ];
+                }
+            }
+            $this->pdo->prepare('DELETE FROM assignments WHERE pay_period_id = ?')->execute([(int) $period['id']]);
+            $insert = $this->pdo->prepare(
+                'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
+            );
+            $ids = array_unique([...array_keys($amounts), ...array_keys($prior)]);
+            foreach ($ids as $categoryId) {
+                $keptRow = $prior[$categoryId] ?? ['amount' => 0, 'filled' => 0];
+                if (array_key_exists($categoryId, $amounts)) {
+                    $amount = $amounts[$categoryId];
+                } elseif (isset($lockedIds[$categoryId])) {
+                    $amount = max(0, $keptRow['amount']);
+                } else {
+                    $amount = 0;
+                }
+                $portion = $keptRow['filled'];
+                if (isset($lockedIds[$categoryId]) && $portion > $amount) {
+                    $typed = max(0, $amount - ($floors[$categoryId] ?? 0));
+                    $amount = $portion + $typed;
+                }
+                if ($amount === 0 && $portion === 0) {
+                    continue;
+                }
+                $insert->execute([(int) $period['id'], $categoryId, $amount, $portion]);
+            }
+            $this->syncAmounts($today);
+            if ($maximums !== null) {
+                $this->saveMaximums($maximums);
+            }
+            if ($acctSpan !== null) {
+                $this->releaseOtherGoals((int) $period['id'], $acctSpan['start'], $amounts, $lockedIds, $acctSpan['end']);
+            } else {
+                $stored = $this->pdo->prepare('SELECT period_start FROM pay_periods WHERE id = ? AND user_id = ?');
+                $stored->execute([(int) $period['id'], $this->actor->id()]);
+                $storedStart = $stored->fetchColumn();
+                if (is_string($storedStart)) {
+                    $this->releaseOtherGoals((int) $period['id'], $storedStart, $amounts, $lockedIds);
+                }
+            }
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesAcctPeriod($input));
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function recalculate(array $input): array
+    {
+        $today = $this->day(is_string($input['today'] ?? null) ? $input['today'] : '');
+        $this->prepare($today);
+        $cycle = $this->cycle($this->asInt($input['payCycleId'] ?? null) ?? 0);
+        if ($cycle['archived_at'] !== null) {
+            throw new ApiException(409, 'Unarchive this pay cycle before assigning.');
+        }
+
+        if ($this->usesAcctPeriod($input)) {
+            $acct = $this->acctSpanFor($input, $today);
+            if ($acct['phase'] !== 'current') {
+                throw new ApiException(409, 'A closed period can be read.');
+            }
+
+            return $this->show($today, (int) $cycle['id'], null, false, true);
+        }
+
+        $upcoming = ($input['upcoming'] ?? false) === true || ($input['upcoming'] ?? null) === 1 || ($input['upcoming'] ?? null) === '1';
+        if ($upcoming) {
+            $next = $this->nextSpan($cycle, $today);
+            if ($next === null) {
+                throw new ApiException(422, 'This pay cycle has no next period to plan.');
+            }
+            $periodId = $this->storePeriod($cycle, $next['start'], $next['end']);
+            $spanStart = $next['start'];
+        } else {
+            $open = $this->openSpan($cycle, $today);
+            $period = $this->periodRow((int) $cycle['id'], $open['start']);
+            if ($period === null) {
+                throw new ApiException(404, 'Pay period not found.');
+            }
+            $periodId = (int) $period['id'];
+            $spanStart = (string) $period['period_start'];
+        }
+
+        $sums = $this->monthBillSums($spanStart, !$upcoming, $today);
+        $lockedIds = $this->lockedIds();
+        $goalAmounts = [];
+        $goals = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role != 'locked'");
+        $goals->execute([$this->actor->id()]);
+        while ($id = $goals->fetchColumn()) {
+            $goalId = (int) $id;
+            $goalAmounts[$goalId] = $sums[$goalId] ?? 0;
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->pdo->prepare('DELETE FROM assignments WHERE pay_period_id = ?')->execute([$periodId]);
+            $insert = $this->pdo->prepare(
+                'INSERT INTO assignments (pay_period_id, category_id, amount_minor, filled_minor) VALUES (?, ?, ?, ?)'
+            );
+            foreach ($sums as $categoryId => $amount) {
+                if ($amount < 1) {
+                    continue;
+                }
+                $insert->execute([$periodId, $categoryId, $amount, $amount]);
+            }
+            $this->releaseOtherGoals($periodId, $spanStart, $goalAmounts, $lockedIds);
+            $this->syncAmounts($today);
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return $this->show($today, (int) $cycle['id'], null, $upcoming, $this->usesAcctPeriod($input));
+    }
+
+    private function prepare(string $today): void
+    {
+        foreach ($this->cycles() as $cycle) {
+            $rolled = $this->roll($cycle, $today);
+            foreach ($this->spans($rolled, $today) as $span) {
+                $this->storePeriod($rolled, $span['start'], $span['end']);
+            }
+        }
+        $this->adoptExistingAmounts($today);
+        $this->syncAmounts($today);
+    }
+
+    private function adoptExistingAmounts(string $today): void
+    {
+        $count = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             WHERE p.user_id = ?'
+        );
+        $count->execute([$this->actor->id()]);
+        if ((int) $count->fetchColumn() > 0) {
+            return;
+        }
+
+        $cycles = array_values(array_filter(
+            $this->cycles(),
+            static fn (array $cycle): bool => $cycle['archived_at'] === null,
+        ));
+        if ($cycles === []) {
+            return;
+        }
+
+        $open = $this->openSpan($cycles[0], $today);
+        $period = $this->periodRow((int) $cycles[0]['id'], $open['start']);
+        if ($period === null) {
+            return;
+        }
+
+        $categories = $this->pdo->prepare(
+            'SELECT id, amount_minor FROM categories
+             WHERE user_id = ? AND archived_at IS NULL AND amount_minor > 0'
+        );
+        $categories->execute([$this->actor->id()]);
+        $rows = $categories->fetchAll();
+        if (!is_array($rows)) {
+            return;
+        }
+        $insert = $this->pdo->prepare(
+            'INSERT INTO assignments (pay_period_id, category_id, amount_minor) VALUES (?, ?, ?)'
+        );
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $insert->execute([(int) $period['id'], (int) $row['id'], (int) $row['amount_minor']]);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $cycle
+     * @return array<string, mixed>
+     */
+    private function roll(array $cycle, string $today): array
+    {
+        if ($cycle['length'] !== 'irregular' || $cycle['next_payday'] === null) {
+            return $cycle;
+        }
+
+        $open = Period::open(
+            (string) $cycle['payday'],
+            'irregular',
+            null,
+            (string) $cycle['next_payday'],
+            $today,
+        );
+        if (!$open['rolled']) {
+            return $cycle;
+        }
+
+        $closing = Period::open(
+            (string) $cycle['payday'],
+            'irregular',
+            null,
+            (string) $cycle['next_payday'],
+            (string) $cycle['payday'],
+        );
+        $this->storePeriod($cycle, $closing['start'], $this->dayBefore($closing['next']));
+        $this->pdo->prepare(
+            'UPDATE pay_cycles SET payday = ?, next_payday = NULL, updated_at = ? WHERE id = ? AND user_id = ?'
+        )->execute([$open['start'], gmdate('c'), $cycle['id'], $this->actor->id()]);
+
+        return $this->cycle((int) $cycle['id']);
+    }
+
+    /**
+     * @param array<string, mixed> $cycle
+     * @return list<array{start:string,end:?string,next:?string}>
+     */
+    private function spans(array $cycle, string $today): array
+    {
+        $length = (string) $cycle['length'];
+        $second = $cycle['second_day'] === null ? null : (int) $cycle['second_day'];
+        $nextPayday = $cycle['next_payday'] === null ? null : (string) $cycle['next_payday'];
+        $cursor = (string) $cycle['payday'];
+        $spans = [];
+
+        for ($i = 0; $i < 2400; $i++) {
+            $open = Period::open($cursor, $length, $second, $length === 'irregular' ? $nextPayday : null, $cursor);
+            $spans[] = [
+                'start' => $open['start'],
+                'end' => $this->dayBefore($open['next']),
+                'next' => $open['next'],
+            ];
+            if ($open['next'] === null || $today < $open['next']) {
+                break;
+            }
+            $cursor = $open['next'];
+            $nextPayday = null;
+        }
+
+        return $spans;
+    }
+
+    /**
+     * @param array<string, mixed> $requested
+     * @param array{start:string,end:string} $window
+     * @return array<string, mixed>
+     */
+    private function cycleInsideWindow(array $requested, array $window, string $today): array
+    {
+        $open = $this->openSpan($requested, $today);
+        if ($open['start'] >= $window['start'] && $open['start'] <= $window['end'] && $open['start'] <= $today) {
+            return $requested;
+        }
+        $best = null;
+        $bestTotal = -1;
+        foreach ($this->cycles() as $cycle) {
+            if ($cycle['archived_at'] !== null) {
+                continue;
+            }
+            $span = $this->openSpan($cycle, $today);
+            if ($span['start'] < $window['start'] || $span['start'] > $window['end'] || $span['start'] > $today) {
+                continue;
+            }
+            $total = $this->periodTotal((int) $cycle['id'], $span['start']);
+            if ($total > $bestTotal) {
+                $best = $cycle;
+                $bestTotal = $total;
+            }
+        }
+
+        return $best ?? $requested;
+    }
+
+    /**
+     * @param array<string, mixed> $cycle
+     * @return array{start:string,end:?string,next:?string}
+     */
+    private function openSpan(array $cycle, string $today): array
+    {
+        $spans = $this->spans($cycle, $today);
+        $last = $spans[array_key_last($spans)];
+
+        return $last;
+    }
+
+    /**
+     * @param array<string, mixed> $cycle
+     * @return ?array{start:string,end:?string}
+     */
+    private function nextSpan(array $cycle, string $today): ?array
+    {
+        $open = $this->openSpan($cycle, $today);
+        if ($open['next'] === null) {
+            return null;
+        }
+        $following = Period::open(
+            $open['next'],
+            (string) $cycle['length'],
+            $cycle['second_day'] === null ? null : (int) $cycle['second_day'],
+            null,
+            $open['next'],
+        );
+
+        return [
+            'start' => $following['start'],
+            'end' => $this->dayBefore($following['next']),
+        ];
+    }
+
+    /** @param array<string, mixed> $cycle */
+    private function storePeriod(array $cycle, string $start, ?string $end): int
+    {
+        $existing = $this->periodRow((int) $cycle['id'], $start);
+        if ($existing !== null) {
+            $stored = $existing['period_end'] === null ? null : (string) $existing['period_end'];
+            if ($stored !== $end) {
+                $this->pdo->prepare('UPDATE pay_periods SET period_end = ? WHERE id = ?')
+                    ->execute([$end, $existing['id']]);
+            }
+
+            return (int) $existing['id'];
+        }
+
+        $now = gmdate('c');
+        $this->pdo->prepare(
+            'INSERT INTO pay_periods (user_id, pay_cycle_id, period_start, period_end, created_at)
+             VALUES (?, ?, ?, ?, ?)'
+        )->execute([$this->actor->id(), $cycle['id'], $start, $end, $now]);
+
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    private function syncAmounts(string $today): void
+    {
+        if ($this->cycles() === []) {
+            return;
+        }
+
+        $sums = [];
+        foreach ($this->cycles() as $cycle) {
+            $open = $this->openSpan($cycle, $today);
+            $stmt = $this->pdo->prepare(
+                'SELECT a.category_id, a.amount_minor
+                 FROM assignments a
+                 JOIN pay_periods p ON p.id = a.pay_period_id
+                 WHERE p.pay_cycle_id = ? AND p.period_start = ?'
+            );
+            $stmt->execute([$cycle['id'], $open['start']]);
+            $rows = $stmt->fetchAll();
+            if (!is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $id = (int) $row['category_id'];
+                $sums[$id] = ($sums[$id] ?? 0) + max(0, (int) $row['amount_minor']);
+            }
+        }
+
+        $current = $this->pdo->prepare('SELECT id, amount_minor FROM categories WHERE user_id = ?');
+        $current->execute([$this->actor->id()]);
+        $rows = $current->fetchAll();
+        $update = $this->pdo->prepare(
+            'UPDATE categories SET amount_minor = ?, updated_at = ? WHERE id = ? AND user_id = ?'
+        );
+        $now = gmdate('c');
+        if (!is_array($rows)) {
+            return;
+        }
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $id = (int) $row['id'];
+            $next = $sums[$id] ?? 0;
+            if ((int) $row['amount_minor'] === $next) {
+                continue;
+            }
+            $update->execute([$next, $now, $id, $this->actor->id()]);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function present(string $today, ?int $payCycleId, ?int $periodId, bool $upcoming, bool $observe): array
+    {
+        $base = $this->actor->baseCurrency();
+        $cycles = array_values(array_filter(
+            $this->cycles(),
+            static fn (array $cycle): bool => $cycle['archived_at'] === null,
+        ));
+        $selected = $this->selectCycle($cycles, $payCycleId, $today);
+        $assigned = $this->assignedOpen($today, $selected);
+        $sources = $this->sources($today);
+        $poolMinor = $this->sourceTotal($sources);
+        $available = $poolMinor - $assigned;
+
+        $period = null;
+        $categories = [];
+        $closed = [];
+        $next = null;
+        $previousPeriod = null;
+        $stepNext = null;
+        $celebrate = false;
+
+        if ($selected !== null) {
+            $open = $this->openSpan($selected, $today);
+            $openRow = $this->periodRow((int) $selected['id'], $open['start']);
+            $closed = $this->closedPeriods((int) $selected['id'], $open['start']);
+            $next = $this->nextSpan($selected, $today);
+
+            $viewUpcoming = $upcoming && $next !== null;
+            if ($viewUpcoming) {
+                $plan = $this->periodRow((int) $selected['id'], $next['start']);
+                $period = [
+                    'id' => $plan === null ? null : (int) $plan['id'],
+                    'start' => $next['start'],
+                    'end' => $next['end'],
+                    'editable' => true,
+                    'upcoming' => true,
+                ];
+                $categories = $plan === null
+                    ? $this->previewCategories(null)
+                    : $this->categories((int) $plan['id']);
+                $previousPeriod = $openRow === null ? null : $this->cursor($openRow, false);
+            } else {
+                $view = $openRow;
+                if ($periodId !== null) {
+                    $requested = $this->periodById((int) $selected['id'], $periodId);
+                    if ($requested === null) {
+                        throw new ApiException(404, 'Pay period not found.');
+                    }
+                    $view = $requested;
+                }
+                if ($view !== null) {
+                    $editable = (string) $view['period_start'] === $open['start'];
+                    if ($observe && $editable && $available === 0 && $view['celebrated_at'] === null) {
+                        $this->pdo->prepare('UPDATE pay_periods SET celebrated_at = ? WHERE id = ?')
+                            ->execute([gmdate('c'), $view['id']]);
+                        $view['celebrated_at'] = gmdate('c');
+                        $celebrate = true;
+                    }
+                    $period = [
+                        'id' => (int) $view['id'],
+                        'start' => (string) $view['period_start'],
+                        'end' => $view['period_end'] === null ? null : (string) $view['period_end'],
+                        'editable' => $editable,
+                        'upcoming' => false,
+                    ];
+                    $categories = $this->categories((int) $view['id']);
+                    if ($editable) {
+                        $previousPeriod = isset($closed[0]) ? $this->cursorList($closed[0]) : null;
+                        $stepNext = $next === null ? null : [
+                            'id' => null,
+                            'start' => $next['start'],
+                            'end' => $next['end'],
+                            'upcoming' => true,
+                        ];
+                    } else {
+                        $index = 0;
+                        foreach ($closed as $i => $item) {
+                            if ((int) $item['id'] === (int) $view['id']) {
+                                $index = $i;
+                                break;
+                            }
+                        }
+                        $previousPeriod = isset($closed[$index + 1]) ? $this->cursorList($closed[$index + 1]) : null;
+                        $stepNext = $index === 0
+                            ? ($openRow === null ? null : $this->cursor($openRow, false))
+                            : $this->cursorList($closed[$index - 1]);
+                    }
+                }
+            }
+        } else {
+            $categories = $this->previewCategories(null);
+        }
+
+        $categories = $this->withMonthGoals(
+            $categories,
+            is_array($period) ? $period : null,
+            $selected === null ? null : (int) $selected['id'],
+        );
+        $shown = $this->withBills(
+            $this->targets->decorate(
+                array_map(static function (array $category): array {
+                    $category['remainingMinor'] = (int) ($category['amountMinor'] ?? 0);
+
+                    return $category;
+                }, $categories),
+                $today,
+                $observe,
+            ),
+            is_array($period) ? $period : null,
+            $today,
+        );
+        $incomeMinor = $this->spanIncome($selected, is_array($period) ? $period : null, $today);
+
+        return [
+            'baseCurrency' => $base,
+            'exponent' => $this->currencies->exponent($base),
+            'payCycleId' => $selected === null ? null : (int) $selected['id'],
+            'payors' => array_map(static fn (array $cycle): array => [
+                'id' => (int) $cycle['id'],
+                'payor' => (string) $cycle['payor'],
+                'length' => (string) $cycle['length'],
+            ], $cycles),
+            'period' => $period,
+            'nextPeriod' => $next,
+            'previousPeriod' => $previousPeriod,
+            'stepNext' => $stepNext,
+            'closed' => $closed,
+            'availableMinor' => $available,
+            'assignedMinor' => $assigned,
+            'poolMinor' => $poolMinor,
+            'leftOut' => [],
+            'categories' => $shown,
+            'billLeftOut' => $this->billLeftOut(is_array($period) ? $period : null, $today),
+            'incomeMinor' => $incomeMinor,
+            'sources' => $sources,
+            'groups' => $this->headings($this->groups($categories), $shown, $poolMinor),
+            'celebrate' => $celebrate,
+        ];
+    }
+
+    /** @return array{income: list<array{id:int,payor:string,on:string,length:string,amountMinor:int}>, accounts: list<array{id:int,name:string,type:string,institution:?string,holder:?string,amountMinor:int}>, floats: list<array{id:int,name:string,type:string,institution:?string,holder:?string,balanceMinor:int,coveredMinor:int,uncoveredMinor:int}>} */
+    private function sources(string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        $income = [];
+        foreach ($this->payCycles->between($span['start'], $span['end'], $today) as $row) {
+            if ((string) $row['on'] < $today || ($row['posted'] ?? false) === true) {
+                continue;
+            }
+            $amount = (int) $row['paycheckMinor'];
+            if ($amount === 0) {
+                continue;
+            }
+            $income[] = [
+                'id' => (int) $row['id'],
+                'payor' => (string) $row['payor'],
+                'on' => (string) $row['on'],
+                'length' => (string) $row['length'],
+                'amountMinor' => $amount,
+            ];
+        }
+        usort($income, static function (array $left, array $right): int {
+            return [$left['on'], $left['payor'], $left['id']] <=> [$right['on'], $right['payor'], $right['id']];
+        });
+
+        $floats = $this->floats($today);
+        $stmt = $this->pdo->prepare(
+            'SELECT id, name, type, balance_minor, institution, holder FROM accounts
+             WHERE user_id = ? AND archived_at IS NULL
+               AND side = \'asset\' AND in_budget = 1
+             ORDER BY name COLLATE NOCASE, id'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $rows = $stmt->fetchAll();
+        $accounts = [];
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $accounts[] = [
+                    'id' => (int) $row['id'],
+                    'name' => (string) $row['name'],
+                    'type' => (string) $row['type'],
+                    'institution' => self::label($row['institution'] ?? null),
+                    'holder' => self::label($row['holder'] ?? null),
+                    'amountMinor' => (int) $row['balance_minor'],
+                ];
+            }
+        }
+
+        return ['income' => array_values($income), 'accounts' => $accounts, 'floats' => $floats];
+    }
+
+    private static function label(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    /** @return list<array{id:int,name:string,type:string,balanceMinor:int,coveredMinor:int,uncoveredMinor:int}> */
+    private function floats(string $today): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, name, type, balance_minor, institution, holder FROM accounts
+             WHERE user_id = ? AND archived_at IS NULL
+               AND type IN (\'credit\', \'fuel\')
+               AND autopay_choice = \'balance\' AND bank_autopay = 1
+             ORDER BY name COLLATE NOCASE, id'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $coveredByCard = $this->bucketCoverByCard($today);
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $split = FloatCover::split((int) $row['balance_minor'], $coveredByCard[(int) $row['id']] ?? 0);
+            if ($split['uncovered'] === 0) {
+                continue;
+            }
+            $rows[] = [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['name'],
+                'type' => (string) $row['type'],
+                'institution' => self::label($row['institution'] ?? null),
+                'holder' => self::label($row['holder'] ?? null),
+                'balanceMinor' => (int) $row['balance_minor'],
+                'coveredMinor' => $split['covered'],
+                'uncoveredMinor' => $split['uncovered'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** @return array<int, int> */
+    private function bucketCoverByCard(string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            $span['start'],
+            $span['end'],
+            $span['phase'] === 'current',
+        );
+        $amounts = [];
+        foreach ($picture['bills'] as $bills) {
+            foreach ($bills as $bill) {
+                $amounts[(int) $bill['id']] = (int) $bill['amountMinor'];
+            }
+        }
+        if ($amounts === []) {
+            return [];
+        }
+        $ids = array_keys($amounts);
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->pdo->prepare(
+            "SELECT id, account_id FROM bills
+             WHERE id IN ($marks)
+               AND (source_account_id IS NULL OR source_account_id != account_id)"
+        );
+        $stmt->execute($ids);
+        $covered = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $cardId = (int) $row['account_id'];
+            $covered[$cardId] = ($covered[$cardId] ?? 0) + ($amounts[(int) $row['id']] ?? 0);
+        }
+
+        return $covered;
+    }
+
+    /** @param array{income: list<array{amountMinor:int}>, accounts: list<array{amountMinor:int}>} $sources */
+    private function sourceTotal(array $sources): int
+    {
+        $total = 0;
+        foreach ($sources['income'] as $row) {
+            $total += (int) $row['amountMinor'];
+        }
+        foreach ($sources['accounts'] as $row) {
+            $total += (int) $row['amountMinor'];
+        }
+        foreach ($sources['floats'] ?? [] as $row) {
+            $total -= (int) $row['uncoveredMinor'];
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $categories
+     * @param ?array<string, mixed> $period
+     * @return list<array<string, mixed>>
+     */
+    private function withMonthGoals(array $categories, ?array $period, ?int $anchorCycleId): array
+    {
+        if ($this->viewWindow !== null) {
+            $stored = $this->envelopeAmounts();
+            foreach ($categories as $index => $category) {
+                $categories[$index]['amountMinor'] = $stored[(int) $category['id']] ?? 0;
+                $categories[$index]['filledMinor'] = 0;
+            }
+
+            return $categories;
+        }
+        if ($period === null || $anchorCycleId === null || $categories === []) {
+            return $categories;
+        }
+        $month = $this->calendarMonth((string) $period['start']);
+        $start = $month['start'];
+        $end = $month['end'];
+        $stored = $this->goalSums($start, $end);
+        foreach ($categories as $index => $category) {
+            if (($category['role'] ?? '') === 'locked') {
+                continue;
+            }
+            $categories[$index]['amountMinor'] = $stored[(int) $category['id']] ?? 0;
+        }
+
+        return $categories;
+    }
+
+    /** @return array<int, int> */
+    private function goalSums(string $start, string $end): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT a.category_id, a.amount_minor, a.filled_minor
+             FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             JOIN categories c ON c.id = a.category_id
+             WHERE p.user_id = ? AND c.role != \'locked\' AND a.amount_minor > 0
+               AND p.period_start >= ? AND p.period_start <= ?'
+        );
+        $stmt->execute([$this->actor->id(), $start, $end]);
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $rows[(int) $row['category_id']][] = [
+                'amount' => (int) $row['amount_minor'],
+                'filled' => (int) $row['filled_minor'],
+            ];
+        }
+        $sums = [];
+        foreach ($rows as $categoryId => $entries) {
+            $typed = 0;
+            $all = 0;
+            $hasTyped = false;
+            foreach ($entries as $entry) {
+                $all += $entry['amount'];
+                $pure = $entry['filled'] > 0 && $entry['amount'] === $entry['filled'];
+                if (!$pure) {
+                    $hasTyped = true;
+                    $typed += $entry['amount'];
+                }
+            }
+            $sums[$categoryId] = $hasTyped ? $typed : $all;
+        }
+
+        return $sums;
+    }
+
+    /**
+     * @param array<int, int> $amounts
+     * @param array<int, true> $lockedIds
+     */
+    private function releaseOtherGoals(int $periodId, string $start, array $amounts, array $lockedIds, ?string $end = null): void
+    {
+        if ($end === null) {
+            $month = $this->calendarMonth($start);
+            $start = $month['start'];
+            $end = $month['end'];
+        }
+        $clear = $this->pdo->prepare(
+            'UPDATE assignments SET amount_minor = 0
+             WHERE category_id = ? AND pay_period_id IN (
+                SELECT id FROM pay_periods
+                WHERE user_id = ? AND id != ? AND period_start >= ? AND period_start <= ?
+             )'
+        );
+        foreach (array_keys($amounts) as $categoryId) {
+            if (isset($lockedIds[$categoryId])) {
+                continue;
+            }
+            $clear->execute([$categoryId, $this->actor->id(), $periodId, $start, $end]);
+        }
+    }
+
+    /** @return array{start:string,end:string} */
+    private function calendarMonth(string $day): array
+    {
+        $parsed = Dates::parse($day);
+
+        return [
+            'start' => $parsed->format('Y-m-01'),
+            'end' => $parsed->format('Y-m-t'),
+        ];
+    }
+
+    /**
+     * @param ?array<string, mixed> $cycle
+     * @param ?array<string, mixed> $period
+     */
+    private function spanIncome(?array $cycle, ?array $period, string $today): int
+    {
+        if ($cycle === null || $period === null) {
+            return 0;
+        }
+        $end = $period['end'] ?? null;
+
+        return $this->payCycles->incomeBetween(
+            (int) $cycle['id'],
+            (string) $period['start'],
+            is_string($end) ? $end : null,
+            $today,
+        );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $cycles
+     * @return ?array<string, mixed>
+     */
+    private function selectCycle(array $cycles, ?int $requested, string $today): ?array
+    {
+        if ($cycles === []) {
+            return null;
+        }
+        if ($requested !== null) {
+            foreach ($cycles as $cycle) {
+                if ((int) $cycle['id'] === $requested) {
+                    return $cycle;
+                }
+            }
+            throw new ApiException(404, 'Pay cycle not found.');
+        }
+
+        $best = null;
+        $bestAmount = 0;
+        foreach ($cycles as $cycle) {
+            $open = $this->openSpan($cycle, $today);
+            $amount = $this->periodTotal((int) $cycle['id'], $open['start']);
+            if ($amount > $bestAmount) {
+                $best = $cycle;
+                $bestAmount = $amount;
+            }
+        }
+
+        return $best ?? $cycles[0];
+    }
+
+    private function periodTotal(int $cycleId, string $start): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(a.amount_minor), 0)
+             FROM assignments a
+             JOIN pay_periods p ON p.id = a.pay_period_id
+             WHERE p.pay_cycle_id = ? AND p.period_start = ?'
+        );
+        $stmt->execute([$cycleId, $start]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    /** @param ?array<string, mixed> $billCycle */
+    private function assignedOpen(string $today, ?array $billCycle): int
+    {
+        if ($this->viewWindow !== null) {
+            $span = $this->viewWindow;
+            $total = $this->envelopeTotal();
+            foreach ($this->windowBillSums($span['start'], $span['end'], $span['phase'] === 'current', $today) as $amount) {
+                $total += $amount;
+            }
+
+            return $total;
+        }
+
+        $total = 0;
+        foreach ($this->cycles() as $cycle) {
+            $open = $this->openSpan($cycle, $today);
+            if ($open['start'] > $today) {
+                continue;
+            }
+            $stmt = $this->pdo->prepare(
+                'SELECT a.amount_minor
+                 FROM assignments a
+                 JOIN pay_periods p ON p.id = a.pay_period_id
+                 JOIN categories c ON c.id = a.category_id
+                 WHERE p.pay_cycle_id = ? AND p.period_start = ? AND c.role != \'locked\' AND a.amount_minor > 0'
+            );
+            $stmt->execute([(int) $cycle['id'], $open['start']]);
+            $rows = $stmt->fetchAll();
+            if (!is_array($rows)) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $total += (int) $row['amount_minor'];
+            }
+        }
+        if ($billCycle !== null) {
+            $total += $this->lockedBills($billCycle, $today);
+            $total += $this->lockedExtra($billCycle, $today);
+        }
+
+        return $total;
+    }
+
+    /** @param array<string, mixed> $cycle */
+    private function lockedBills(array $cycle, string $today): int
+    {
+        $open = $this->openSpan($cycle, $today);
+        $end = $open['end'] ?? null;
+        $window = $this->openWindow($open['start'], is_string($end) ? $end : $open['start'], $today);
+        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            $window['start'],
+            $window['end'],
+            true,
+        );
+        $locked = [];
+        $stmt = $this->pdo->prepare('SELECT id FROM categories WHERE user_id = ? AND role = \'locked\'');
+        $stmt->execute([$this->actor->id()]);
+        while ($id = $stmt->fetchColumn()) {
+            $locked[(int) $id] = true;
+        }
+        $total = 0;
+        foreach ($picture['bills'] as $categoryId => $bills) {
+            if (!isset($locked[(int) $categoryId])) {
+                continue;
+            }
+            foreach ($bills as $bill) {
+                $total += (int) $bill['amountMinor'];
+            }
+        }
+        return $total;
+    }
+
+    /** @return array<int, true> */
+    private function lockedIds(): array
+    {
+        $ids = [];
+        $locked = $this->pdo->prepare("SELECT id FROM categories WHERE user_id = ? AND role = 'locked'");
+        $locked->execute([$this->actor->id()]);
+        while ($row = $locked->fetch()) {
+            if (is_array($row)) {
+                $ids[(int) $row['id']] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /** @return array<int, int> */
+    private function monthBillSums(string $day, bool $overdue, string $today): array
+    {
+        $window = $overdue
+            ? $this->openWindow($this->calendarMonth($day)['start'], $this->calendarMonth($day)['end'], $today)
+            : $this->calendarMonth($day);
+
+        return $this->windowBillSums($window['start'], $window['end'], $overdue, $today);
+    }
+
+    /** @return array<int, int> */
+    private function windowBillSums(string $start, string $end, bool $overdue, string $today): array
+    {
+        $picture = (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            $start,
+            $end,
+            $overdue,
+        );
+        $sums = [];
+        foreach ($picture['bills'] as $categoryId => $bills) {
+            $total = 0;
+            foreach ($bills as $bill) {
+                $total += (int) $bill['amountMinor'];
+            }
+            $sums[(int) $categoryId] = $total;
+        }
+
+        return $sums;
+    }
+
+    /** @param array<string, mixed> $cycle */
+    private function lockedExtra(array $cycle, string $today): int
+    {
+        if ($this->viewWindow !== null && $this->viewWindow['phase'] === 'current') {
+            $locked = $this->lockedIds();
+            $extra = 0;
+            foreach ($this->envelopeAmounts() as $categoryId => $amount) {
+                if (isset($locked[$categoryId])) {
+                    $extra += $amount;
+                }
+            }
+
+            return $extra;
+        }
+        $open = $this->openSpan($cycle, $today);
+        if ($open['start'] > $today) {
+            return 0;
+        }
+        $period = $this->periodRow((int) $cycle['id'], $open['start']);
+        if ($period === null) {
+            return 0;
+        }
+        $floors = $this->monthBillSums($open['start'], true, $today);
+        $stmt = $this->pdo->prepare(
+            'SELECT a.category_id, a.amount_minor
+             FROM assignments a
+             JOIN categories c ON c.id = a.category_id
+             WHERE a.pay_period_id = ? AND c.role = \'locked\''
+        );
+        $stmt->execute([(int) $period['id']]);
+        $extra = 0;
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $floor = $floors[(int) $row['category_id']] ?? 0;
+            $extra += max(0, (int) $row['amount_minor'] - $floor);
+        }
+
+        return $extra;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function previewCategories(?int $sourcePeriodId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT c.id, c.name, c.category_group, c.role, c.bill_type, c.archived_at,
+                    CASE WHEN a.amount_minor > 0 THEN a.amount_minor ELSE 0 END AS amount_minor,
+                    COALESCE(a.filled_minor, 0) AS filled_minor
+             FROM categories c
+             LEFT JOIN assignments a ON a.category_id = c.id AND a.pay_period_id = ?
+             WHERE c.user_id = ? AND (c.archived_at IS NULL OR a.id IS NOT NULL)
+             ORDER BY CASE c.category_group WHEN \'needs\' THEN 0 WHEN \'wants\' THEN 1 ELSE 2 END,
+                      c.name COLLATE NOCASE, c.id'
+        );
+        $stmt->execute([$sourcePeriodId ?? 0, $this->actor->id()]);
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $listed = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $listed[] = [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['name'],
+                'group' => (string) $row['category_group'],
+                'role' => (string) ($row['role'] ?? 'goal'),
+                'billType' => is_string($row['bill_type'] ?? null) && $row['bill_type'] !== '' ? (string) $row['bill_type'] : null,
+                'amountMinor' => (int) $row['amount_minor'],
+                'filledMinor' => (int) $row['filled_minor'],
+                'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
+            ];
+        }
+
+        return $listed;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $categories
+     * @return list<array{group:string,targetPercent:int,amountMinor:int,shareBasisPoints:int,over:bool}>
+     */
+    private function groups(array $categories): array
+    {
+        $targets = ['needs' => 50, 'wants' => 30, 'savings' => 20];
+        $amounts = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        foreach ($categories as $category) {
+            if (($category['role'] ?? '') === 'locked') {
+                continue;
+            }
+            $group = $category['group'] ?? '';
+            if (!is_string($group) || !isset($amounts[$group])) {
+                continue;
+            }
+            $amount = (int) ($category['amountMinor'] ?? 0);
+            if ($amount > 0) {
+                $amounts[$group] += $amount;
+            }
+        }
+        $total = $amounts['needs'] + $amounts['wants'] + $amounts['savings'];
+        $listed = [];
+        foreach ($targets as $group => $target) {
+            $amount = $amounts[$group];
+            $listed[] = [
+                'group' => $group,
+                'targetPercent' => $target,
+                'amountMinor' => $amount,
+                'shareBasisPoints' => $total === 0 ? 0 : intdiv($amount * 10000 + intdiv($total, 2), $total),
+                'over' => $total > 0 && $amount * 100 > $target * $total,
+            ];
+        }
+
+        return $listed;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $groups
+     * @param list<array<string, mixed>> $categories
+     * @return list<array<string, mixed>>
+     */
+    private function headings(array $groups, array $categories, int $poolMinor): array
+    {
+        $assigned = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        $auto = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        $envelope = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        $maximum = ['needs' => 0, 'wants' => 0, 'savings' => 0];
+        foreach ($categories as $category) {
+            $group = $category['group'] ?? '';
+            if (!is_string($group) || !isset($assigned[$group])) {
+                continue;
+            }
+            $amount = (int) ($category['amountMinor'] ?? 0);
+            $bills = (int) ($category['billMinor'] ?? 0);
+            $target = max($amount, $bills);
+            if ($target > 0) {
+                $assigned[$group] += $target;
+            }
+            if ($bills > 0) {
+                $auto[$group] += $bills;
+            }
+            $envelope[$group] += max(0, $amount - $bills);
+            $maximum[$group] += $this->bucketMaximum($category);
+        }
+        foreach ($groups as $index => $group) {
+            $name = (string) ($group['group'] ?? '');
+            $percent = (int) ($group['targetPercent'] ?? 0);
+            $goal = $poolMinor > 0 && $percent > 0 ? intdiv($poolMinor * $percent + 50, 100) : 0;
+            $groups[$index]['assignedMinor'] = $assigned[$name] ?? 0;
+            $groups[$index]['autoMinor'] = $auto[$name] ?? 0;
+            $groups[$index]['envelopeMinor'] = $envelope[$name] ?? 0;
+            $groups[$index]['maximumMinor'] = $maximum[$name] ?? 0;
+            $groups[$index]['targetMinor'] = $goal;
+            $groups[$index]['goalOver'] = $goal > 0 && ($assigned[$name] ?? 0) > $goal;
+        }
+
+        return $groups;
+    }
+
+    /** @param array<string, mixed> $category */
+    private function bucketMaximum(array $category): int
+    {
+        $saved = null;
+        if (is_array($category['target'] ?? null)) {
+            $amount = $category['target']['amountMinor'] ?? null;
+            if (is_int($amount)) {
+                $saved = $amount;
+            }
+        }
+        if (($category['role'] ?? '') === 'locked') {
+            if ($saved !== null && $saved >= 1) {
+                return $saved;
+            }
+            $bills = (int) ($category['billMinor'] ?? 0);
+
+            return $bills > 0 ? $bills : 0;
+        }
+        if ($saved !== null && $saved >= 1) {
+            return $saved;
+        }
+
+        return 0;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function categories(int $periodId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT c.id, c.name, c.category_group, c.role, c.bill_type, c.archived_at,
+                    CASE WHEN a.amount_minor > 0 THEN a.amount_minor ELSE 0 END AS amount_minor,
+                    COALESCE(a.filled_minor, 0) AS filled_minor
+             FROM categories c
+             LEFT JOIN assignments a ON a.category_id = c.id AND a.pay_period_id = ?
+             WHERE c.user_id = ? AND (c.archived_at IS NULL OR a.id IS NOT NULL)
+             ORDER BY CASE c.category_group WHEN \'needs\' THEN 0 WHEN \'wants\' THEN 1 ELSE 2 END,
+                      c.name COLLATE NOCASE, c.id'
+        );
+        $stmt->execute([$periodId, $this->actor->id()]);
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $listed = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $listed[] = [
+                'id' => (int) $row['id'],
+                'name' => (string) $row['name'],
+                'group' => (string) $row['category_group'],
+                'role' => (string) ($row['role'] ?? 'goal'),
+                'billType' => is_string($row['bill_type'] ?? null) && $row['bill_type'] !== '' ? (string) $row['bill_type'] : null,
+                'amountMinor' => (int) $row['amount_minor'],
+                'filledMinor' => (int) $row['filled_minor'],
+                'archivedAt' => $row['archived_at'] === null ? null : (string) $row['archived_at'],
+            ];
+        }
+
+        return $listed;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array{id:?int,start:string,end:?string,upcoming:bool}
+     */
+    private function cursor(array $row, bool $upcoming): array
+    {
+        return [
+            'id' => $upcoming ? null : (int) $row['id'],
+            'start' => (string) $row['period_start'],
+            'end' => $row['period_end'] === null ? null : (string) $row['period_end'],
+            'upcoming' => $upcoming,
+        ];
+    }
+
+    /**
+     * @param array{id:int,start:string,end:?string} $item
+     * @return array{id:?int,start:string,end:?string,upcoming:bool}
+     */
+    private function cursorList(array $item): array
+    {
+        return [
+            'id' => $item['id'],
+            'start' => $item['start'],
+            'end' => $item['end'],
+            'upcoming' => false,
+        ];
+    }
+
+    /** @return list<array{id:int,start:string,end:?string}> */
+    private function closedPeriods(int $cycleId, string $openStart): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, period_start, period_end FROM pay_periods
+             WHERE pay_cycle_id = ? AND period_start < ?
+             ORDER BY period_start DESC'
+        );
+        $stmt->execute([$cycleId, $openStart]);
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $listed = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $listed[] = [
+                'id' => (int) $row['id'],
+                'start' => (string) $row['period_start'],
+                'end' => $row['period_end'] === null ? null : (string) $row['period_end'],
+            ];
+        }
+
+        return $listed;
+    }
+
+    /**
+     * @param ?list<mixed> $rows
+     * @return array<int, int>
+     */
+    private function amounts(?array $rows): array
+    {
+        if ($rows === null) {
+            throw new ApiException(422, 'Check the highlighted fields.', [
+                'amounts' => 'Enter an amount for each bucket.',
+            ]);
+        }
+
+        $amounts = [];
+        $errors = [];
+        foreach ($rows as $index => $row) {
+            if (!is_array($row)) {
+                $errors['amounts'] = 'Enter an amount for each bucket.';
+                continue;
+            }
+            $categoryId = $this->asInt($row['categoryId'] ?? null) ?? 0;
+            $amount = $this->asInt($row['amountMinor'] ?? null);
+            $key = 'amount-' . ($categoryId > 0 ? (string) $categoryId : (string) $index);
+            if ($categoryId < 1 || !$this->ownsCategory($categoryId)) {
+                $errors[$key] = 'Choose a bucket.';
+                continue;
+            }
+            if (isset($amounts[$categoryId])) {
+                $errors[$key] = 'Each bucket is listed once.';
+                continue;
+            }
+            if ($amount === null || $amount < 0) {
+                $errors[$key] = 'Enter an amount of zero or more.';
+                continue;
+            }
+            $amounts[$categoryId] = $amount;
+        }
+
+        if ($errors !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $errors);
+        }
+
+        return $amounts;
+    }
+
+    /**
+     * @param list<mixed>|null $rows
+     * @return array<int, ?int>
+     */
+    private function maximums(?array $rows): array
+    {
+        if ($rows === null) {
+            throw new ApiException(422, 'Check the highlighted fields.', [
+                'maximums' => 'Enter a maximum for each bucket.',
+            ]);
+        }
+
+        $maximums = [];
+        $errors = [];
+        foreach ($rows as $index => $row) {
+            if (!is_array($row)) {
+                $errors['maximums'] = 'Enter a maximum for each bucket.';
+                continue;
+            }
+            $categoryId = $this->asInt($row['categoryId'] ?? null) ?? 0;
+            $key = 'maximum-' . ($categoryId > 0 ? (string) $categoryId : (string) $index);
+            if ($categoryId < 1 || !$this->ownsCategory($categoryId)) {
+                $errors[$key] = 'Choose a bucket.';
+                continue;
+            }
+            if (array_key_exists($categoryId, $maximums)) {
+                $errors[$key] = 'Each bucket is listed once.';
+                continue;
+            }
+            if (!array_key_exists('amountMinor', $row) || $row['amountMinor'] === null) {
+                $maximums[$categoryId] = null;
+                continue;
+            }
+            $amount = $this->asInt($row['amountMinor']);
+            if ($amount === null || $amount < 0) {
+                $errors[$key] = 'Enter an amount.';
+                continue;
+            }
+            $maximums[$categoryId] = $amount;
+        }
+
+        if ($errors !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $errors);
+        }
+
+        return $maximums;
+    }
+
+    /** @param array<int, ?int> $maximums */
+    private function saveMaximums(array $maximums): void
+    {
+        if ($maximums === []) {
+            return;
+        }
+        $role = $this->pdo->prepare('SELECT role FROM categories WHERE id = ? AND user_id = ?');
+        $existing = $this->pdo->prepare(
+            'SELECT kind, target_date, pay_cycle_id FROM targets WHERE category_id = ? AND user_id = ?'
+        );
+        foreach ($maximums as $categoryId => $amount) {
+            $role->execute([$categoryId, $this->actor->id()]);
+            $roleName = (string) $role->fetchColumn();
+            if ($roleName !== 'goal' && $roleName !== 'locked') {
+                continue;
+            }
+            $existing->execute([$categoryId, $this->actor->id()]);
+            $previous = $existing->fetch();
+            if ($amount === null || $amount < 1) {
+                if (is_array($previous) && (string) $previous['kind'] === 'balance') {
+                    $this->targets->replace($categoryId, null);
+                }
+                continue;
+            }
+            if (is_array($previous) && (string) $previous['kind'] === 'needed') {
+                $this->targets->replace($categoryId, [
+                    'kind' => 'needed',
+                    'amountMinor' => $amount,
+                    'targetDate' => (string) $previous['target_date'],
+                    'payCycleId' => (int) $previous['pay_cycle_id'],
+                ]);
+                continue;
+            }
+            $this->targets->replace($categoryId, ['kind' => 'balance', 'amountMinor' => $amount]);
+        }
+    }
+
+    private function ownsCategory(int $id): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id FROM categories WHERE id = ? AND user_id = ? AND archived_at IS NULL'
+        );
+        $stmt->execute([$id, $this->actor->id()]);
+
+        return $stmt->fetchColumn() !== false;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function cycles(): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pay_cycles WHERE user_id = ? ORDER BY payor COLLATE NOCASE, id'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $listed = [];
+        foreach ($rows as $row) {
+            if (is_array($row)) {
+                $listed[] = $row;
+            }
+        }
+
+        return $listed;
+    }
+
+    /** @return array<string, mixed> */
+    private function cycle(int $id): array
+    {
+        $stmt = $this->pdo->prepare('SELECT * FROM pay_cycles WHERE id = ? AND user_id = ?');
+        $stmt->execute([$id, $this->actor->id()]);
+        $row = $stmt->fetch();
+        if (!is_array($row)) {
+            throw new ApiException(404, 'Pay cycle not found.');
+        }
+
+        return $row;
+    }
+
+    private function closedPayPeriodId(?int $payCycleId, string $start, string $today): ?int
+    {
+        $cycles = array_values(array_filter(
+            $this->cycles(),
+            static fn (array $cycle): bool => $cycle['archived_at'] === null,
+        ));
+        $selected = $this->selectCycle($cycles, $payCycleId, $today);
+        if ($selected === null) {
+            return null;
+        }
+        $row = $this->periodRow((int) $selected['id'], $start);
+
+        return $row === null ? null : (int) $row['id'];
+    }
+
+    /** @return ?array<string, mixed> */
+    private function periodRow(int $cycleId, string $start): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pay_periods WHERE pay_cycle_id = ? AND period_start = ? AND user_id = ?'
+        );
+        $stmt->execute([$cycleId, $start, $this->actor->id()]);
+        $row = $stmt->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /** @return ?array<string, mixed> */
+    private function periodById(int $cycleId, int $id): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pay_periods WHERE id = ? AND pay_cycle_id = ? AND user_id = ?'
+        );
+        $stmt->execute([$id, $cycleId, $this->actor->id()]);
+        $row = $stmt->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $categories
+     * @param ?array<string, mixed> $period
+     * @return list<array<string, mixed>>
+     */
+    private function withBills(array $categories, ?array $period, string $today): array
+    {
+        $picture = $this->billPicture($period, $today);
+        foreach ($categories as $index => $category) {
+            $list = $picture['bills'][(int) $category['id']] ?? [];
+            $categories[$index]['bills'] = $list;
+            $bills = 0;
+            foreach ($list as $bill) {
+                $bills += (int) $bill['amountMinor'];
+            }
+            $categories[$index]['billMinor'] = $bills;
+            if ($this->viewWindow !== null) {
+                $envelope = (int) ($category['amountMinor'] ?? 0);
+                $categories[$index]['amountMinor'] = $bills + $envelope;
+                $categories[$index]['filledMinor'] = 0;
+                if (($category['role'] ?? '') === 'locked') {
+                    $categories[$index]['remainingMinor'] = $bills + $envelope;
+                }
+                continue;
+            }
+            if (($category['role'] ?? '') === 'locked') {
+                $shown = $this->shownTarget(
+                    (int) ($category['amountMinor'] ?? 0),
+                    (int) ($category['filledMinor'] ?? 0),
+                    $bills,
+                );
+                $categories[$index]['amountMinor'] = $shown;
+                $categories[$index]['remainingMinor'] = $shown;
+            }
+        }
+
+        return $categories;
+    }
+
+    /**
+     * @param ?array<string, mixed> $period
+     * @return list<string>
+     */
+    private function billLeftOut(?array $period, string $today): array
+    {
+        return $this->billPicture($period, $today)['leftOut'];
+    }
+
+    /**
+     * @param ?array<string, mixed> $period
+     * @return array{bills: array<int, list<array{id:int,name:string,amountMinor:int}>>, leftOut: list<string>}
+     */
+    private function billPicture(?array $period, string $today): array
+    {
+        if ($period === null) {
+            return ['bills' => [], 'leftOut' => []];
+        }
+        $overdue = ($period['editable'] ?? false) === true && ($period['upcoming'] ?? false) !== true;
+        if ($this->viewWindow !== null) {
+            $start = $this->viewWindow['start'];
+            $end = $this->viewWindow['end'];
+            $overdue = $this->viewWindow['phase'] === 'current';
+        } elseif ($overdue) {
+            $window = $this->openWindow(
+                $this->calendarMonth((string) $period['start'])['start'],
+                $this->calendarMonth((string) $period['start'])['end'],
+                $today,
+            );
+            $start = $window['start'];
+            $end = $window['end'];
+        } else {
+            $month = $this->calendarMonth((string) $period['start']);
+            $start = $month['start'];
+            $end = $month['end'];
+        }
+
+        return (new BillFill($this->pdo, $this->currencies, $this->actor))->explain(
+            $today,
+            $start,
+            $end,
+            $overdue,
+        );
+    }
+
+    /** @return array{start:string,end:string} */
+    private function openWindow(string $start, string $end, string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        if ($span['phase'] === 'current') {
+            return ['start' => $span['start'], 'end' => $span['end']];
+        }
+
+        return ['start' => $start, 'end' => $end];
+    }
+
+    /** @param array<string, mixed> $input */
+    private function usesAcctPeriod(array $input): bool
+    {
+        return ($input['acctPeriod'] ?? false) === true || ($input['acctPeriod'] ?? null) === 1 || ($input['acctPeriod'] ?? null) === '1';
+    }
+
+    /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} */
+    private function storedAcctPeriod(string $today): array
+    {
+        $stmt = $this->pdo->prepare('SELECT acct_period_start, acct_period_length FROM user WHERE id = ?');
+        $stmt->execute([$this->actor->id()]);
+        $row = $stmt->fetch();
+        $start = is_array($row) ? (string) $row['acct_period_start'] : '';
+        $length = is_array($row) ? (string) $row['acct_period_length'] : '1 month';
+        if ($start === '' || !AcctPeriod::valid($length)) {
+            $start = AcctPeriod::defaultStart($today);
+            $length = '1 month';
+        }
+
+        return AcctPeriod::describe($start, $length, $today);
+    }
+
+    /**
+     * @param array<string, mixed> $sheet
+     * @param array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool} $span
+     * @return array<string, mixed>
+     */
+    private function alignAcctPeriod(array $sheet, array $span, string $today): array
+    {
+        if (is_array($sheet['period'] ?? null)) {
+            $sheet['period']['start'] = $span['start'];
+            $sheet['period']['end'] = $span['end'];
+            $sheet['period']['editable'] = $span['editable'];
+            $sheet['period']['upcoming'] = $span['upcoming'];
+        }
+        $sheet['previousPeriod'] = null;
+        $sheet['stepNext'] = null;
+        unset($today);
+
+        return $sheet;
+    }
+
+    private function shownTarget(int $stored, int $filled, int $bills): int
+    {
+        $typed = max(0, $stored - max($filled, $bills));
+
+        return $bills + $typed;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool}
+     */
+    private function acctSpanFor(array $input, string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        $requested = $input['acctPeriodStart'] ?? null;
+        if (!is_string($requested) || $requested === '') {
+            return $span;
+        }
+        $requested = $this->day($requested);
+        if ($requested === $span['start']) {
+            return $span;
+        }
+
+        return AcctPeriod::describe($requested, $span['length'], $today);
+    }
+
+    /** @param array<string, mixed> $input */
+    private function guardLockedFloors(array $input, string $start, string $end, string $today): void
+    {
+        $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
+        $floors = $this->windowBillSums($start, $end, true, $today);
+        $lockedIds = $this->lockedIds();
+        $tooLow = [];
+        foreach ($amounts as $categoryId => $typed) {
+            if (!isset($lockedIds[$categoryId])) {
+                continue;
+            }
+            if ($typed < ($floors[$categoryId] ?? 0)) {
+                $tooLow['amount-' . $categoryId] = 'Assigned cannot be lower than the bills.';
+            }
+        }
+        if ($tooLow !== []) {
+            throw new ApiException(422, 'Check the highlighted fields.', $tooLow);
+        }
+    }
+
+    /** @return array<int, int> */
+    private function acctPeriodPlans(string $start, string $length): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT category_id, amount_minor FROM acct_period_assignments WHERE user_id = ? AND acct_period_start = ? AND acct_period_length = ?'
+        );
+        $stmt->execute([$this->actor->id(), $start, $length]);
+        $plans = [];
+        while ($row = $stmt->fetch()) {
+            if (is_array($row)) {
+                $plans[(int) $row['category_id']] = (int) $row['amount_minor'];
+            }
+        }
+
+        return $plans;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array{start:string,end:string,length:string} $span
+     * @return array<string, mixed>
+     */
+    private function saveAcctPeriodPlan(array $input, array $span, string $today): array
+    {
+        $amounts = $this->amounts(is_array($input['amounts'] ?? null) ? $input['amounts'] : null);
+        $bills = $this->windowBillSums($span['start'], $span['end'], $span['phase'] === 'current', $today);
+        $this->pdo->beginTransaction();
+        try {
+            $this->storeEnvelopes($amounts, $bills);
+            $this->pdo->prepare('UPDATE user SET envelope_adopted = 1 WHERE id = ?')->execute([$this->actor->id()]);
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+
+        return $this->show($today, $this->asInt($input['payCycleId'] ?? null), null, false, true);
+    }
+
+    /**
+     * @param array<int, int> $amounts
+     * @param array<int, int> $bills
+     */
+    private function storeEnvelopes(array $amounts, array $bills): void
+    {
+        $update = $this->pdo->prepare('UPDATE categories SET envelope_minor = ? WHERE id = ? AND user_id = ?');
+        foreach ($amounts as $categoryId => $sent) {
+            $update->execute([max(0, $sent - ($bills[$categoryId] ?? 0)), $categoryId, $this->actor->id()]);
+        }
+    }
+
+    /** @return array<int, int> */
+    private function envelopeAmounts(): array
+    {
+        $stmt = $this->pdo->prepare('SELECT id, envelope_minor FROM categories WHERE user_id = ?');
+        $stmt->execute([$this->actor->id()]);
+        $amounts = [];
+        while ($row = $stmt->fetch()) {
+            if (is_array($row)) {
+                $amounts[(int) $row['id']] = (int) $row['envelope_minor'];
+            }
+        }
+
+        return $amounts;
+    }
+
+    private function envelopeTotal(): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COALESCE(SUM(envelope_minor), 0) FROM categories WHERE user_id = ? AND archived_at IS NULL'
+        );
+        $stmt->execute([$this->actor->id()]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function adoptEnvelopes(string $today): void
+    {
+        $flag = $this->pdo->prepare('SELECT envelope_adopted FROM user WHERE id = ?');
+        $flag->execute([$this->actor->id()]);
+        if ((int) $flag->fetchColumn() === 1) {
+            return;
+        }
+        $current = $this->periodContainingToday($today);
+        $plans = $this->acctPeriodPlans($current['start'], $current['length']);
+        $bills = $this->windowBillSums($current['start'], $current['end'], true, $today);
+        $chosen = [];
+        foreach ($plans as $categoryId => $amount) {
+            $chosen[$categoryId] = max(0, $amount - ($bills[$categoryId] ?? 0));
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT category_id, acct_period_start, acct_period_length, amount_minor
+             FROM acct_period_assignments WHERE user_id = ?'
+        );
+        $stmt->execute([$this->actor->id()]);
+        $fallback = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $categoryId = (int) $row['category_id'];
+            if (isset($plans[$categoryId])) {
+                continue;
+            }
+            $start = (string) $row['acct_period_start'];
+            $held = $fallback[$categoryId]['start'] ?? null;
+            if (!$this->preferFallback($start, is_string($held) ? $held : null, $today)) {
+                continue;
+            }
+            $fallback[$categoryId] = [
+                'start' => $start,
+                'length' => (string) $row['acct_period_length'],
+                'amount' => (int) $row['amount_minor'],
+            ];
+        }
+        $billCache = [];
+        foreach ($fallback as $categoryId => $row) {
+            $key = $row['start'] . '|' . $row['length'];
+            if (!isset($billCache[$key])) {
+                $span = AcctPeriod::describe($row['start'], $row['length'], $today);
+                $billCache[$key] = $this->windowBillSums(
+                    $span['start'],
+                    $span['end'],
+                    $span['phase'] === 'current',
+                    $today,
+                );
+            }
+            $chosen[$categoryId] = max(0, $row['amount'] - ($billCache[$key][$categoryId] ?? 0));
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $update = $this->pdo->prepare('UPDATE categories SET envelope_minor = ? WHERE id = ? AND user_id = ?');
+            foreach ($chosen as $categoryId => $envelope) {
+                $update->execute([$envelope, $categoryId, $this->actor->id()]);
+            }
+            $this->pdo->prepare('UPDATE user SET envelope_adopted = 1 WHERE id = ?')->execute([$this->actor->id()]);
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            if ($this->pdo->inTransaction()) {
+                $this->pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    private function preferFallback(string $start, ?string $held, string $today): bool
+    {
+        if ($held === null) {
+            return true;
+        }
+        $startReady = $start <= $today;
+        $heldReady = $held <= $today;
+        if ($startReady !== $heldReady) {
+            return $startReady;
+        }
+        if ($startReady) {
+            return $start > $held;
+        }
+
+        return $start < $held;
+    }
+
+    /** @return array{start:string,end:string,length:string,phase:string,editable:bool,upcoming:bool,label:string} */
+    private function periodContainingToday(string $today): array
+    {
+        $span = $this->storedAcctPeriod($today);
+        for ($step = 0; $step < 36 && $span['phase'] !== 'current'; $step++) {
+            $dir = $span['phase'] === 'future' ? -1 : 1;
+            $span = AcctPeriod::describe(
+                AcctPeriod::shift($span['start'], $span['length'], $dir),
+                $span['length'],
+                $today,
+            );
+        }
+
+        return $span;
+    }
+
+    private function fillIfWaiting(string $today): void
+    {
+        $periods = $this->pdo->prepare('SELECT COUNT(*) FROM pay_periods WHERE user_id = ?');
+        $periods->execute([$this->actor->id()]);
+        if ((int) $periods->fetchColumn() > 0) {
+            return;
+        }
+        $cycles = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM pay_cycles WHERE user_id = ? AND archived_at IS NULL'
+        );
+        $cycles->execute([$this->actor->id()]);
+        if ((int) $cycles->fetchColumn() === 0) {
+            return;
+        }
+        $bills = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM bills b
+             JOIN accounts a ON a.id = b.account_id
+             WHERE a.user_id = ? AND b.status = \'active\''
+        );
+        $bills->execute([$this->actor->id()]);
+        if ((int) $bills->fetchColumn() === 0) {
+            return;
+        }
+        (new BillFill($this->pdo, $this->currencies, $this->actor, $this->drive ?? new Drive(true)))->apply($today);
+    }
+
+    private function day(string $value): string
+    {
+        try {
+            return Dates::parse($value)->format('Y-m-d');
+        } catch (\InvalidArgumentException) {
+            throw new ApiException(422, 'Check the highlighted fields.', ['today' => 'Use a YYYY-MM-DD date.']);
+        }
+    }
+
+    private function dayBefore(?string $next): ?string
+    {
+        if ($next === null) {
+            return null;
+        }
+
+        return Dates::parse($next)->modify('-1 day')->format('Y-m-d');
+    }
+
+    private function asInt(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_string($value) && preg_match('/^-?\d+$/', $value) === 1) {
+            return (int) $value;
+        }
+        if (is_float($value) && floor($value) === $value) {
+            return (int) $value;
+        }
+
+        return null;
+    }
+}

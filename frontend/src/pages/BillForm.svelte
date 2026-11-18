@@ -1,0 +1,368 @@
+<script lang="ts">
+  import AmountInput from '../components/AmountInput.svelte'
+  import Note from '../components/Note.svelte'
+  import Spinner from '../components/Spinner.svelte'
+  import { onMount } from 'svelte'
+  import DateField from '../components/DateField.svelte'
+  import Glyph from '../components/Glyph.svelte'
+  import { api, explain } from '../lib/api'
+  import { DATE_INPUT_ERROR, readDateInput } from '../lib/dates'
+  import { minorToInput, parseMajor, todayISO } from '../lib/money'
+  import { go, returnToBills } from '../lib/nav.svelte.ts'
+  import { accountLabel } from '../lib/accountLabel'
+  import { billAccount } from '../lib/payFrom'
+  import { fieldTips } from '../lib/fieldTips'
+  import { tip } from '../lib/tip'
+import type { Account, Bill, Category } from '../lib/types'
+
+  let { id = null }: { id?: string | null } = $props()
+
+  const groups: Record<string, 'needs' | 'wants' | 'savings'> = {
+    lodging: 'needs', rent: 'needs', electricity: 'needs', water: 'needs', fuel: 'needs',
+    propane: 'needs', groceries: 'needs', internet: 'needs', cellular: 'needs', vehicle: 'needs',
+    maintenance: 'needs', insurance: 'needs', roadside: 'needs', healthcare: 'needs', mailbox: 'needs',
+    laundry: 'needs', mortgage: 'needs', storage: 'needs', other: 'needs',
+    restaurants: 'wants', entertainment: 'wants', subscriptions: 'wants', shopping: 'wants',
+    travel: 'wants', memberships: 'wants', software: 'wants', pets: 'wants', misc: 'wants',
+    debt: 'savings', emergency: 'savings', repairs: 'savings', investments: 'savings', liquidities: 'savings',
+  }
+  const typeGroups = [
+    { id: 'needs', label: 'Needs', types: typesIn('needs') },
+    { id: 'wants', label: 'Wants', types: typesIn('wants') },
+    { id: 'savings', label: 'Savings', types: typesIn('savings') },
+  ] as const
+
+  function typesIn(group: 'needs' | 'wants' | 'savings'): string[] {
+    return Object.keys(groups).filter((key) => groups[key] === group)
+  }
+  const recurrences = ['once', 'weekly', 'monthly', 'yearly']
+  const everyWord: Record<string, [string, string]> = {
+    weekly: ['week', 'weeks'],
+    monthly: ['month', 'months'],
+    yearly: ['year', 'years'],
+  }
+
+  let accounts = $state<Account[]>([])
+  let categories = $state<Category[]>([])
+  let categoryId = $state('')
+  let name = $state('')
+  let type = $state('rent')
+  let otherLabel = $state('')
+  let accountId = $state('')
+  let amount = $state('')
+  let recurrence = $state('monthly')
+  let every = $state(1)
+  let nextDueDate = $state(todayISO())
+  let autopay = $state(id == null)
+  let notes = $state('')
+  let status = $state<Bill['status']>('active')
+  let locked = $state(false)
+  let fields = $state<Record<string, string>>({})
+  let message = $state('')
+  let saving = $state(false)
+  let ready = $state(false)
+
+  const exponent = 2
+  let bucketChoices = $derived.by(() => {
+    const group = groups[type] ?? 'needs'
+    return categories.filter((category) => {
+      if (category.archivedAt !== null) return false
+      if (category.locked) return category.billType === type
+      if (type === 'fuel') return false
+      return category.group === group && category.role === 'goal'
+    })
+  })
+  let named = $derived(type === 'other' || type === 'misc')
+  let everyLabel = $derived.by(() => {
+    const pair = everyWord[recurrence] ?? ['time', 'times']
+    const word = every === 1 ? pair[0] : pair[1]
+    return `Every ${every} ${word}`
+  })
+
+  $effect(() => {
+    if (!ready || locked) return
+    const open = bucketChoices
+    if (open.some((category) => String(category.id) === categoryId)) return
+    const fallback = open.find((category) => category.locked && category.billType === type) ?? open[0]
+    categoryId = fallback ? String(fallback.id) : ''
+  })
+
+  onMount(async () => {
+    try {
+      const [data, categoryData] = await Promise.all([
+        api<{ accounts: Account[] }>('/api/accounts?includeArchived=1'),
+        api<{ categories: Category[] }>('/api/buckets'),
+      ])
+      categories = categoryData.categories
+      accounts = data.accounts.filter((item) => item.archivedAt === null || (id && String(item.id) === accountId))
+      if (!id && accounts.length > 0) {
+        const open = billAccount(accounts)
+        if (open) accountId = String(open.id)
+      }
+      if (!id) return
+      const billData = await api<{ bill: Bill }>(`/api/bills/${id}`)
+      const bill = billData.bill
+      name = bill.name
+      type = bill.type
+      otherLabel = bill.otherLabel ?? ''
+      accountId = String(bill.accountId)
+      amount = minorToInput(bill.amountMinor, 2)
+      recurrence = bill.recurrence
+      every = bill.every >= 1 && bill.every <= 11 ? bill.every : 1
+      nextDueDate = bill.nextDueDate
+      autopay = bill.autopay
+      categoryId = bill.categoryId === null ? '' : String(bill.categoryId)
+      notes = bill.notes ?? ''
+      status = bill.status
+      locked = bill.locked
+      if (!accounts.some((item) => item.id === bill.accountId)) {
+        accounts = [...accounts, {
+          id: bill.accountId,
+          name: bill.accountName,
+          type: 'other',
+          side: 'asset',
+          currency: bill.currency,
+          exponent: bill.exponent,
+          balanceMinor: 0,
+          interestBps: null,
+          minimumDueMinor: null,
+          dueDay: null,
+          creditLimitMinor: null,
+          autopayChoice: 'none',
+          bankAutopay: false,
+          billRecurrence: 'monthly',
+          billEvery: 1,
+          institution: null,
+          holder: null,
+          inBudget: false,
+          notes: null,
+          gasFavorite: false,
+          shoppingFavorite: false,
+          assetFavorite: false,
+          archivedAt: 'archived',
+        }]
+      }
+    } catch (err) {
+      message = explain(err).message
+    } finally {
+      ready = true
+    }
+  })
+
+  async function submit(event: SubmitEvent): Promise<void> {
+    event.preventDefault()
+    fields = {}
+    message = ''
+    const amountMinor = parseMajor(amount, exponent)
+    if (amountMinor === null || amountMinor < 1) {
+      fields.amountMinor = 'Enter an amount greater than zero.'
+    }
+    if (!accountId) fields.accountId = 'Choose the account this bill is drawn from.'
+    if (!categoryId) fields.categoryId = 'Choose a bucket.'
+    const dueOn = readDateInput('nextDueDate')
+    if (!dueOn) fields.nextDueDate = DATE_INPUT_ERROR
+    if (Object.keys(fields).length > 0) return
+    nextDueDate = dueOn
+
+    saving = true
+    try {
+      const body = {
+        name,
+        type,
+        otherLabel: named ? otherLabel : null,
+        accountId: Number(accountId),
+        amountMinor,
+        recurrence,
+        every: recurrence === 'once' ? 1 : every,
+        nextDueDate,
+        autopay,
+        notes,
+        categoryId: Number(categoryId),
+      }
+      const path = id ? `/api/bills/${id}` : '/api/bills'
+      await api(path, { method: id ? 'PATCH' : 'POST', body })
+      returnToBills()
+    } catch (err) {
+      const problem = explain(err)
+      message = problem.message
+      fields = { ...fields, ...problem.fields }
+    } finally {
+      saving = false
+    }
+  }
+
+  function remove(): void {
+    if (!confirm('Delete this bill?')) return
+    void act('delete', { confirm: true, today: todayISO() })
+  }
+
+  async function act(action: string, body: unknown = {}): Promise<void> {
+    if (!id) return
+    saving = true
+    message = ''
+    try {
+      await api(`/api/bills/${id}/${action}`, { method: 'POST', body })
+      returnToBills()
+    } catch (err) {
+      message = explain(err).message
+      saving = false
+    }
+  }
+</script>
+
+<form class="grid gap-4 max-w-xl" onsubmit={submit}>
+  <h1 class="text-3xl m-0">{id ? name || 'Edit bill' : 'New bill'}</h1>
+  {#if ready && accounts.length === 0 && !id}
+    <p>Create an account first. <a href="/accounts/new" onclick={(event) => { event.preventDefault(); go('/accounts/new'); }}>New account</a></p>
+  {/if}
+  <Note bind:message />
+  <div class="form-body grid gap-4" aria-busy={id != null && !ready} inert={id != null && !ready}>
+  <label class="field">
+    <span>Name</span>
+    <input name="name" bind:value={name} />
+    {#if fields.name}<em>{fields.name}</em>{/if}
+  </label>
+  <div class="field">
+    <span use:tip={fieldTips.billType}>Type</span>
+    <div class="grid gap-3">
+      {#each typeGroups as band, bandIndex (band.id)}
+        {#if bandIndex > 0}<hr class="m-0" />{/if}
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="group-title" style={`--tone: var(--tone-${band.id})`}>
+            <Glyph name={band.id} mini />
+            {band.label}
+          </span>
+          {#each band.types as option}
+            <button class="choice" class:on={type === option} type="button" style={`--tone: var(--tone-${option})`} disabled={locked} onclick={() => (type = option)}>
+              <Glyph name={option} mini />
+              {option}
+            </button>
+          {/each}
+        </div>
+      {/each}
+    </div>
+    {#if fields.type}<em>{fields.type}</em>{/if}
+  </div>
+  {#if named}
+    <label class="field">
+      <span use:tip={fieldTips.billOtherName}>{type === 'misc' ? 'Misc name' : 'Other name'}</span>
+      <input name="otherLabel" bind:value={otherLabel} />
+      {#if fields.otherLabel}<em>{fields.otherLabel}</em>{/if}
+    </label>
+  {/if}
+  <label class="field">
+    <span use:tip={fieldTips.billDrawFrom}>Draw from</span>
+    <select name="accountId" bind:value={accountId}>
+      <option value="">Choose an account</option>
+      {#each accounts as item}
+        <option value={String(item.id)}>{accountLabel(item)}</option>
+      {/each}
+    </select>
+    {#if fields.accountId}<em>{fields.accountId}</em>{/if}
+  </label>
+  <label class="field">
+    <span use:tip={fieldTips.billAmount}>Amount</span>
+    <span class="money-input">
+      <span class="money-mark" aria-hidden="true">$</span>
+      <AmountInput name="amount" bind:value={amount} />
+    </span>
+    {#if fields.amountMinor}<em>{fields.amountMinor}</em>{/if}
+  </label>
+  {#if type === 'fuel' || locked}
+    <p class="m-0">Bucket <strong data-bucket={type}>{bucketChoices.find((category) => category.locked)?.name ?? 'Fuel'}</strong>
+      {#if locked}<Glyph name="lock" mini />{/if}
+    </p>
+  {:else}
+    <label class="field">
+      <span use:tip={fieldTips.billBucket}>Bucket</span>
+      <select name="categoryId" bind:value={categoryId}>
+        {#each bucketChoices as category (category.id)}
+          <option value={String(category.id)}>{category.name}</option>
+        {/each}
+      </select>
+      {#if fields.categoryId}<em>{fields.categoryId}</em>{/if}
+    </label>
+  {/if}
+  <label class="field">
+    <span use:tip={fieldTips.billRecurrence}>Recurrence</span>
+    <select name="recurrence" bind:value={recurrence}>
+      {#each recurrences as option}<option value={option}>{option}</option>{/each}
+    </select>
+  </label>
+  {#if recurrence !== 'once'}
+    <label class="span-slider" style={`--span: ${every}; --span-steps: 10`}>
+      <span class="span-slider-readout">
+        <strong>{every}</strong>
+          <span use:tip={fieldTips.billEvery}>{everyLabel}</span>
+      </span>
+      <input
+        type="range"
+        name="every"
+        min="1"
+        max="11"
+        step="1"
+        value={every}
+        aria-label={everyLabel}
+        aria-valuemin={1}
+        aria-valuemax={11}
+        aria-valuenow={every}
+        aria-valuetext={everyLabel}
+        oninput={(event) => {
+          const raw = Number(event.currentTarget.value);
+          if (raw >= 1 && raw <= 11) every = raw;
+        }}
+      />
+      <span class="span-slider-ticks" aria-hidden="true">
+        {#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as stop (stop)}
+          <span class:on={every === stop}>{stop}</span>
+        {/each}
+      </span>
+    </label>
+    {#if fields.every}<em>{fields.every}</em>{/if}
+  {/if}
+  <label class="field">
+    <span use:tip={fieldTips.billDue}>Next due date</span>
+    <DateField name="nextDueDate" bind:value={nextDueDate} />
+    {#if fields.nextDueDate}<em>{fields.nextDueDate}</em>{/if}
+  </label>
+  <label class="flex items-center gap-2">
+    <input class="w-auto" type="checkbox" name="autopay" bind:checked={autopay} />
+    <span use:tip={fieldTips.billAutopay}>Autopay is on at the bank</span>
+  </label>
+  <label class="field">
+    <span>Notes</span>
+    <textarea name="notes" bind:value={notes}></textarea>
+    {#if fields.notes}<em>{fields.notes}</em>{/if}
+  </label>
+  <div class="flex flex-wrap gap-2">
+    {#if !locked && (status === 'active' || status === 'paused' || status === 'paid' || !id)}
+      <button class="btn primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save bill'}</button>
+    {/if}
+    <a class="btn" href="/bills" onclick={(event) => { event.preventDefault(); returnToBills(); }}>Back</a>
+    {#if id && status === 'active'}
+      <button class="btn" type="button" disabled={saving} onclick={() => act('paid', { paidOn: nextDueDate })}>Mark paid</button>
+      {#if !locked && recurrence === 'once'}
+        <button class="btn" type="button" disabled={saving} onclick={() => act('archive')}>Archive</button>
+      {:else if !locked}
+        <button class="btn" type="button" disabled={saving} onclick={() => act('pause')}>Pause</button>
+      {/if}
+    {/if}
+    {#if id && status === 'paused' && !locked}
+      <button class="btn" type="button" disabled={saving} onclick={() => act('resume')}>Resume</button>
+      <button class="btn" type="button" disabled={saving} onclick={() => act('archive')}>Archive</button>
+    {/if}
+    {#if id && status === 'archived'}
+      <button class="btn" type="button" disabled={saving} onclick={() => act('unarchive')}>Unarchive</button>
+      <button class="btn" type="button" disabled={saving} onclick={remove}>Delete</button>
+    {/if}
+    {#if id && status === 'paid'}
+      <button class="btn" type="button" disabled={saving} onclick={() => act('unpay')}>Unpay</button>
+    {/if}
+  </div>
+  {#if id && !ready}
+    <div class="form-cover" aria-busy="true">
+      <Spinner />
+    </div>
+  {/if}
+  </div>
+</form>

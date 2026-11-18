@@ -1,0 +1,309 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Dashboard;
+
+use App\Support\Dates;
+
+final class PlannerWidgets
+{
+    /** @var list<string> */
+    public const ORDER = ['net', 'income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'];
+
+    /** @var list<string> */
+    public const SPAN_LAYOUT = ['net', 'income', 'calendar', 'trips', 'accounts', 'envelopes', 'bills'];
+
+    /** @var array<string, int> */
+    public const SPANS = [
+        'net' => 3,
+        'income' => 3,
+        'calendar' => 2,
+        'trips' => 2,
+        'accounts' => 2,
+        'envelopes' => 6,
+        'bills' => 6,
+    ];
+
+    /** @var list<int> */
+    public const SPAN_VALUES = [1, 2, 3, 4, 5, 6];
+
+    /** @var list<string> */
+    public const TYPES = ['checking', 'savings', 'cash', 'credit', 'loan', 'fuel', 'other'];
+
+    /** @return list<string> */
+    public static function order(mixed $stored): array
+    {
+        $accepted = self::accept(self::decode($stored));
+
+        return $accepted ?? self::ORDER;
+    }
+
+    /** @return list<string>|null */
+    public static function accept(mixed $input): ?array
+    {
+        if (!is_array($input) || count($input) !== count(self::ORDER)) {
+            return null;
+        }
+        $seen = [];
+        foreach ($input as $item) {
+            if (!is_string($item) || !in_array($item, self::ORDER, true) || isset($seen[$item])) {
+                return null;
+            }
+            $seen[$item] = true;
+        }
+
+        return array_values($input);
+    }
+
+    /** @param list<string> $order */
+    public static function encode(array $order): string
+    {
+        $json = json_encode(array_values($order));
+
+        return is_string($json) ? $json : '[]';
+    }
+
+    /**
+     * @param list<string> $order
+     * @return list<string>
+     */
+    public static function step(array $order, string $widget, int $by): array
+    {
+        $next = array_values($order);
+        if ($by !== -1 && $by !== 1) {
+            return $next;
+        }
+        $from = array_search($widget, $next, true);
+        if (!is_int($from)) {
+            return $next;
+        }
+        $to = $from + $by;
+        if ($to < 0 || $to >= count($next)) {
+            return $next;
+        }
+        $neighbor = $next[$to];
+        $next[$to] = $next[$from];
+        $next[$from] = $neighbor;
+
+        return $next;
+    }
+
+    /** @return array<string, int> */
+    public static function spans(mixed $stored): array
+    {
+        $accepted = self::acceptSpans(self::decode($stored));
+
+        return $accepted ?? self::SPANS;
+    }
+
+    /** @return array<string, int>|null */
+    public static function acceptSpans(mixed $input): ?array
+    {
+        if (!is_array($input) || array_is_list($input) || count($input) !== count(self::SPAN_LAYOUT)) {
+            return null;
+        }
+        $spans = [];
+        foreach (self::SPAN_LAYOUT as $widget) {
+            if (!array_key_exists($widget, $input)) {
+                return null;
+            }
+            $span = $input[$widget];
+            if (!is_int($span) || !in_array($span, self::SPAN_VALUES, true)) {
+                return null;
+            }
+            $spans[$widget] = $span;
+        }
+
+        return $spans;
+    }
+
+    /** @param array<string, int> $spans */
+    public static function encodeSpans(array $spans): string
+    {
+        $ordered = [];
+        foreach (self::SPAN_LAYOUT as $widget) {
+            $ordered[$widget] = $spans[$widget];
+        }
+        $json = json_encode($ordered);
+
+        return is_string($json) ? $json : '{}';
+    }
+
+    /**
+     * @param list<array<string, mixed>> $trips
+     * @return array{id:int,placeName:string,city:?string,region:?string,arriveOn:string,departOn:string,latitude:?string,longitude:?string}|null
+     */
+    public static function stay(array $trips, string $today): ?array
+    {
+        $tomorrow = Dates::parse($today)->modify('+1 day')->format('Y-m-d');
+        $arrivals = [];
+        foreach ($trips as $trip) {
+            $arrive = (string) ($trip['arriveOn'] ?? '');
+            if ($arrive === $today || $arrive === $tomorrow) {
+                $arrivals[] = $trip;
+            }
+        }
+        if ($arrivals !== []) {
+            usort($arrivals, static function (array $left, array $right): int {
+                $date = strcmp((string) ($left['arriveOn'] ?? ''), (string) ($right['arriveOn'] ?? ''));
+                if ($date !== 0) {
+                    return $date;
+                }
+
+                return ((int) ($left['id'] ?? 0)) <=> ((int) ($right['id'] ?? 0));
+            });
+
+            return self::presentStay($arrivals[0]);
+        }
+        foreach ($trips as $trip) {
+            $arrive = (string) ($trip['arriveOn'] ?? '');
+            $depart = (string) ($trip['departOn'] ?? '');
+            if ($arrive !== '' && $depart !== '' && $arrive <= $today && $today <= $depart) {
+                return self::presentStay($trip);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $timeline
+     * @return array{payor:string,on:string,paycheckMinor:?int}|null
+     */
+    public static function payday(array $timeline, string $today): ?array
+    {
+        $soonest = null;
+        foreach ($timeline as $row) {
+            if (($row['kind'] ?? '') !== 'payday') {
+                continue;
+            }
+            $on = (string) ($row['on'] ?? '');
+            if ($on === '' || $on < $today) {
+                continue;
+            }
+            if ($soonest !== null && $on >= $soonest['on']) {
+                continue;
+            }
+            $amount = $row['paycheckMinor'] ?? null;
+            $soonest = [
+                'payor' => (string) ($row['payor'] ?? ''),
+                'on' => $on,
+                'paycheckMinor' => $amount === null || $amount === '' ? null : (int) $amount,
+            ];
+        }
+
+        return $soonest;
+    }
+
+    /** @param list<array<string, mixed>> $paychecks */
+    public static function stillComing(array $paychecks, string $month, string $today): int
+    {
+        $sum = 0;
+        foreach ($paychecks as $row) {
+            $on = (string) ($row['on'] ?? '');
+            if ($on === '' || !str_starts_with($on, $month) || $on < $today) {
+                continue;
+            }
+            $sum += (int) ($row['paycheckMinor'] ?? 0);
+        }
+
+        return $sum;
+    }
+
+    /** @param list<array<string, mixed>> $paychecks */
+    public static function stillComingBetween(array $paychecks, string $start, string $end, string $today): int
+    {
+        $sum = 0;
+        foreach ($paychecks as $row) {
+            $on = (string) ($row['on'] ?? '');
+            if ($on === '' || $on < $start || $on > $end || $on < $today) {
+                continue;
+            }
+            $sum += (int) ($row['paycheckMinor'] ?? 0);
+        }
+
+        return $sum;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $accounts
+     * @return list<array{type:string,balanceMinor:int,side:string}>
+     */
+    public static function accountTotals(array $accounts): array
+    {
+        /** @var array<string, array{type:string,balanceMinor:int,side:string}> $sums */
+        $sums = [];
+        foreach ($accounts as $account) {
+            $type = (string) ($account['type'] ?? '');
+            if (!in_array($type, self::TYPES, true)) {
+                continue;
+            }
+            $side = (string) ($account['side'] ?? '');
+            if ($side !== 'asset' && $side !== 'liability') {
+                continue;
+            }
+            $key = $type . ':' . $side;
+            if (!isset($sums[$key])) {
+                $sums[$key] = ['type' => $type, 'balanceMinor' => 0, 'side' => $side];
+            }
+            $sums[$key]['balanceMinor'] += (int) ($account['balanceMinor'] ?? 0);
+        }
+        $rows = array_values($sums);
+        usort($rows, static function (array $left, array $right): int {
+            $signed = static function (array $row): int {
+                $balance = (int) $row['balanceMinor'];
+
+                return $row['side'] === 'liability' ? -$balance : $balance;
+            };
+            $money = $signed($right) <=> $signed($left);
+            if ($money !== 0) {
+                return $money;
+            }
+            $type = strcmp($left['type'], $right['type']);
+            if ($type !== 0) {
+                return $type;
+            }
+
+            return strcmp($left['side'], $right['side']);
+        });
+
+        return $rows;
+    }
+
+    private static function decode(mixed $stored): mixed
+    {
+        if (!is_string($stored)) {
+            return $stored;
+        }
+        $trimmed = trim($stored);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        return json_decode($trimmed, true);
+    }
+
+    /**
+     * @param array<string, mixed> $trip
+     * @return array{id:int,placeName:string,city:?string,region:?string,arriveOn:string,departOn:string,latitude:?string,longitude:?string}
+     */
+    private static function presentStay(array $trip): array
+    {
+        $city = $trip['city'] ?? null;
+        $region = $trip['region'] ?? null;
+        $latitude = $trip['latitude'] ?? null;
+        $longitude = $trip['longitude'] ?? null;
+
+        return [
+            'id' => (int) ($trip['id'] ?? 0),
+            'placeName' => (string) ($trip['placeName'] ?? ''),
+            'city' => is_string($city) && trim($city) !== '' ? trim($city) : null,
+            'region' => is_string($region) && trim($region) !== '' ? trim($region) : null,
+            'arriveOn' => (string) ($trip['arriveOn'] ?? ''),
+            'departOn' => (string) ($trip['departOn'] ?? ''),
+            'latitude' => is_string($latitude) && trim($latitude) !== '' ? trim($latitude) : (is_numeric($latitude) ? (string) $latitude : null),
+            'longitude' => is_string($longitude) && trim($longitude) !== '' ? trim($longitude) : (is_numeric($longitude) ? (string) $longitude : null),
+        ];
+    }
+}
