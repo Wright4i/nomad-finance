@@ -14,7 +14,7 @@ final class SessionMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
-            $secure = $request->getUri()->getScheme() === 'https';
+            $secure = self::https($request);
             session_name('nomad_finance_session');
             session_set_cookie_params(self::params($secure));
             session_start();
@@ -25,6 +25,19 @@ final class SessionMiddleware implements MiddlewareInterface
         }
 
         return $handler->handle($request);
+    }
+
+    public static function https(ServerRequestInterface $request): bool
+    {
+        if (strtolower($request->getUri()->getScheme()) === 'https') {
+            return true;
+        }
+        $forwarded = strtolower(trim(explode(',', $request->getHeaderLine('X-Forwarded-Proto'))[0]));
+        if ($forwarded === 'https') {
+            return true;
+        }
+
+        return str_contains($request->getHeaderLine('CF-Visitor'), 'https');
     }
 
     /** @return array{lifetime:int,path:string,secure:bool,httponly:bool,samesite:string} */
