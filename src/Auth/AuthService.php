@@ -8,6 +8,7 @@ use App\Category\SystemBuckets;
 use App\Dashboard\PlannerWidgets;
 use App\Demo\DemoLibrary;
 use App\Http\ApiException;
+use App\Http\SessionMiddleware;
 use App\Money\CurrencyCatalog;
 use App\AcctPeriod\AcctPeriod;
 use App\Money\UnknownCurrency;
@@ -217,15 +218,7 @@ final class AuthService
     public function logout(): void
     {
         $_SESSION = [];
-        $params = session_get_cookie_params();
-        setcookie(session_name(), '', [
-            'expires' => time() - 42000,
-            'path' => (string) $params['path'],
-            'domain' => (string) $params['domain'],
-            'secure' => (bool) $params['secure'],
-            'httponly' => (bool) $params['httponly'],
-            'samesite' => (string) ($params['samesite'] ?? 'Lax'),
-        ]);
+        SessionMiddleware::expireCookie();
         session_destroy();
     }
 
