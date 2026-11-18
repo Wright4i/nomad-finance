@@ -15,6 +15,6 @@ A needed-by-date target is met when the bucket amount has reached the target and
 
 See [one pay cycle per dated target](../adr/0015-target-uses-one-pay-cycle.md).
 
-Demo seed: Tires and Repair reserve, each in Savings. Tires is 1,200.00 on Remote salary for 2027-02-01. Repair reserve is 500.00.
+Demo seed: Tires, Repair reserve, and New trailer. Tires is 1,200.00 on Day job for 2027-02-01. Repair reserve is 500.00. New trailer is a 50,000.00 balance goal.
 
 Requires buckets, pay cycles, and Budget.

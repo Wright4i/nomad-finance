@@ -99,7 +99,7 @@ final class VehiclesTest extends TestCase
         self::click('Use demo');
         self::waitForText('Available to assign');
         self::clickLink('Vehicles');
-        self::waitForText('Bunkhouse');
+        self::waitForText('Pickup');
         self::waitForText('Side-by-side');
         self::waitForText('Quad');
         self::waitForText('Golf cart');
@@ -202,7 +202,7 @@ final class VehiclesTest extends TestCase
         self::assertEqualsWithDelta($bills['columns'], $vehicle['columns'], 4);
         self::assertGreaterThan(200, $vehicle['card']);
         self::assertLessThanOrEqual($vehicle['columns'] + 1, $vehicle['card']);
-        self::clickLinkContaining('Bunkhouse');
+        self::clickLinkContaining('Pickup');
         self::waitForText('Minimum mpg');
         self::assertFalse(self::colorFieldPresent());
 
@@ -237,7 +237,7 @@ final class VehiclesTest extends TestCase
         self::assertSame('Vehicle 2', $saved);
         self::clickLink('Back');
         self::waitForText('Vehicle 2');
-        self::clickLinkContaining('Bunkhouse');
+        self::clickLinkContaining('Pickup');
         self::waitForText('Stretch mpg');
         $dates = self::wait()->until(function (): array|false {
             $dates = self::driver()->executeScript(<<<'JS'
@@ -301,7 +301,7 @@ final class VehiclesTest extends TestCase
     public function testAnArchivedVehicleCanBeDeleted(): void
     {
         self::driver()->get(self::$base . '/vehicles');
-        self::waitForText('Bunkhouse');
+        self::waitForText('Pickup');
         self::waitForTextGone('Old truck');
         self::click('Show archived');
         self::waitForText('Old truck');
@@ -341,7 +341,7 @@ final class VehiclesTest extends TestCase
         self::waitForTextGone('Delete this vehicle?');
         self::click('Delete');
         self::click('Delete vehicle');
-        self::waitForText('Bunkhouse');
+        self::waitForText('Pickup');
         self::waitForTextGone('Gone rig');
         self::click('Show archived');
         self::waitForText('Old truck');

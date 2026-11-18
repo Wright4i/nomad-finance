@@ -302,7 +302,7 @@ final class CategoriesTest extends TestCase
 
         self::clickLink('Accounts');
         self::click('Show archived');
-        self::waitForText('Closed checking');
+        self::waitForText('Old checking');
         $cards = self::driver()->executeScript(<<<'JS'
             const tiles = [...document.querySelectorAll('a.bucket-tile')].map((tile) => {
                 const rect = tile.getBoundingClientRect();
@@ -404,10 +404,10 @@ final class CategoriesTest extends TestCase
             }
         }
         self::assertTrue($matchedRow);
-        self::clickLinkContaining('Closed checking');
+        self::clickLinkContaining('Old checking');
         self::click('Unarchive');
-        self::waitForText('Everyday checking');
-        self::waitForText('Closed checking');
+        self::waitForText('Checking');
+        self::waitForText('Old checking');
         $accountColors = self::driver()->executeScript(<<<'JS'
             const linkFor = (name) => [...document.querySelectorAll('a.bucket-tile')].find((node) => node.textContent.includes(name));
             const color = (name) => {
@@ -425,11 +425,11 @@ final class CategoriesTest extends TestCase
                 return amount ? getComputedStyle(amount).color : '';
             };
             return {
-                glyphs: [color('Everyday checking'), color('Emergency fund'), color('Travel card'), color('Wallet'), color('Solar loan')],
-                washes: [wash('Everyday checking'), wash('Emergency fund'), wash('Travel card'), wash('Wallet'), wash('Solar loan')],
-                asset: money('Everyday checking'),
+                glyphs: [color('Checking'), color('Savings'), color('Travel card'), color('Center console'), color('Truck loan')],
+                washes: [wash('Checking'), wash('Savings'), wash('Travel card'), wash('Center console'), wash('Truck loan')],
+                asset: money('Checking'),
                 card: money('Travel card'),
-                loan: money('Solar loan'),
+                loan: money('Truck loan'),
             };
         JS);
         self::assertIsArray($accountColors);
@@ -444,7 +444,7 @@ final class CategoriesTest extends TestCase
         self::assertNotSame($accountColors['asset'], $accountColors['card']);
         self::assertSame($accountColors['card'], $accountColors['loan']);
         $account = self::driver()->executeScript(<<<'JS'
-            const link = [...document.querySelectorAll('a')].find((node) => node.textContent.includes('Closed checking'));
+            const link = [...document.querySelectorAll('a')].find((node) => node.textContent.includes('Old checking'));
             return link ? !link.innerText.toLowerCase().includes('archived') : false;
         JS);
         self::assertTrue($account === true);

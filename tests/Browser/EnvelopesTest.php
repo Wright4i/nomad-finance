@@ -280,13 +280,13 @@ final class EnvelopesTest extends TestCase
             };
         JS);
         self::assertIsArray($sources);
-        self::assertStringContainsString('Camp host', $sources['income']);
+        self::assertStringContainsString('Side job', $sources['income']);
         self::assertMatchesRegularExpression('/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2}/', $sources['income']);
         self::assertStringContainsString('$', $sources['income']);
         self::assertStringNotContainsString('covered', strtolower($sources['income'] . $sources['accounts'] . $sources['floats']));
         self::assertStringNotContainsString('uncovered', strtolower($sources['floats']));
         self::assertDoesNotMatchRegularExpression('/\$0\.00/', $sources['floats']);
-        self::assertStringContainsString('Everyday checking', $sources['accounts']);
+        self::assertStringContainsString('Checking', $sources['accounts']);
         self::assertStringNotContainsString('Savings', $sources['accounts']);
         self::assertStringContainsString('$', $sources['accounts']);
         self::assertTrue($sources['incomeGlyph']);
@@ -466,7 +466,7 @@ final class EnvelopesTest extends TestCase
             return income ? income.innerText : '';
         JS);
         self::assertIsString($futureIncome);
-        self::assertStringContainsString('Photo gigs', $futureIncome);
+        self::assertStringContainsString('Day job', $futureIncome);
         self::assertStringContainsString('Dec 15', $futureIncome);
         self::clickBackdrop();
         self::typeAssigned('Road cushion', '700.00');
@@ -620,17 +620,17 @@ final class EnvelopesTest extends TestCase
         self::waitForText('Autopay is on at the bank');
         self::assertCount(0, self::driver()->findElements(WebDriverBy::name('inBudget')));
         self::clickLink('Accounts');
-        self::clickLinkContaining('Emergency fund');
+        self::clickLinkContaining('Savings');
         self::wait()->until(function (): bool {
             $name = self::driver()->findElements(WebDriverBy::name('name'));
 
-            return $name !== [] && $name[0]->getAttribute('value') === 'Emergency fund';
+            return $name !== [] && $name[0]->getAttribute('value') === 'Savings';
         });
         $box = self::driver()->findElement(WebDriverBy::name('inBudget'));
         self::assertFalse($box->isSelected());
         $box->click();
         self::click('Save account');
-        self::waitForText('Everyday checking');
+        self::waitForText('Checking');
         self::clickLink('Budget');
         self::waitForText('Available to assign');
         self::clickAvailable();
@@ -640,7 +640,7 @@ final class EnvelopesTest extends TestCase
                 return dialog ? dialog.innerText : '';
             JS);
 
-            return is_string($accounts) && str_contains($accounts, 'Emergency fund');
+            return is_string($accounts) && str_contains($accounts, 'Savings');
         });
     }
 
@@ -682,7 +682,7 @@ final class EnvelopesTest extends TestCase
              JOIN pay_cycles y ON y.id = p.pay_cycle_id
              JOIN categories c ON c.user_id = p.user_id AND c.name = 'Healthcare'
              JOIN user u ON u.id = p.user_id AND u.role = 'demo'
-             WHERE y.payor = 'Remote salary' AND p.period_start = '2026-11-01'
+             WHERE y.payor = 'Day job' AND p.period_start = '2026-11-01'
              ON CONFLICT(pay_period_id, category_id) DO UPDATE SET
                 amount_minor = excluded.amount_minor,
                 filled_minor = excluded.filled_minor"
@@ -690,7 +690,7 @@ final class EnvelopesTest extends TestCase
         $planted = (int) $pdo->query('SELECT changes()')->fetchColumn();
         if ($planted !== 1) {
             $demo = (int) $pdo->query("SELECT COUNT(*) FROM user WHERE role = 'demo'")->fetchColumn();
-            $cycles = (int) $pdo->query("SELECT COUNT(*) FROM pay_cycles WHERE payor = 'Remote salary'")->fetchColumn();
+            $cycles = (int) $pdo->query("SELECT COUNT(*) FROM pay_cycles WHERE payor = 'Day job'")->fetchColumn();
             $periods = (int) $pdo->query("SELECT COUNT(*) FROM pay_periods WHERE period_start = '2026-11-01'")->fetchColumn();
             $healthcare = (int) $pdo->query("SELECT COUNT(*) FROM categories WHERE name = 'Healthcare'")->fetchColumn();
             self::fail("Healthcare fill was not planted (demo {$demo}, remote cycles {$cycles}, Nov 1 periods {$periods}, healthcare {$healthcare}).");

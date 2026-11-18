@@ -106,26 +106,26 @@ final class TransfersTest extends TestCase
         self::click('Between accounts');
         $fromLabels = self::selectLabels('moveSource');
         $toLabels = self::selectLabels('moveDestination');
-        self::assertContains('Everyday checking (Demo) | $3,180.00', $fromLabels);
-        self::assertContains('Everyday checking (Demo) | $3,180.00', $toLabels);
-        self::assertContains('Emergency fund | $8,600.00', $toLabels);
+        self::assertContains('Checking - Credit union (Demo) | $2,660.00', $fromLabels);
+        self::assertContains('Checking - Credit union (Demo) | $2,660.00', $toLabels);
+        self::assertContains('Savings - Online bank (Demo) | $50,000.00', $toLabels);
         self::assertContains('Empty jar | $0.00', $toLabels);
         self::assertSame([], array_values(array_filter(
             $fromLabels,
             static fn (string $label): bool => str_contains($label, 'Empty jar'),
         )));
-        self::choose('moveSource', 'Everyday checking (Demo) | $3,180.00');
-        $checking = self::accountCard('Everyday checking');
+        self::choose('moveSource', 'Checking - Credit union (Demo) | $2,660.00');
+        $checking = self::accountCard('Checking');
         self::assertStringContainsString('checking', $checking['text']);
-        self::assertStringContainsString('$3,180.00', $checking['text']);
+        self::assertStringContainsString('$2,660.00', $checking['text']);
         self::assertSame('yes', $checking['inBudget']);
         self::assertSame('Included in available to assign', $checking['budget']);
 
-        self::choose('moveDestination', 'Emergency fund | $8,600.00');
-        $emergency = self::accountCard('Emergency fund');
+        self::choose('moveDestination', 'Savings - Online bank (Demo) | $50,000.00');
+        $emergency = self::accountCard('Savings');
         self::assertStringContainsString('savings', $emergency['text']);
-        self::assertStringContainsString('$8,600.00', $emergency['text']);
-        self::assertStringContainsString('APR 4.50%', $emergency['text']);
+        self::assertStringContainsString('$50,000.00', $emergency['text']);
+        self::assertStringContainsString('APR 4.25%', $emergency['text']);
         self::assertSame('no', $emergency['inBudget']);
         self::assertSame('', $emergency['budget']);
 
@@ -135,8 +135,8 @@ final class TransfersTest extends TestCase
         self::click('Review');
         $leaving = self::dialogText();
         self::assertStringContainsString('Move this money?', $leaving);
-        self::assertStringContainsString('Everyday checking', $leaving);
-        self::assertStringContainsString('Emergency fund', $leaving);
+        self::assertStringContainsString('Checking', $leaving);
+        self::assertStringContainsString('Savings', $leaving);
         self::assertStringContainsString('$1,000.00', $leaving);
         self::assertStringNotContainsString('Unassigned cash covers', $leaving);
         self::assertStringNotContainsString('Marked paid', $leaving);
@@ -162,32 +162,32 @@ final class TransfersTest extends TestCase
         self::assertTrue(self::confirmEnabled());
         self::click('Back');
         self::waitUntilDialogClosed();
-        self::assertStringContainsString('$3,180.00', self::accountCard('Everyday checking')['text']);
-        self::assertStringContainsString('$8,600.00', self::accountCard('Emergency fund')['text']);
+        self::assertStringContainsString('$2,660.00', self::accountCard('Checking')['text']);
+        self::assertStringContainsString('$50,000.00', self::accountCard('Savings')['text']);
 
         self::replace('moveAmount', '4000.00');
         self::click('Review');
         $over = self::dialogText();
-        self::assertStringContainsString('Short -$820.00. You are asking for more than this account holds.', $over);
+        self::assertStringContainsString('Short -$1,340.00. You are asking for more than this account holds.', $over);
         self::assertStringNotContainsString('Accept these buckets', $over);
         self::assertStringNotContainsString('Buckets this would reduce', $over);
         self::assertFalse(self::confirmEnabled());
         self::click('Back');
         self::waitUntilDialogClosed();
-        self::assertStringContainsString('$3,180.00', self::accountCard('Everyday checking')['text']);
-        self::assertStringContainsString('$8,600.00', self::accountCard('Emergency fund')['text']);
+        self::assertStringContainsString('$2,660.00', self::accountCard('Checking')['text']);
+        self::assertStringContainsString('$50,000.00', self::accountCard('Savings')['text']);
 
-        self::choose('moveSource', 'Wallet | $86.00');
-        self::choose('moveDestination', 'Camp jar | $140.00');
-        self::assertSame('Included in available to assign', self::accountCard('Wallet')['budget']);
-        self::assertStringContainsString('$86.00', self::accountCard('Wallet')['text']);
-        self::assertStringContainsString('cash', self::accountCard('Camp jar')['text']);
-        self::assertStringContainsString('$140.00', self::accountCard('Camp jar')['text']);
+        self::choose('moveSource', 'Checking - Credit union (Demo) | $2,660.00');
+        self::choose('moveDestination', 'Center console | $115.00');
+        self::assertSame('Included in available to assign', self::accountCard('Checking')['budget']);
+        self::assertStringContainsString('$2,660.00', self::accountCard('Checking')['text']);
+        self::assertStringContainsString('cash', self::accountCard('Center console')['text']);
+        self::assertStringContainsString('$115.00', self::accountCard('Center console')['text']);
         self::replace('moveAmount', '1.00');
         self::click('Review');
         $moving = self::dialogText();
-        self::assertStringContainsString('Wallet', $moving);
-        self::assertStringContainsString('Camp jar', $moving);
+        self::assertStringContainsString('Checking', $moving);
+        self::assertStringContainsString('Center console', $moving);
         self::assertStringContainsString('$1.00', $moving);
         self::assertStringNotContainsString('Marked paid', $moving);
         self::assertStringNotContainsString('Unassigned cash covers', $moving);
@@ -196,8 +196,8 @@ final class TransfersTest extends TestCase
         self::click('Confirm');
         self::waitForText('Transferred.');
         self::waitUntilDialogClosed();
-        self::assertStringContainsString('$85.00', self::accountCard('Wallet')['text']);
-        self::assertStringContainsString('$141.00', self::accountCard('Camp jar')['text']);
+        self::assertStringContainsString('$2,659.00', self::accountCard('Checking')['text']);
+        self::assertStringContainsString('$116.00', self::accountCard('Center console')['text']);
 
         self::click('Pay a card');
         $cardLabels = self::selectLabels('cardId');
@@ -218,9 +218,9 @@ final class TransfersTest extends TestCase
         self::assertStringContainsString('Bills Buckets', self::bodyText());
         self::assertStringContainsString('Total payment', self::bodyText());
         $payFrom = self::selectLabels('sourceId');
-        self::assertContains('Wallet', $payFrom);
+        self::assertContains('Center console', $payFrom);
         self::assertContains('Empty jar', $payFrom);
-        self::assertNotContains('Wallet | $85.00', $payFrom);
+        self::assertNotContains('Center console | $116.00', $payFrom);
         $wing = self::billBucket('Wingstop');
         self::assertStringContainsString('Restaurants', $wing['text']);
         self::assertStringContainsString('$5.00', $wing['text']);
@@ -248,10 +248,10 @@ final class TransfersTest extends TestCase
         self::assertStringNotContainsString('Short of the total due', $empty['text']);
         self::assertSame('false', $empty['snacks']);
 
-        self::choose('sourceId', 'Wallet');
+        self::choose('sourceId', 'Center console');
         self::assertSame('20.00', self::moneyField('amount')['value']);
         self::assertStringNotContainsString(
-            'You may now post a payment of $20.00 to Camp card from Wallet after hitting Confirm.',
+            'You may now post a payment of $20.00 to Camp card from Center console after hitting Confirm.',
             self::bodyText(),
         );
         self::assertSame('false', self::uncovered()['pressed']);
@@ -268,7 +268,7 @@ final class TransfersTest extends TestCase
         $unmarked = self::dialogText();
         self::assertStringContainsString('Pay this card?', $unmarked);
         self::assertStringContainsString(
-            'You may now post a payment of $20.00 to Camp card from Wallet after hitting Confirm.',
+            'You may now post a payment of $20.00 to Camp card from Center console after hitting Confirm.',
             $unmarked,
         );
         self::assertStringNotContainsString('Marked paid', $unmarked);
@@ -276,7 +276,7 @@ final class TransfersTest extends TestCase
         self::assertStringNotContainsString('Include this cash', $unmarked);
         self::assertStringNotContainsString('Unassigned cash covers', $unmarked);
         self::assertStringContainsString('$20.00', $unmarked);
-        self::assertStringContainsString('After $65.00', $unmarked);
+        self::assertStringContainsString('After $96.00', $unmarked);
         self::assertStringContainsString('After $0.00', $unmarked);
         self::assertStringContainsString('Beyond the buckets $20.00', $unmarked);
         self::assertStringContainsString('This is the rest of the same payment.', $unmarked);
@@ -316,7 +316,7 @@ final class TransfersTest extends TestCase
         self::assertStringContainsString('Trail snacks', $held);
         self::assertStringNotContainsString('Rinse', $held);
         self::assertStringContainsString('$20.00', $held);
-        self::assertStringContainsString('After $65.00', $held);
+        self::assertStringContainsString('After $96.00', $held);
         self::assertStringContainsString('After $0.00', $held);
         self::assertStringContainsString('Beyond the buckets $3.00', $held);
         self::assertStringContainsString('This is the rest of the same payment.', $held);
@@ -326,7 +326,7 @@ final class TransfersTest extends TestCase
         self::click('Back');
         self::waitUntilDialogClosed();
         self::assertStringContainsString('$20.00', self::accountCard('Camp card')['text']);
-        self::assertStringContainsString('$85.00', self::accountCard('Wallet')['text']);
+        self::assertStringContainsString('$116.00', self::accountCard('Center console')['text']);
 
         self::clickCss('button[data-bill="Wingstop"]');
         self::clickCss('button[data-bill="Trail snacks"]');
@@ -347,11 +347,11 @@ final class TransfersTest extends TestCase
         self::assertStringContainsString('Trail snacks', $paying);
         self::assertStringContainsString('Rinse', $paying);
         self::assertStringNotContainsString('Wingstop', $paying);
-        self::assertStringContainsString('Wallet', $paying);
+        self::assertStringContainsString('Center console', $paying);
         self::assertStringContainsString('Camp card', $paying);
         self::assertStringContainsString('Camp bank', $paying);
         self::assertStringContainsString('$20.00', $paying);
-        self::assertStringContainsString('After $65.00', $paying);
+        self::assertStringContainsString('After $96.00', $paying);
         self::assertStringContainsString('After $0.00', $paying);
         self::assertStringContainsString('Available to assign stays the same.', $paying);
         self::assertStringNotContainsString('This is the rest of the same payment.', $paying);
@@ -372,7 +372,7 @@ final class TransfersTest extends TestCase
         self::click('Back');
         self::waitUntilDialogClosed();
         self::assertStringContainsString('$20.00', self::accountCard('Camp card')['text']);
-        self::assertStringContainsString('$85.00', self::accountCard('Wallet')['text']);
+        self::assertStringContainsString('$116.00', self::accountCard('Center console')['text']);
         self::assertSame('true', self::tank()['snacks']);
 
         self::click('Review');
@@ -381,8 +381,8 @@ final class TransfersTest extends TestCase
         self::waitForText('Paid.');
         self::waitUntilDialogClosed();
         self::assertStringContainsString('$0.00', self::accountCard('Camp card')['text']);
-        self::assertStringContainsString('$65.00', self::accountCard('Wallet')['text']);
-        self::waitForText('You may now post a payment of $20.00 to Camp card from Wallet after hitting Confirm.');
+        self::assertStringContainsString('$96.00', self::accountCard('Center console')['text']);
+        self::waitForText('You may now post a payment of $20.00 to Camp card from Center console after hitting Confirm.');
         self::click('Ok');
         self::waitUntilDialogClosed();
         self::waitForTextGone('Trail snacks');

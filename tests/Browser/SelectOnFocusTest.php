@@ -99,8 +99,8 @@ final class SelectOnFocusTest extends TestCase
         self::waitForText('Available to assign');
 
         self::clickLink('Accounts');
-        self::waitForText('Everyday checking');
-        $account = WebDriverBy::partialLinkText('Everyday checking');
+        self::waitForText('Checking');
+        $account = WebDriverBy::partialLinkText('Checking');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($account))->click();
         self::waitForText('Balance');
         self::wait()->until(function (): bool {

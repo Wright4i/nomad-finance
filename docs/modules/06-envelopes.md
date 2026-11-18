@@ -18,6 +18,6 @@ A locked bucket's target on screen starts at the bills in that month, counted on
 
 Reaching zero available-to-assign celebrates once in that month.
 
-Demo seed: Road cushion has one envelope, shown on the closed month and the open month. Camp jar and Glovebox are in the pool. Rig fund stays out of the pool and stays in net worth.
+Demo seed: Road cushion has one envelope, 200.00 on the closed October period and 500.00 on the open November period. Checking and Center console are in the pool. Savings and Park deposit stay out of the pool and stay in net worth.
 
 Each payor has an open period, and that period only says when the paycheck arrives. Available to assign is one total for the books. The envelope is one amount per bucket, not one amount per period. See [one cash pool](../adr/0012-one-pool-across-payors.md).

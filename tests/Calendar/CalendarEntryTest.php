@@ -184,7 +184,8 @@ final class CalendarEntryTest extends TestCase
             'endOn' => '2026-11-02',
         ]);
 
-        self::assertSame(['2026-11-05', '2026-11-06'], $this->days($entries->month('2026-11'), 'Dump and fill'));
+        self::assertSame(['2026-10-06', '2026-10-07'], $this->days($entries->month('2026-10'), 'Dump and fill'));
+        self::assertSame([], $this->days($entries->month('2026-11'), 'Dump and fill'));
         self::assertSame(['2026-11-01', '2026-11-02'], $this->days($entries->month('2026-11'), 'Range 1'));
         self::assertSame(['2026-10-30', '2026-10-31'], $this->days($entries->month('2026-10'), 'Range 1'));
         self::assertSame([], $this->days($entries->month('2026-12'), 'Range 1'));
@@ -198,15 +199,22 @@ final class CalendarEntryTest extends TestCase
             new TripService($this->pdo, $actor, $catalog, new Drive(false)),
             $entries,
         );
-        $sheet = $dashboard->show('2026-11-01');
-        self::assertSame(['2026-11-01', '2026-11-02'], $this->timelineDays($sheet['timeline'], 'Range 1'));
-        self::assertSame(['2026-11-05', '2026-11-06'], $this->timelineDays($sheet['timeline'], 'Dump and fill'));
-        self::assertNotContains('2026-10-31', $this->timelineDays($sheet['timeline'], 'Range 1'));
+        $auth->updateSettings(['acctPeriodStart' => '2026-10-01']);
+        $october = $dashboard->show('2026-10-06');
+        self::assertSame(['2026-10-30', '2026-10-31'], $this->timelineDays($october['timeline'], 'Range 1'));
+        self::assertSame(['2026-10-06', '2026-10-07'], $this->timelineDays($october['timeline'], 'Dump and fill'));
+        $auth->updateSettings(['acctPeriodStart' => '2026-11-01']);
+        $november = $dashboard->show('2026-11-01');
+        self::assertSame(['2026-11-01', '2026-11-02'], $this->timelineDays($november['timeline'], 'Range 1'));
+        self::assertSame([], $this->timelineDays($november['timeline'], 'Dump and fill'));
+        self::assertNotContains('2026-10-31', $this->timelineDays($november['timeline'], 'Range 1'));
 
         $entries->delete((int) $created['id']);
         $after = $dashboard->show('2026-11-01');
         self::assertSame([], $this->timelineDays($after['timeline'], 'Range 1'));
-        self::assertSame(['2026-11-05', '2026-11-06'], $this->timelineDays($after['timeline'], 'Dump and fill'));
+        $auth->updateSettings(['acctPeriodStart' => '2026-10-01']);
+        $octoberAfter = $dashboard->show('2026-10-06');
+        self::assertSame(['2026-10-06', '2026-10-07'], $this->timelineDays($octoberAfter['timeline'], 'Dump and fill'));
     }
 
     /** @param list<array<string, mixed>> $entries

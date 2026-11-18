@@ -147,7 +147,7 @@ final class LogTest extends TestCase
                     });
                     const logBody = await logged.json();
                     const vehicles = await (await fetch('/api/vehicles', { headers: accept, credentials: 'same-origin' })).json();
-                    const first = vehicles.vehicles.find((item) => item.name === 'Bunkhouse');
+                    const first = vehicles.vehicles.find((item) => item.name === 'Pickup');
                     const detail = await (await fetch('/api/vehicles/' + first.id, { headers: accept, credentials: 'same-origin' })).json();
                     done({
                         vehicleStatus: step.vehicleStatus,
@@ -173,8 +173,8 @@ final class LogTest extends TestCase
 
         self::clickLink('New log');
         self::waitForText('New log');
-        self::waitForField('odometer', '10500');
-        self::waitForField('price', '4.00');
+        self::waitForField('odometer', '64900');
+        self::waitForField('price', '5.50');
         self::assertSame('0', self::attr('[data-miles]', 'data-miles'));
         self::assertSame('', self::attr('[data-mpg]', 'data-mpg'));
         self::type('amount', '10');
@@ -227,14 +227,14 @@ final class LogTest extends TestCase
         self::assertSame($seeded['balance'] + 1000, $after['balance']);
 
         self::driver()->navigate()->refresh();
-        self::waitForField('odometer', '10500');
-        self::waitForField('price', '4.00');
+        self::waitForField('odometer', '64900');
+        self::waitForField('price', '5.50');
         self::chooseVehicle('Vehicle 2');
         self::waitForField('odometer', '2500');
         self::waitForField('price', '5.25');
-        self::chooseVehicle('Bunkhouse');
-        self::waitForField('odometer', '10500');
-        self::waitForField('price', '4.00');
+        self::chooseVehicle('Pickup');
+        self::waitForField('odometer', '64900');
+        self::waitForField('price', '5.50');
         self::replace('odometer', '10800');
         self::replace('price', '3.50');
         self::chooseVehicle('Vehicle 2');
@@ -249,8 +249,8 @@ final class LogTest extends TestCase
         self::driver()->get(self::$base . '/log');
         self::waitForText('Save log');
         self::waitForAccount();
-        self::waitForField('odometer', '10500');
-        self::waitForField('price', '4.00');
+        self::waitForField('odometer', '64900');
+        self::waitForField('price', '5.50');
         self::type('amount', '20');
         self::replace('odometer', '10600');
         self::click('Save log');
@@ -338,12 +338,12 @@ final class LogTest extends TestCase
         $after = self::fuelAccount();
         self::assertSame($before['balance'], $after['balance']);
 
-        $checking = self::accountBalance('Everyday checking');
+        $checking = self::accountBalance('Checking');
         self::driver()->get(self::$base . '/log');
         self::waitForText('Save log');
         self::click('Need');
         self::waitForAccount();
-        self::chooseAccount('Everyday checking');
+        self::chooseAccount('Checking');
         self::type('name', 'Logged Milk');
         self::type('amount', '4');
         self::click('Save log');
@@ -351,7 +351,7 @@ final class LogTest extends TestCase
         self::driver()->get(self::$base . '/bills');
         Reveal::bill(self::driver(), 'Logged Milk', 'paid');
         self::waitForText('Logged Milk');
-        self::assertSame($checking - 400, self::accountBalance('Everyday checking'));
+        self::assertSame($checking - 400, self::accountBalance('Checking'));
     }
 
     #[Depends('testANeedLogOmitsFuelAndSavingIsNotALog')]

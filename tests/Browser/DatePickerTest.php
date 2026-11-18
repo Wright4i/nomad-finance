@@ -109,8 +109,8 @@ final class DatePickerTest extends TestCase
         self::assertFalse(self::pickerOpen());
 
         self::clickLink('Income');
-        self::waitForText('Photo gigs');
-        $payroll = WebDriverBy::xpath('//article[contains(., "Photo gigs")]//button[normalize-space()="Log Payroll"]');
+        self::waitForText('Day job');
+        $payroll = WebDriverBy::xpath('//article[contains(., "Day job")]//button[normalize-space()="Log Payroll"]');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($payroll))->click();
         self::waitForText('Add a date');
         self::assertTrue(self::payrollOpen());

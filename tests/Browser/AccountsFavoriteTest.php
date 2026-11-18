@@ -104,39 +104,39 @@ final class AccountsFavoriteTest extends TestCase
         self::waitForText('Fuel card');
         $board = self::board();
         self::assertTrue($board['rule']);
-        self::assertSame(['Fuel card', 'Travel card', 'Emergency fund'], $board['top']);
-        self::assertContains('Wallet', $board['below']);
-        self::assertContains('Everyday checking', $board['below']);
+        self::assertSame(['Fuel card', 'Travel card', 'Checking'], $board['top']);
+        self::assertContains('Center console', $board['below']);
+        self::assertContains('Savings', $board['below']);
         self::assertSame('true', self::pressed('Fuel card', 'gas'));
         self::assertSame('true', self::pressed('Travel card', 'shopping'));
-        self::assertSame('true', self::pressed('Emergency fund', 'asset'));
-        self::assertNull(self::mark('Wallet', 'asset'));
+        self::assertSame('true', self::pressed('Checking', 'asset'));
+        self::assertNull(self::mark('Center console', 'asset'));
         self::assertFavoriteMarks();
 
         self::clickLink('Transfers');
         self::click('Between accounts');
         self::waitForText('From');
         self::wait()->until(function (): bool {
-            return self::selected('moveSource') === 'Emergency fund | $8,600.00';
+            return self::selected('moveSource') === 'Checking - Credit union (Demo) | $2,660.00';
         });
 
         self::clickLink('Accounts');
-        self::waitForText('Emergency fund');
-        self::clickMark('Emergency fund', 'asset');
+        self::waitForText('Checking');
+        self::clickMark('Checking', 'asset');
         self::wait()->until(function (): bool {
             $board = self::board();
 
-            return !in_array('Emergency fund', $board['top'], true) && self::mark('Wallet', 'asset') !== null;
+            return !in_array('Checking', $board['top'], true) && self::mark('Center console', 'asset') !== null;
         });
-        self::clickMark('Wallet', 'asset');
+        self::clickMark('Center console', 'asset');
         self::wait()->until(function (): bool {
             $board = self::board();
 
-            return in_array('Wallet', $board['top'], true)
-                && !in_array('Emergency fund', $board['top'], true)
-                && self::pressed('Wallet', 'asset') === 'true';
+            return in_array('Center console', $board['top'], true)
+                && !in_array('Checking', $board['top'], true)
+                && self::pressed('Center console', 'asset') === 'true';
         });
-        self::assertNull(self::mark('Emergency fund', 'asset'));
+        self::assertNull(self::mark('Checking', 'asset'));
 
         self::clickLink('New log');
         self::waitForText('New log');
@@ -152,7 +152,7 @@ final class AccountsFavoriteTest extends TestCase
         self::click('Between accounts');
         self::waitForText('From');
         self::wait()->until(function (): bool {
-            return self::selected('moveSource') === 'Wallet | $86.00';
+            return self::selected('moveSource') === 'Center console | $115.00';
         });
     }
 
@@ -168,18 +168,18 @@ final class AccountsFavoriteTest extends TestCase
         self::clickAccount('Scratch jar');
         self::waitForText('Archive');
         self::click('Archive');
-        self::waitForText('Everyday checking');
+        self::waitForText('Checking');
         self::waitForTextGone('Scratch jar');
         self::click('Show archived');
         self::waitForText('Scratch jar');
-        self::waitForText('Closed checking');
+        self::waitForText('Old checking');
         self::clickAccountDelete('Scratch jar');
         self::waitForText('Delete this account?');
         self::assertSame('/accounts', (string) parse_url((string) self::driver()->getCurrentURL(), PHP_URL_PATH));
         self::click('Cancel');
         self::waitForTextGone('Delete this account?');
         self::waitForText('Scratch jar');
-        self::waitForText('Closed checking');
+        self::waitForText('Old checking');
         self::clickAccount('Scratch jar');
         self::waitForText('Unarchive');
         self::click('Delete');
@@ -189,10 +189,10 @@ final class AccountsFavoriteTest extends TestCase
         self::waitForText('Unarchive');
         self::click('Delete');
         self::click('Delete account');
-        self::waitForText('Everyday checking');
+        self::waitForText('Checking');
         self::waitForTextGone('Scratch jar');
         self::click('Show archived');
-        self::waitForText('Closed checking');
+        self::waitForText('Old checking');
         self::waitForTextGone('Scratch jar');
         self::assertSame('/accounts', (string) parse_url((string) self::driver()->getCurrentURL(), PHP_URL_PATH));
     }
@@ -230,11 +230,11 @@ final class AccountsFavoriteTest extends TestCase
                 const color = glyph ? getComputedStyle(glyph).color : '';
                 return { path: path ? path.getAttribute('d') : '', color };
             };
-            const budget = tile('Everyday checking')?.querySelector('.account-budget path');
+            const budget = tile('Checking')?.querySelector('.account-budget path');
             return {
                 gas: icon('Fuel card', 'gas'),
                 shopping: icon('Travel card', 'shopping'),
-                asset: icon('Emergency fund', 'asset'),
+                asset: icon('Checking', 'asset'),
                 budget: budget ? budget.getAttribute('d') : '',
             };
         JS);
@@ -246,7 +246,7 @@ final class AccountsFavoriteTest extends TestCase
         self::assertSame('rgb(255, 255, 255)', $marks['asset']['color'] ?? null);
 
         foreach (['gas' => 'Default Fuel', 'shopping' => 'Default Shopping', 'asset' => 'Default Asset'] as $kind => $label) {
-            $name = $kind === 'gas' ? 'Fuel card' : ($kind === 'shopping' ? 'Travel card' : 'Emergency fund');
+            $name = $kind === 'gas' ? 'Fuel card' : ($kind === 'shopping' ? 'Travel card' : 'Checking');
             self::driver()->executeScript(<<<'JS'
                 const name = arguments[0];
                 const kind = arguments[1];

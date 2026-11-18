@@ -100,7 +100,7 @@ final class PlannerWidgetsTest extends TestCase
         self::click('Log out');
         self::waitForText('Use demo');
         self::click('Use demo');
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
 
         $seen = self::driver()->executeScript(<<<'JS'
@@ -365,7 +365,7 @@ final class PlannerWidgetsTest extends TestCase
             $seen['widgets'],
         );
         self::assertSame('net,income,calendar,trips,accounts,envelopes,bills', $seen['order']);
-        self::assertStringContainsString('Camp host', $seen['income']);
+        self::assertStringContainsString('Side job', $seen['income']);
         self::assertStringContainsString('Nov 8, 2026', $seen['income']);
         self::assertStringContainsString('$192.00', $seen['income']);
         self::assertStringNotContainsString('payors', strtolower((string) $seen['income']));
@@ -402,8 +402,8 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('Calendar', (string) $seen['calendar']);
         self::assertGreaterThan(0.5, $seen['dayShare']);
         self::assertStringContainsString('Trips', (string) $seen['trips']);
-        self::assertStringContainsString('Usery Mountain', $seen['trips']);
-        self::assertStringNotContainsString('No current stay', $seen['trips']);
+        self::assertStringContainsString('No current stay', $seen['trips']);
+        self::assertStringNotContainsString('Usery Mountain', $seen['trips']);
         self::assertTrue($seen['tripMap']);
         self::assertStringContainsStringIgnoringCase('Accounts', (string) $seen['accounts']);
         self::assertStringContainsStringIgnoringCase('Budget', (string) $seen['envelopes']);
@@ -417,15 +417,15 @@ final class PlannerWidgetsTest extends TestCase
         self::assertStringContainsString('Available to assign', $seen['envelopes']);
         $accounts = strtolower((string) $seen['accounts']);
         self::assertStringContainsString('checking', $accounts);
-        self::assertStringContainsString('$3,180.00', $accounts);
+        self::assertStringContainsString('$2,660.00', $accounts);
         self::assertStringContainsString('savings', $accounts);
-        self::assertStringContainsString('$10,050.00', $accounts);
+        self::assertStringContainsString('$50,000.00', $accounts);
         self::assertStringContainsString('credit', $accounts);
-        self::assertStringContainsString('$860.00', $accounts);
+        self::assertStringContainsString('$1,733.00', $accounts);
         self::assertStringContainsString('loan', $accounts);
-        self::assertStringContainsString('$2,450.00', $accounts);
+        self::assertStringContainsString('$5,700.00', $accounts);
         self::assertStringContainsString('fuel', $accounts);
-        self::assertStringContainsString('$64.00', $accounts);
+        self::assertStringContainsString('$0.00', $accounts);
         self::assertIsArray($seen['accountsLayout']);
         self::assertGreaterThanOrEqual(3, (int) $seen['accountsLayout']['rowColumns']);
         self::assertSame('hidden', $seen['accountsLayout']['overflowY']);
@@ -660,7 +660,7 @@ final class PlannerWidgetsTest extends TestCase
         });
 
         self::driver()->navigate()->refresh();
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
         $kept = self::driver()->executeScript(<<<'JS'
             return {
                 order: document.querySelector('.planner-board')?.dataset.order ?? '',
@@ -675,7 +675,7 @@ final class PlannerWidgetsTest extends TestCase
             $kept['widgets'],
         );
         self::assertSame('net,bills,income,calendar,trips,accounts,envelopes', $kept['order']);
-        self::assertStringContainsString('Camp host', $kept['income']);
+        self::assertStringContainsString('Side job', $kept['income']);
         self::assertSame(1, $kept['pie']);
 
         // Income is half beside net worth. Calendar, Trips, and Accounts are single, three across.
@@ -771,7 +771,7 @@ final class PlannerWidgetsTest extends TestCase
         );
 
         self::driver()->navigate()->refresh();
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
         $restored = self::driver()->executeScript(<<<'JS'
             return {
                 span: document.querySelector('[data-widget="income"]')?.dataset.span ?? '',
@@ -790,7 +790,7 @@ final class PlannerWidgetsTest extends TestCase
     {
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
 
         self::driver()->findElement(WebDriverBy::cssSelector('a.planner-day'))->click();
         self::wait()->until(
@@ -798,8 +798,7 @@ final class PlannerWidgetsTest extends TestCase
         );
         self::waitForText('Show Income');
         self::driver()->get(self::$base . '/');
-        self::waitForText('Usery Mountain');
-        self::assertStringNotContainsString('No current stay', self::driver()->findElement(WebDriverBy::cssSelector('body'))->getText());
+        self::waitForText('No current stay');
         $square = self::driver()->executeScript(<<<'JS'
             const day = document.querySelector('.planner-day');
             const items = day ? day.querySelector('.day-items') : null;
@@ -811,7 +810,7 @@ final class PlannerWidgetsTest extends TestCase
             };
         JS);
         self::assertIsArray($square);
-        self::assertContains('Usery Mountain', $square['names']);
+        self::assertNotContains('Usery Mountain', $square['names']);
         self::assertSame('auto', $square['overflow']);
         self::assertContains($square['align'], ['start', 'flex-start']);
         $map = null;
@@ -824,12 +823,13 @@ final class PlannerWidgetsTest extends TestCase
                         const pin = globe ? globe.querySelector('.map-pin') : null;
                         const label = pin ? pin.getAttribute('aria-label') || '' : '';
                         const zoom = globe ? Number(globe.dataset.zoom) : 0;
-                        const ok = Boolean(globe)
-                            && globe.dataset.projection === 'mercator'
-                            && globe.dataset.basemap === 'dark_matter'
-                            && zoom > 8 && zoom < 12
-                            && label.includes('Usery Mountain')
-                            && !globe.querySelector('.map-pin-name');
+                        const ok = Boolean(section)
+                            && section.innerText.includes('No current stay')
+                            && (!globe || (
+                                globe.dataset.projection === 'mercator'
+                                && globe.dataset.basemap === 'dark_matter'
+                                && !label.includes('Usery Mountain')
+                            ));
                         return {
                             ok,
                             text: section ? section.innerText.replace(/\s+/g, ' ').trim().slice(0, 240) : '',
@@ -1027,7 +1027,7 @@ final class PlannerWidgetsTest extends TestCase
     {
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
 
         self::sizeWidget('net', 1);
         $narrowNet = self::plannerShrinkMetrics();
@@ -1063,7 +1063,7 @@ final class PlannerWidgetsTest extends TestCase
 
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1000, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
         self::sizeWidget('envelopes', 6);
         $medium = self::plannerMediumLayoutMetrics();
         self::assertTrue($medium['navCollapsed']);
@@ -1080,7 +1080,7 @@ final class PlannerWidgetsTest extends TestCase
 
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1100, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
         self::sizeWidget('envelopes', 6);
         self::sizeWidget('net', 2);
         $midWide = self::plannerShrinkMetrics();
@@ -1089,7 +1089,7 @@ final class PlannerWidgetsTest extends TestCase
 
         self::driver()->manage()->window()->setSize(new WebDriverDimension(820, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
         $narrowMid = self::plannerMediumLayoutMetrics();
         self::assertTrue($narrowMid['interestLostVisible']);
         self::assertTrue($narrowMid['interestInline']);
@@ -1103,7 +1103,7 @@ final class PlannerWidgetsTest extends TestCase
     {
         self::driver()->manage()->window()->setSize(new WebDriverDimension(1280, 900));
         self::driver()->get(self::$base . '/');
-        self::waitForText('Camp host');
+        self::waitForText('Side job');
 
         $default = self::calendarSquares();
         self::assertSame('2', $default['span']);

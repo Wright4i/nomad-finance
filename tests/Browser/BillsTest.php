@@ -351,41 +351,41 @@ final class BillsTest extends TestCase
     public function testTheAssetFavoriteIsTheDrawFromForANewBillAndALockedBill(): void
     {
         self::clickLink('Accounts');
-        self::waitForText('Emergency fund');
+        self::waitForText('Checking');
         $favorite = self::driver()->executeScript(<<<'JS'
-            const button = document.querySelector('button[aria-label="Emergency fund is the asset favorite"]');
+            const button = document.querySelector('button[aria-label="Checking is the asset favorite"]');
             return Boolean(button && button.getAttribute('aria-pressed') === 'true');
         JS);
         self::assertTrue($favorite === true);
         self::clickLink('Bills');
         self::clickLink('New bill');
-        self::assertSame('Emergency fund', self::selectedAccount());
+        self::assertSame('Checking', self::selectedAccount());
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Travel card', 'active');
         self::openBill('Travel card');
-        self::assertSame('Emergency fund', self::selectedAccount());
+        self::assertSame('Checking', self::selectedAccount());
 
         self::clickLink('Accounts');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
-            WebDriverBy::cssSelector('button[aria-label="Emergency fund is the asset favorite"]'),
+            WebDriverBy::cssSelector('button[aria-label="Checking is the asset favorite"]'),
         ))->click();
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable(
-            WebDriverBy::cssSelector('button[aria-label="Make Wallet the asset favorite"]'),
+            WebDriverBy::cssSelector('button[aria-label="Make Center console the asset favorite"]'),
         ))->click();
         self::wait()->until(function (): bool {
             $ready = self::driver()->executeScript(
-                'return document.querySelector(\'button[aria-label="Wallet is the asset favorite"]\') !== null;',
+                'return document.querySelector(\'button[aria-label="Center console is the asset favorite"]\') !== null;',
             );
 
             return $ready === true;
         });
         self::clickLink('Bills');
         self::clickLink('New bill');
-        self::assertSame('Wallet', self::selectedAccount());
+        self::assertSame('Center console', self::selectedAccount());
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Travel card', 'active');
         self::openBill('Travel card');
-        self::assertSame('Wallet', self::selectedAccount());
+        self::assertSame('Center console', self::selectedAccount());
     }
 
     private static function selectedAccount(): string

@@ -72,63 +72,68 @@ final class TimelineTest extends TestCase
         self::assertArrayNotHasKey('horizonDays', $sheet);
         self::assertSame('2026-11-01', $sheet['windowStart']);
         self::assertSame('2026-11-30', $sheet['windowEnd']);
-        self::assertSame(624200, $sheet['incomeMinor']);
+        self::assertSame(877333, $sheet['incomeMinor']);
         self::assertArrayNotHasKey('billsDue', $sheet);
 
         $income = [];
         foreach ($sheet['income'] as $row) {
             $income[$row['payor']] = $row;
         }
-        self::assertCount(3, $income);
-        self::assertSame(19200, $income['Camp host']['paycheckMinor']);
-        self::assertSame(560000, $income['Remote salary']['paycheckMinor']);
-        self::assertSame(45000, $income['Photo gigs']['paycheckMinor']);
-        self::assertNull($income['Camp host']['average']);
-        self::assertFalse($income['Camp host']['averageOn']);
+        self::assertCount(2, $income);
+        self::assertSame(833333, $income['Day job']['paycheckMinor']);
+        self::assertSame(44000, $income['Side job']['paycheckMinor']);
+        self::assertNull($income['Side job']['average']);
+        self::assertTrue($income['Side job']['averageOn']);
+        self::assertFalse($income['Day job']['averageOn']);
 
-        $paydays = $this->rows($sheet['timeline'], 'payday', 'Camp host');
+        $paydays = $this->rows($sheet['timeline'], 'payday', 'Side job');
         $byDay = [];
         foreach ($paydays as $row) {
             $byDay[$row['on']] = $row;
             self::assertNotSame('average', $row['kind']);
         }
-        self::assertSame(19200, $byDay['2026-11-08']['paycheckMinor']);
-        self::assertSame(19200, $byDay['2026-11-01']['paycheckMinor']);
+        self::assertSame(44000, $byDay['2026-11-16']['paycheckMinor']);
+        self::assertSame(44000, $byDay['2026-11-01']['paycheckMinor']);
+        $salary = $this->rows($sheet['timeline'], 'payday', 'Day job');
+        self::assertSame('2026-11-01', $salary[0]['on']);
+        self::assertSame(833333, $salary[0]['paycheckMinor']);
 
         self::assertNotContains('2026-10-15', $this->dates($sheet['timeline'], 'bill'));
         self::assertContains('2026-11-10', $this->dates($sheet['timeline'], 'bill', 'Site week'));
         self::assertNotContains('2026-12-05', $this->dates($sheet['timeline'], 'bill', 'Park pass'));
         self::assertGreaterThan(1, count($this->dates($sheet['timeline'], 'bill', 'Camp store')));
+        self::assertSame([], $this->dates($sheet['timeline'], 'stay'));
+        self::assertSame([], $this->dates($sheet['timeline'], 'balanceDue'));
 
         $trips = new TripService($this->pdo, new Actor($this->pdo), new CurrencyCatalog(), new Drive(false));
         $places = [];
-        foreach ($trips->list('2026-11-03') as $trip) {
+        foreach ($trips->list('2026-10-06') as $trip) {
             $places[$trip['placeName']] = $trip;
         }
-        self::assertNull($places['Devils Garden']['fuel']['miles']);
-        self::assertNull($places['Devils Garden']['fuel']['costMinor']);
-        self::assertNotNull($places['Lost Dutchman']['fuel']['miles']);
-        self::assertNotNull($places['Lost Dutchman']['fuel']['costMinor']);
+        self::assertNull($places['Home base']['fuel']['miles']);
+        self::assertNull($places['Home base']['fuel']['costMinor']);
+        self::assertNull($places['OCEAN User Group']['fuel']['miles']);
+        self::assertNotNull($places['Oak Creek RV Park']['fuel']['miles']);
+        self::assertNotNull($places['Oak Creek RV Park']['fuel']['costMinor']);
 
+        $this->auth->updateSettings(['acctPeriodStart' => '2026-10-01']);
+        $october = $this->dashboard->show('2026-10-07');
         $stays = [];
-        foreach ($sheet['timeline'] as $row) {
-            self::assertNotSame('average', $row['kind']);
+        foreach ($october['timeline'] as $row) {
             if ($row['kind'] === 'stay') {
                 $stays[$row['placeName']] = $row;
             }
         }
-        self::assertArrayNotHasKey('Devils Garden', $stays);
-        self::assertNotNull($stays['Lost Dutchman']['fuel']['miles']);
-        self::assertNotNull($stays['Usery Mountain']['fuel']['miles']);
-        self::assertContains('2026-11-22', $this->dates($sheet['timeline'], 'balanceDue', 'Lost Dutchman'));
+        self::assertNotNull($stays['Oasis Las Vegas RV Resort']['fuel']['miles']);
+        self::assertArrayNotHasKey('Home base', $stays);
 
-        $this->auth->updateSettings(['acctPeriodLength' => '2 weeks']);
+        $this->auth->updateSettings(['acctPeriodStart' => '2026-11-01', 'acctPeriodLength' => '2 weeks']);
         $shorter = $this->dashboard->show('2026-11-03');
         self::assertSame('2026-11-14', $shorter['windowEnd']);
         self::assertNotContains('2026-12-05', $this->dates($shorter['timeline'], 'bill', 'Park pass'));
-        self::assertNotContains('2026-12-15', $this->dates($shorter['timeline'], 'payday', 'Photo gigs'));
-        self::assertNotContains('2026-12-01', $this->dates($shorter['timeline'], 'payday', 'Remote salary'));
-        self::assertSame(624200, $shorter['incomeMinor']);
+        self::assertNotContains('2026-11-16', $this->dates($shorter['timeline'], 'payday', 'Side job'));
+        self::assertNotContains('2026-12-01', $this->dates($shorter['timeline'], 'payday', 'Day job'));
+        self::assertSame(877333, $shorter['incomeMinor']);
         $sources = 0;
         foreach ($shorter['envelopes']['sources']['income'] as $row) {
             $sources += (int) $row['amountMinor'];
@@ -153,12 +158,12 @@ final class TimelineTest extends TestCase
         $sheet = $this->dashboard->show('2026-11-04');
         $november = $this->slices($sheet['duePies']);
         self::assertSame(['USD'], array_keys($november));
-        self::assertSame('healthcare', array_key_first($november['USD']));
+        self::assertSame('rent', array_key_first($november['USD']));
         self::assertSame(80500, $november['USD']['rent']);
         self::assertGreaterThan(4968, $november['USD']['electricity']);
-        self::assertSame(230000, $november['USD']['healthcare']);
+        self::assertSame(2900, $november['USD']['healthcare']);
         self::assertSame(800, $november['USD']['other']);
-        self::assertSame(3500, $november['USD']['debt']);
+        self::assertSame(14500, $november['USD']['debt']);
         self::assertArrayNotHasKey('entertainment', $november['USD']);
 
         $this->pdo->prepare('UPDATE user SET acct_period_start = ? WHERE id = ?')
@@ -166,7 +171,7 @@ final class TimelineTest extends TestCase
         $later = $this->dashboard->show('2026-11-04');
         $december = $this->slices($later['duePies']);
         self::assertSame(8000, $december['USD']['entertainment']);
-        self::assertSame(270500, $december['USD']['debt']);
+        self::assertSame(14500, $december['USD']['debt']);
     }
 
     /**

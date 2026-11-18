@@ -153,7 +153,7 @@ final class RegisterTest extends TestCase
         self::assertIsString($hovered);
         self::assertNotSame($resting, $hovered);
         self::clickLink('Accounts');
-        self::waitForText('Everyday checking');
+        self::waitForText('Checking');
         self::clickLink('Bills');
         Reveal::bill(self::driver(), 'Site week', 'active');
         self::waitForText('Site week');
@@ -182,7 +182,7 @@ final class RegisterTest extends TestCase
         self::waitForText('Scratch');
         self::click('Reset demo data');
         self::click('Reset the sample books');
-        self::waitForText('Everyday checking');
+        self::waitForText('Checking');
         self::waitForTextGone('Scratch');
     }
 
@@ -225,7 +225,7 @@ final class RegisterTest extends TestCase
         self::click('Unlock');
         self::waitForText('Net worth');
         self::waitForMoney('$0.00');
-        self::waitForTextGone('Everyday checking');
+        self::waitForTextGone('Checking');
         self::waitForTextGone('Scratch');
     }
 

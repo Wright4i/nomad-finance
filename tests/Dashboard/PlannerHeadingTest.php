@@ -164,34 +164,34 @@ final class PlannerHeadingTest extends TestCase
                 new CalendarEntryService($pdo, $actor),
             );
 
-            $plain = $dashboard->show('2026-11-05');
-            self::assertContains($plain['heading'], $this->phrases('Mesa'));
+            $plain = $dashboard->show('2026-10-07');
+            self::assertContains($plain['heading'], $this->phrases('Las Vegas'));
             self::assertTrue($plain['headingItalic']);
 
             $books = $this->books($pdo);
             $current = null;
-            foreach ($trips->list('2026-11-05', false) as $trip) {
-                if ($trip['arriveOn'] <= '2026-11-05' && '2026-11-05' <= $trip['departOn']) {
+            foreach ($trips->list('2026-10-07', false) as $trip) {
+                if ($trip['arriveOn'] <= '2026-10-07' && '2026-10-07' <= $trip['departOn']) {
                     $current = $trip;
                     break;
                 }
             }
             self::assertIsArray($current);
-            self::assertSame('Usery Mountain', $current['placeName']);
+            self::assertSame('Oasis Las Vegas RV Resort', $current['placeName']);
             $trips->update((int) $current['id'], [
-                'placeName' => 'Usery Mountain',
-                'arriveOn' => '2026-10-30',
-                'departOn' => '2026-11-13',
-                'latitude' => '33.4805',
-                'longitude' => '-111.6135',
+                'placeName' => $current['placeName'],
+                'arriveOn' => $current['arriveOn'],
+                'departOn' => $current['departOn'],
+                'latitude' => $current['latitude'],
+                'longitude' => $current['longitude'],
                 'city' => null,
-                'region' => 'AZ',
+                'region' => $current['region'],
                 'accountId' => $current['accountId'],
-                'totalMinor' => 44800,
-                'amountDueMinor' => 0,
-                'today' => '2026-11-05',
+                'totalMinor' => $current['totalMinor'],
+                'amountDueMinor' => $current['amountDueMinor'],
+                'today' => '2026-10-07',
             ]);
-            $cleared = $dashboard->show('2026-11-05');
+            $cleared = $dashboard->show('2026-10-07');
             self::assertSame('Planner', $cleared['heading']);
             self::assertFalse($cleared['headingItalic']);
             self::assertSame($books, $this->books($pdo));

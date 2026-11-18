@@ -133,36 +133,30 @@ final class PlannerWidgetsTest extends TestCase
             ->execute(['2026-11-01', '1 month', $_SESSION['user_id']]);
         $sheet = $this->dashboard->show('2026-11-05');
         self::assertSame([
-            'payor' => 'Camp host',
-            'on' => '2026-11-08',
-            'paycheckMinor' => 19200,
+            'payor' => 'Side job',
+            'on' => '2026-11-16',
+            'paycheckMinor' => 44000,
         ], $sheet['payday']);
-        self::assertSame(3, $sheet['payorCount']);
-        self::assertNotNull($sheet['stay']);
-        self::assertSame('Usery Mountain', $sheet['stay']['placeName']);
-        self::assertSame('Mesa', $sheet['stay']['city']);
+        self::assertSame(2, $sheet['payorCount']);
+        self::assertNull($sheet['stay']);
         self::assertSame(PlannerWidgets::ORDER, $sheet['plannerOrder']);
         $byType = [];
         foreach ($sheet['accountTotals'] as $row) {
-            $byType[$row['type']] = $row;
+            $byType[$row['type'] . ':' . $row['side']] = $row;
         }
-        self::assertSame(318000, $byType['checking']['balanceMinor']);
-        self::assertSame('asset', $byType['checking']['side']);
-        self::assertSame(1005000, $byType['savings']['balanceMinor']);
-        self::assertSame(27100, $byType['cash']['balanceMinor']);
-        self::assertSame(86000, $byType['credit']['balanceMinor']);
-        self::assertSame('liability', $byType['credit']['side']);
-        self::assertSame(245000, $byType['loan']['balanceMinor']);
-        self::assertSame('liability', $byType['loan']['side']);
-        self::assertSame(6400, $byType['fuel']['balanceMinor']);
-        self::assertSame('liability', $byType['fuel']['side']);
+        self::assertSame(266000, $byType['checking:asset']['balanceMinor']);
+        self::assertSame(5000000, $byType['savings:asset']['balanceMinor']);
+        self::assertSame(11500, $byType['cash:asset']['balanceMinor']);
+        self::assertSame(173300, $byType['credit:liability']['balanceMinor']);
+        self::assertSame(570000, $byType['loan:liability']['balanceMinor']);
+        self::assertSame(0, $byType['fuel:liability']['balanceMinor']);
         $other = array_values(array_filter(
             $sheet['accountTotals'],
             static fn (array $row): bool => $row['type'] === 'other',
         ));
         self::assertSame(
             [
-                ['type' => 'other', 'balanceMinor' => 185000, 'side' => 'asset'],
+                ['type' => 'other', 'balanceMinor' => 50000, 'side' => 'asset'],
                 ['type' => 'other', 'balanceMinor' => 8500, 'side' => 'liability'],
             ],
             $other,
@@ -180,7 +174,7 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame(400, PlannerWidgets::stillComing([$received, $today, $later, $nextMonth], '2026-12', '2026-11-05'));
         self::assertSame(500, PlannerWidgets::stillComingBetween([$received, $today, $later, $nextMonth], '2026-11-01', '2026-11-30', '2026-11-05'));
         self::assertSame(400, PlannerWidgets::stillComingBetween([$received, $today, $later, $nextMonth], '2026-12-01', '2026-12-31', '2026-11-05'));
-        self::assertSame(76800, $sheet['incomeComing']);
+        self::assertSame(44000, $sheet['incomeComing']);
     }
 
     public function testPayStayAndBillsFollowTheAppToday(): void
@@ -222,8 +216,11 @@ final class PlannerWidgetsTest extends TestCase
         self::assertSame('Underway', $covered['placeName']);
 
         $sheet = $this->dashboard->show($today);
-        self::assertIsArray($sheet['payday']);
-        self::assertGreaterThanOrEqual($today, $sheet['payday']['on']);
+        if ($sheet['payday'] === null) {
+            self::assertGreaterThan('2026-11-16', $today);
+        } else {
+            self::assertGreaterThanOrEqual($today, $sheet['payday']['on']);
+        }
         if ($sheet['stay'] !== null) {
             $stay = $sheet['stay'];
             $leads = $stay['arriveOn'] === $today || $stay['arriveOn'] === $tomorrow;
