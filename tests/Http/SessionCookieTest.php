@@ -6,6 +6,7 @@ namespace App\Tests\Http;
 
 use App\Http\SessionMiddleware;
 use PHPUnit\Framework\TestCase;
+use Slim\Psr7\Factory\ServerRequestFactory;
 
 final class SessionCookieTest extends TestCase
 {
@@ -28,6 +29,17 @@ final class SessionCookieTest extends TestCase
             'nomad_finance_session=abc; Path=/; HttpOnly; SameSite=Lax',
             SessionMiddleware::setCookie('abc', false),
         );
+    }
+
+    public function testProxiedHttpsCountsAsSecure(): void
+    {
+        $factory = new ServerRequestFactory();
+        $plain = $factory->createServerRequest('GET', 'http://127.0.0.1:8080/');
+        self::assertFalse(SessionMiddleware::https($plain));
+        $forwarded = $plain->withHeader('X-Forwarded-Proto', 'https');
+        self::assertTrue(SessionMiddleware::https($forwarded));
+        $visitor = $plain->withHeader('CF-Visitor', '{"scheme":"https"}');
+        self::assertTrue(SessionMiddleware::https($visitor));
     }
 
     public function testLogoutExpiresThePartitionedCookie(): void
