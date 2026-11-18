@@ -401,6 +401,10 @@ final class ResetTest extends TestCase
             "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.name = 'Pickup'"
         )->fetchColumn());
         self::assertSame('fly', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'OCEAN User Group'")->fetchColumn());
+        self::assertSame('fly', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'IBM TechXchange 2026'")->fetchColumn());
+        self::assertSame('Atlanta', $this->pdo->query("SELECT city FROM trips WHERE place_name = 'IBM TechXchange 2026'")->fetchColumn());
+        self::assertSame('2026-10-24', $this->pdo->query("SELECT arrive_on FROM trips WHERE place_name = 'IBM TechXchange 2026'")->fetchColumn());
+        self::assertSame('2026-10-28', $this->pdo->query("SELECT depart_on FROM trips WHERE place_name = 'IBM TechXchange 2026'")->fetchColumn());
         self::assertSame('drive', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
         self::assertSame('2026-10-24', $this->pdo->query("SELECT depart_on FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
         self::assertSame(0, (int) $this->pdo->query("SELECT amount_due_minor FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
@@ -429,7 +433,7 @@ final class ResetTest extends TestCase
             }
         }
         self::assertSame('2026-01-01', $first);
-        self::assertSame('2026-10-24', $last);
+        self::assertSame('2026-10-28', $last);
         $missing = [];
         for ($day = new \DateTimeImmutable((string) $first); $day <= new \DateTimeImmutable((string) $last); $day = $day->modify('+1 day')) {
             $key = $day->format('Y-m-d');

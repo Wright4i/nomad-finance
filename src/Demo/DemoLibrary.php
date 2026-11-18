@@ -379,8 +379,8 @@ final class DemoLibrary
         $card = (int) $account->fetchColumn();
         $fuel = SystemBuckets::idForType($this->pdo, $userId, 'fuel');
 
-        // Home through one night at Las Vegas RV Resort. Every day in that span is on a site.
-        // The house address is a city pin. The conference note and street are left off.
+        // Home through the Atlanta conference. Every day in that span is on a site.
+        // The house address is a city pin. The Anaheim conference note and street are left off.
         $this->stay($userId, $now, 'Home base', null, '2026-01-01', '2026-06-15', '33.8753', '-117.5664', 'Corona', 'CA', 'Corona, CA', $checking, 0, 0, '2026-01-01', null, null);
         $this->stay($userId, $now, 'Oak Creek RV Park', null, '2026-06-14', '2026-06-15', '36.83658', '-118.22897', 'Independence', 'CA', '131 N US-395, Independence, CA 93526', $checking, 0, 0, '2026-06-14', null, null);
         $this->stay($userId, $now, 'Lake Tahoe KOA', null, '2026-06-15', '2026-06-16', '38.84678', '-120.02868', 'South Lake Tahoe', 'CA', '760 North Highway 50, South Lake Tahoe, CA 96150', $checking, 0, 0, '2026-06-15', 8, 'Lake and pines.');
@@ -423,6 +423,7 @@ final class DemoLibrary
         $this->stay($userId, $now, 'Twin Falls / Jerome KOA Holiday', 'STE 15', '2026-10-15', '2026-10-21', '42.66002', '-114.44472', 'Jerome', 'ID', '441 S Liberty Lane, Jerome, ID 83338', $checking, 0, 0, '2026-10-15', null, null);
         $this->stay($userId, $now, 'Ely KOA Journey', null, '2026-10-21', '2026-10-23', '39.21545', '-114.85431', 'Ely', 'NV', '1596 S Hwy 93, Ely, NV 89301', $checking, 0, 0, '2026-10-21', null, null);
         $this->stay($userId, $now, 'Las Vegas RV Resort', 'Site 314', '2026-10-23', '2026-10-24', '36.1202672', '-115.0620385', 'Las Vegas', 'NV', '3890 South Nellis Boulevard, Las Vegas, NV 89121', $card, 86124, 0, '2026-10-23', null, null);
+        $this->stay($userId, $now, 'IBM TechXchange 2026', 'Georgia World Conference', '2026-10-24', '2026-10-28', '33.7649102', '-84.3893243', 'Atlanta', 'GA', '45 Ivan Allen Junior Boulevard, Atlanta, GA 30308', $checking, 0, 0, '2026-10-24', null, null, 'fly');
         $vehicle = $this->vehicle($userId, $now);
         $this->fuelBill($cash, $fuel, $vehicle, '2026-09-15', 22000, 64400, 550, $now);
         $this->fuelBill($cash, $fuel, $vehicle, '2026-10-01', 6000, 64800, 550, $now);
