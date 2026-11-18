@@ -293,7 +293,7 @@ final class WindowAndGlobeTest extends TestCase
         self::replace('arriveOn', '03 / 01 / 2027');
         self::replace('departOn', '03 / 06 / 2027');
         self::replace('balanceDueOn', '10 / 16 / 2026');
-        self::chooseAccount('Everyday checking');
+        self::chooseAccount('Checking');
         self::type('total', '80');
         self::type('amountDue', '40');
         self::click('Save stay');

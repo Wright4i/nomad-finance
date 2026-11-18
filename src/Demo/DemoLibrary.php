@@ -107,43 +107,47 @@ final class DemoLibrary
         $this->pdo->prepare(
             'UPDATE user SET acct_period_start = ?, acct_period_length = \'1 month\' WHERE id = ?'
         )->execute([gmdate('Y-m-01'), $userId]);
-        // Solo full-timer in a Class C. Three paychecks are live. The other pay lengths stay archived so Show archived still has one of each.
+        // Anonymized full-timer. Two live jobs: a $100,000 salary and a lower hourly side job.
+        // The other pay lengths stay archived. Accounts are a short mix, every type still present.
         $checking = $this->account($userId, [
-            'name' => 'Everyday checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 318000, 'holder' => 'Demo',
+            'name' => 'Checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 266000,
+            'holder' => 'Demo', 'institution' => 'Credit union', 'assetFavorite' => true,
         ], $now);
         $this->account($userId, [
-            'name' => 'Closed checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 1840, 'archived' => true,
+            'name' => 'Old checking', 'type' => 'checking', 'side' => 'asset', 'currency' => 'USD', 'balance' => 1840,
+            'institution' => 'Credit union', 'archived' => true,
         ], $now);
         $savings = $this->account($userId, [
-            'name' => 'Emergency fund', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 860000, 'interest' => 450, 'assetFavorite' => true,
-        ], $now);
-        $this->account($userId, [
-            'name' => 'Rig fund', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 145000,
+            'name' => 'Savings', 'type' => 'savings', 'side' => 'asset', 'currency' => 'USD', 'balance' => 5000000,
+            'interest' => 425, 'institution' => 'Online bank', 'holder' => 'Demo',
         ], $now);
         $cash = $this->account($userId, [
-            'name' => 'Wallet', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 8600,
-        ], $now);
-        $this->account($userId, [
-            'name' => 'Camp jar', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 14000,
-        ], $now);
-        $this->account($userId, [
-            'name' => 'Glovebox', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 4500,
+            'name' => 'Center console', 'type' => 'cash', 'side' => 'asset', 'currency' => 'USD', 'balance' => 11500,
         ], $now);
         $card = $this->account($userId, [
-            'name' => 'Travel card', 'type' => 'credit', 'side' => 'liability', 'currency' => 'USD', 'balance' => 86000, 'shoppingFavorite' => true,
-            'interest' => 1999, 'minimum' => 3500, 'dueDay' => 15, 'limit' => 600000, 'autopay' => 'minimum', 'bankAutopay' => true,
+            'name' => 'Travel card', 'type' => 'credit', 'side' => 'liability', 'currency' => 'USD', 'balance' => 173300,
+            'shoppingFavorite' => true, 'interest' => 1800, 'minimum' => 3500, 'dueDay' => 8, 'limit' => 500000,
+            'autopay' => 'balance', 'bankAutopay' => true, 'institution' => 'Card issuer', 'holder' => 'Demo',
         ], $now);
         $loan = $this->account($userId, [
-            'name' => 'Solar loan', 'type' => 'loan', 'side' => 'liability', 'currency' => 'USD', 'balance' => 245000,
-            'interest' => 699, 'minimum' => 8500, 'dueDay' => 1, 'autopay' => 'balance', 'bankAutopay' => true,
+            'name' => 'Truck loan', 'type' => 'loan', 'side' => 'liability', 'currency' => 'USD', 'balance' => 350000,
+            'interest' => 699, 'minimum' => 10000, 'dueDay' => 16, 'autopay' => 'minimum', 'bankAutopay' => true,
+            'institution' => 'Credit union', 'liabilityBillType' => 'vehicle',
+        ], $now);
+        $trailer = $this->account($userId, [
+            'name' => 'Trailer plan', 'type' => 'loan', 'side' => 'liability', 'currency' => 'USD', 'balance' => 220000,
+            'interest' => 0, 'minimum' => 11000, 'dueDay' => 21, 'autopay' => 'minimum', 'bankAutopay' => true,
+            'institution' => 'Lender',
         ], $now);
         $fuelCard = $this->account($userId, [
-            'name' => 'Fuel card', 'type' => 'fuel', 'side' => 'liability', 'currency' => 'USD', 'balance' => 6400, 'gasFavorite' => true,
-            'interest' => 0, 'minimum' => 2500, 'dueDay' => 20, 'limit' => 50000,
-            'autopay' => 'minimum', 'bankAutopay' => true, 'billRecurrence' => 'daily', 'billEvery' => 2,
+            'name' => 'Fuel card', 'type' => 'fuel', 'side' => 'liability', 'currency' => 'USD', 'balance' => 0, 'gasFavorite' => true,
+            'interest' => 0, 'minimum' => 0, 'limit' => 100000,
+            'autopay' => 'balance', 'bankAutopay' => true, 'billRecurrence' => 'daily', 'billEvery' => 7,
+            'institution' => 'Fuel network', 'holder' => 'Demo',
         ], $now);
-        $otherAsset = $this->account($userId, [
-            'name' => 'Solar kit', 'type' => 'other', 'side' => 'asset', 'currency' => 'USD', 'balance' => 185000,
+        $this->account($userId, [
+            'name' => 'Park deposit', 'type' => 'other', 'side' => 'asset', 'currency' => 'USD', 'balance' => 50000,
+            'inBudget' => false,
         ], $now);
         $this->account($userId, [
             'name' => 'Camp tab', 'type' => 'other', 'side' => 'liability', 'currency' => 'USD', 'balance' => 8500,
@@ -154,54 +158,58 @@ final class DemoLibrary
             'recurrence' => 'once', 'anchor' => '2026-11-10', 'next' => '2026-11-10', 'status' => 'active',
         ], $now);
         $this->bill($checking, [
+            'name' => 'Camp rent', 'type' => 'rent', 'amount' => 42000,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-15', 'next' => '2026-11-15', 'status' => 'active',
+        ], $now);
+        $this->bill($checking, [
             'name' => 'Shore power', 'type' => 'electricity', 'amount' => 1800,
             'recurrence' => 'weekly', 'anchor' => '2026-11-01', 'next' => '2026-11-08', 'status' => 'active',
         ], $now);
-        $this->bill($card, [
-            'name' => 'Streaming', 'type' => 'subscriptions', 'amount' => 1599,
-            'recurrence' => 'monthly', 'anchor' => '2026-11-15', 'next' => '2026-11-15', 'status' => 'active', 'autopay' => true,
+        $this->bill($checking, [
+            'name' => 'Phone', 'type' => 'cellular', 'amount' => 26500,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-23', 'next' => '2026-11-23', 'status' => 'active', 'autopay' => true,
         ], $now);
         $this->bill($checking, [
-            'name' => 'Health share', 'type' => 'healthcare', 'amount' => 216000,
-            'recurrence' => 'yearly', 'anchor' => '2026-11-20', 'next' => '2026-11-20', 'status' => 'active',
+            'name' => 'Prescription', 'type' => 'healthcare', 'amount' => 2900,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-17', 'next' => '2026-11-17', 'status' => 'active', 'autopay' => true,
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Health plan', 'type' => 'healthcare', 'amount' => 7900,
+            'recurrence' => 'monthly', 'anchor' => '2026-12-27', 'next' => '2026-12-27', 'status' => 'active', 'autopay' => true,
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Auto insurance', 'type' => 'insurance', 'amount' => 18200,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-26', 'next' => '2026-11-26', 'status' => 'active', 'autopay' => true,
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'RV insurance', 'type' => 'insurance', 'amount' => 10100,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-21', 'next' => '2026-11-21', 'status' => 'active', 'autopay' => true,
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Hotspot', 'type' => 'internet', 'amount' => 1500,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-01', 'next' => '2026-12-01', 'status' => 'active', 'autopay' => true, 'paidOn' => '2026-11-01',
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Camp data', 'type' => 'internet', 'amount' => 8000,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-04', 'next' => '2026-12-04', 'status' => 'active', 'autopay' => true, 'paidOn' => '2026-11-04',
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Starlink', 'type' => 'internet', 'amount' => 17500,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-17', 'next' => '2026-11-17', 'status' => 'active', 'autopay' => true,
         ], $now);
         $this->bill($checking, [
             'name' => 'Registration', 'type' => 'vehicle', 'amount' => 12000,
             'recurrence' => 'yearly', 'every' => 2, 'anchor' => '2027-06-15', 'next' => '2027-06-15', 'status' => 'active',
         ], $now);
         $this->bill($checking, [
-            'name' => 'Estimated tax', 'type' => 'debt', 'amount' => 22000,
-            'recurrence' => 'monthly', 'anchor' => '2026-12-01', 'next' => '2026-12-01', 'status' => 'active',
-        ], $now);
-        $this->bill($checking, [
-            'name' => 'Phone', 'type' => 'cellular', 'amount' => 5500,
-            'recurrence' => 'monthly', 'anchor' => '2026-11-12', 'next' => '2026-11-12', 'status' => 'active',
-        ], $now);
-        $this->bill($checking, [
-            'name' => 'Clinic visit', 'type' => 'healthcare', 'amount' => 14000,
-            'recurrence' => 'once', 'anchor' => '2026-11-21', 'next' => '2026-11-21', 'status' => 'active',
-        ], $now);
-        $this->bill($checking, [
-            'name' => 'DEF fluid', 'type' => 'vehicle', 'amount' => 2800,
-            'recurrence' => 'monthly', 'anchor' => '2026-11-08', 'next' => '2026-11-08', 'status' => 'active',
-        ], $now);
-        $this->bill($checking, [
-            'name' => 'Park pass', 'type' => 'entertainment', 'amount' => 8000,
-            'recurrence' => 'yearly', 'anchor' => '2026-12-05', 'next' => '2026-12-05', 'status' => 'active',
-        ], $now);
-        $this->bill($checking, [
-            'name' => 'Camp store', 'type' => 'shopping', 'amount' => 2200,
-            'recurrence' => 'weekly', 'anchor' => '2026-11-06', 'next' => '2026-11-06', 'status' => 'active',
+            'name' => 'Code host', 'type' => 'subscriptions', 'amount' => 1000,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-26', 'next' => '2026-11-26', 'status' => 'active', 'autopay' => true,
         ], $now);
         $this->bill($cash, [
             'name' => 'Shower tokens', 'type' => 'other', 'otherLabel' => 'Shower tokens', 'amount' => 800,
             'recurrence' => 'once', 'anchor' => '2026-11-18', 'next' => '2026-11-18', 'status' => 'active',
         ], $now);
-        $this->bill($otherAsset, [
-            'name' => 'October site', 'type' => 'rent', 'amount' => 42000,
-            'recurrence' => 'monthly', 'anchor' => '2026-10-15', 'next' => '2026-10-15', 'status' => 'active',
-        ], $now);
-        $this->bill($savings, [
+        $this->bill($checking, [
             'name' => 'Pedestal', 'type' => 'electricity', 'amount' => 2200,
             'recurrence' => 'weekly', 'anchor' => '2026-11-05', 'next' => '2026-11-12', 'status' => 'paused',
         ], $now);
@@ -213,19 +221,24 @@ final class DemoLibrary
             'name' => 'Old meal kit', 'type' => 'groceries', 'amount' => 1200,
             'recurrence' => 'once', 'anchor' => '2026-10-02', 'next' => '2026-10-02', 'status' => 'archived',
         ], $now);
-        $this->bill($savings, [
+        $this->bill($checking, [
             'name' => 'Travel card', 'type' => 'debt', 'amount' => 3500,
-            'recurrence' => 'monthly', 'anchor' => '2026-11-15', 'next' => '2026-11-15', 'status' => 'active',
+            'recurrence' => 'monthly', 'anchor' => '2026-11-08', 'next' => '2026-11-08', 'status' => 'active', 'autopay' => true,
             'sourceAccountId' => $card,
         ], $now);
-        $this->bill($savings, [
-            'name' => 'Solar loan', 'type' => 'debt', 'amount' => 245000,
-            'recurrence' => 'monthly', 'anchor' => '2026-12-01', 'next' => '2026-12-01', 'status' => 'active',
+        $this->bill($checking, [
+            'name' => 'Truck loan', 'type' => 'vehicle', 'amount' => 10000,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-16', 'next' => '2026-11-16', 'status' => 'active', 'autopay' => true,
             'sourceAccountId' => $loan,
         ], $now);
-        $this->bill($savings, [
-            'name' => 'Fuel card', 'type' => 'fuel', 'amount' => 2500,
-            'recurrence' => 'daily', 'every' => 2, 'anchor' => '2027-06-15', 'next' => '2027-06-15', 'status' => 'active', 'autopay' => true,
+        $this->bill($checking, [
+            'name' => 'Trailer plan', 'type' => 'debt', 'amount' => 11000,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-21', 'next' => '2026-11-21', 'status' => 'active',
+            'sourceAccountId' => $trailer,
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Fuel card', 'type' => 'fuel', 'amount' => 4000,
+            'recurrence' => 'daily', 'every' => 7, 'anchor' => '2026-11-07', 'next' => '2026-11-07', 'status' => 'active', 'autopay' => true,
             'sourceAccountId' => $fuelCard,
         ], $now);
         $this->bill($checking, [
@@ -237,12 +250,8 @@ final class DemoLibrary
             'recurrence' => 'monthly', 'anchor' => '2026-11-03', 'next' => '2026-11-03', 'status' => 'active',
         ], $now);
         $this->bill($checking, [
-            'name' => 'Fresh water', 'type' => 'water', 'amount' => 1200,
-            'recurrence' => 'monthly', 'anchor' => '2026-11-09', 'next' => '2026-11-09', 'status' => 'active',
-        ], $now);
-        $this->bill($checking, [
-            'name' => 'Starlink', 'type' => 'internet', 'amount' => 12000,
-            'recurrence' => 'monthly', 'anchor' => '2026-11-11', 'next' => '2026-11-11', 'status' => 'active',
+            'name' => 'Water', 'type' => 'water', 'amount' => 21400,
+            'recurrence' => 'once', 'anchor' => '2026-11-19', 'next' => '2026-11-19', 'status' => 'active', 'autopay' => true,
         ], $now);
         $this->bill($checking, [
             'name' => 'Fuel stop', 'type' => 'fuel', 'amount' => 8500,
@@ -257,21 +266,28 @@ final class DemoLibrary
             'recurrence' => 'monthly', 'anchor' => '2026-11-16', 'next' => '2026-11-16', 'status' => 'active',
         ], $now);
         $this->bill($checking, [
-            'name' => 'America the Beautiful', 'type' => 'travel', 'amount' => 8000,
+            'name' => 'Annual pass', 'type' => 'travel', 'amount' => 8000,
             'recurrence' => 'yearly', 'anchor' => '2026-11-19', 'next' => '2026-11-19', 'status' => 'active',
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Park pass', 'type' => 'entertainment', 'amount' => 8000,
+            'recurrence' => 'yearly', 'anchor' => '2026-12-05', 'next' => '2026-12-05', 'status' => 'active',
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Camp store', 'type' => 'shopping', 'amount' => 2200,
+            'recurrence' => 'weekly', 'anchor' => '2026-11-06', 'next' => '2026-11-06', 'status' => 'active',
         ], $now);
         foreach ([
             'propane' => ['Propane', 3500],
             'maintenance' => ['Rig service', 4500],
-            'insurance' => ['RV insurance', 14500],
             'roadside' => ['Roadside', 900],
-            'mailbox' => ['Mailbox', 1500],
+            'mailbox' => ['Mailbox', 1000],
             'laundry' => ['Laundry', 1600],
-            'mortgage' => ['Family lot', 17500],
-            'storage' => ['Storage unit', 8900],
-            'memberships' => ['Camp club', 600],
-            'software' => ['Map app', 500],
-            'pets' => ['Dog food', 4800],
+            'mortgage' => ['Lot fee', 5000],
+            'storage' => ['Storage', 37500],
+            'memberships' => ['GPS plan', 849],
+            'software' => ['Software tools', 2000],
+            'pets' => ['Pet insurance', 5400],
             'emergency' => ['Emergency move', 5000],
             'repairs' => ['Repair parts', 7500],
             'investments' => ['Broker sweep', 10000],
@@ -283,6 +299,14 @@ final class DemoLibrary
             ], $now);
         }
         $this->bill($checking, [
+            'name' => 'Rescue plan', 'type' => 'memberships', 'amount' => 3995,
+            'recurrence' => 'yearly', 'anchor' => '2027-08-20', 'next' => '2027-08-20', 'status' => 'active', 'autopay' => true,
+        ], $now);
+        $this->bill($checking, [
+            'name' => 'Bookkeeping', 'type' => 'software', 'amount' => 2900,
+            'recurrence' => 'monthly', 'anchor' => '2026-11-01', 'next' => '2026-12-01', 'status' => 'active', 'autopay' => true, 'paidOn' => '2026-11-01',
+        ], $now);
+        $this->bill($checking, [
             'name' => 'Camp soap', 'type' => 'misc', 'otherLabel' => 'Camp soap', 'amount' => 800,
             'recurrence' => 'monthly', 'anchor' => '2026-11-21', 'next' => '2026-11-21', 'status' => 'active',
         ], $now);
@@ -290,21 +314,26 @@ final class DemoLibrary
         $this->category($userId, 'Road cushion', 'needs', $now);
         $this->category($userId, 'Fun money', 'wants', $now);
         $this->category($userId, 'Next rig', 'savings', $now);
+        $this->category($userId, 'New trailer', 'savings', $now);
         $this->category($userId, 'Tires', 'savings', $now);
         $this->category($userId, 'Repair reserve', 'savings', $now);
         $this->category($userId, 'Old gym', 'needs', $now, true);
-        $this->payCycle($userId, 'Camp host', '2026-11-01', 'weekly', $now, null, null, false, 'hourly', 1600, 1200);
-        $this->payCycle($userId, 'Market booth', '2026-11-01', 'biweekly', $now, null, null, true, 'hourly', 1500, 800);
-        $this->payCycle($userId, 'Design retainer', '2026-11-01', 'semimonthly', $now, 15, null, true, 'salary', 960000);
-        $this->payCycle($userId, 'Editing days', '2026-11-01', 'semimonthly', $now, 15, null, true, 'hourly', 1200, null, 'weekdays');
-        $averaged = $this->payCycle($userId, 'Client average', '2026-11-01', 'semimonthly', $now, 15, null, true, 'fixed', 10000, null, 'typed', true);
+        $this->payCycle($userId, 'Day job', '2026-11-01', 'monthly', $now, null, null, false, 'salary', 10000000);
+        $side = $this->payCycle($userId, 'Side job', '2026-11-01', 'semimonthly', $now, 16, null, false, 'hourly', 2200, 2000, 'typed', true);
+        $this->payroll($side, '2026-10-01', 38000);
+        $this->payroll($side, '2026-10-16', 50000);
+        $this->payroll($side, '2026-11-01', 44000);
+        $this->payCycle($userId, 'Weekend shift', '2026-11-01', 'weekly', $now, null, null, true, 'hourly', 1600, 800);
+        $this->payCycle($userId, 'Market day', '2026-11-01', 'biweekly', $now, null, null, true, 'hourly', 1500, 800);
+        $this->payCycle($userId, 'Old retainer', '2026-11-01', 'semimonthly', $now, 15, null, true, 'salary', 960000);
+        $this->payCycle($userId, 'Weekday contract', '2026-11-01', 'semimonthly', $now, 15, null, true, 'hourly', 1200, null, 'weekdays');
+        $averaged = $this->payCycle($userId, 'Month average', '2026-11-01', 'semimonthly', $now, 15, null, true, 'fixed', 10000, null, 'typed', true);
         $this->payroll($averaged, '2026-10-01', 80000);
         $this->payroll($averaged, '2026-10-15', 110000);
         $this->payroll($averaged, '2026-11-01', 95000);
-        $this->payCycle($userId, 'Remote salary', '2026-11-01', 'monthly', $now, null, null, false, 'salary', 6720000);
-        $this->payCycle($userId, 'Contract days', '2026-11-01', 'monthly', $now, null, null, true, 'hourly', 2000, 300, 'weekdays');
-        $this->payCycle($userId, 'Photo gigs', '2026-11-01', 'irregular', $now, null, '2026-12-15', false, 'fixed', 45000);
-        $this->payCycle($userId, 'Warehouse job', '2026-11-01', 'monthly', $now, null, null, true, 'fixed', 40000);
+        $this->payCycle($userId, 'Shop days', '2026-11-01', 'monthly', $now, null, null, true, 'hourly', 2000, 300, 'weekdays');
+        $this->payCycle($userId, 'Odd jobs', '2026-11-01', 'irregular', $now, null, '2026-12-15', true, 'fixed', 45000);
+        $this->payCycle($userId, 'Warehouse shift', '2026-11-01', 'monthly', $now, null, null, true, 'fixed', 40000);
         $this->seedEnvelopes($userId, $now);
         $this->seedTargets($userId, $now);
         $this->seedLife($userId, $now);
@@ -313,12 +342,9 @@ final class DemoLibrary
              VALUES (?, ?, ?, ?, ?, ?)'
         );
         foreach ([
-            ['Grocery run in Moab', '2026-09-10', '2026-09-10'],
-            ['Mail pickup in Springdale', '2026-10-08', '2026-10-09'],
-            ['Dump and fill', '2026-11-05', '2026-11-06'],
-            ['Thanksgiving potluck', '2026-11-26', '2026-11-29'],
-            ['Solar day', '2026-12-18', '2026-12-19'],
-            ['Quartzsite market', '2027-01-03', '2027-01-03'],
+            ['Grocery run', '2026-08-10', '2026-08-10'],
+            ['Mail pickup', '2026-09-05', '2026-09-05'],
+            ['Dump and fill', '2026-10-06', '2026-10-07'],
         ] as [$text, $start, $end]) {
             $calendar->execute([$userId, $text, $start, $end, $now, $now]);
         }
@@ -334,8 +360,10 @@ final class DemoLibrary
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $category->execute([$userId, 'Tires']);
-        $cycle->execute([$userId, 'Remote salary']);
+        $cycle->execute([$userId, 'Day job']);
         $insert->execute([$userId, (int) $category->fetchColumn(), 'needed', 120000, '2027-02-01', (int) $cycle->fetchColumn(), $now, $now]);
+        $category->execute([$userId, 'New trailer']);
+        $insert->execute([$userId, (int) $category->fetchColumn(), 'balance', 5000000, null, null, $now, $now]);
         $category->execute([$userId, 'Repair reserve']);
         $insert->execute([$userId, (int) $category->fetchColumn(), 'balance', 50000, null, null, $now, $now]);
     }
@@ -343,32 +371,64 @@ final class DemoLibrary
     private function seedLife(int $userId, string $now): void
     {
         $account = $this->pdo->prepare('SELECT id FROM accounts WHERE user_id = ? AND name = ?');
-        $account->execute([$userId, 'Everyday checking']);
+        $account->execute([$userId, 'Checking']);
         $checking = (int) $account->fetchColumn();
-        $account->execute([$userId, 'Wallet']);
+        $account->execute([$userId, 'Center console']);
         $cash = (int) $account->fetchColumn();
+        $account->execute([$userId, 'Travel card']);
+        $card = (int) $account->fetchColumn();
         $fuel = SystemBuckets::idForType($this->pdo, $userId, 'fuel');
 
-        // Each stay leaves the morning the next one arrives, so every day from the first arrival through the last departure is on a site.
-        $this->stay($userId, $now, 'Devils Garden', 'Site 12', '2026-09-06', '2026-09-18', '38.7834', '-109.5947', 'Moab', 'UT', 'Devils Garden Campground, Moab, UT 84532', $checking, 24000, 0, null, 9, 'Dark sky, quiet loops.', 'fly');
-        $this->stay($userId, $now, 'Watchman', 'Site 7', '2026-09-18', '2026-10-02', '37.2002', '-112.9865', 'Springdale', 'UT', 'Watchman Campground, Springdale, UT 84767', $checking, 42000, 0, null, 8, 'Sites fill at dawn.');
-        $this->stay($userId, $now, 'Wahweap', 'Site 22', '2026-10-02', '2026-10-16', '36.9964', '-111.4984', 'Page', 'AZ', 'Wahweap Campground, Page, AZ 86040', $checking, 36400, 0, null, 8, 'Lake wind and a dump station.');
-        $this->stay($userId, $now, 'Catalina', 'Site 42', '2026-10-16', '2026-10-30', '32.4260', '-110.9080', 'Tucson', 'AZ', '11570 N Oracle Rd, Tucson, AZ 85737', $checking, 35000, 0, null, 8, 'Saguaros and a rinse station.');
-        $this->stay($userId, $now, 'Usery Mountain', null, '2026-10-30', '2026-11-13', '33.4805', '-111.6135', 'Mesa', 'AZ', '3939 N Usery Pass Rd, Mesa, AZ 85207', $checking, 44800, 0, null, null, null);
-        $this->stay($userId, $now, 'McDowell Mountain', 'Site 11', '2026-11-13', '2026-11-20', '33.6890', '-111.7070', 'Fountain Hills', 'AZ', '16300 N McDowell Mountain Rd, Fountain Hills, AZ 85268', $checking, 24500, 24500, '2026-11-13', null, null);
-        $this->stay($userId, $now, 'Lost Dutchman', 'Site 18', '2026-11-20', '2026-11-24', '33.4812', '-111.4778', 'Apache Junction', 'AZ', '6109 N Apache Trail, Apache Junction, AZ 85119', $checking, 14000, 14000, '2026-11-22', null, null);
-        $this->stay($userId, $now, 'Cattail Cove', 'Site 9', '2026-11-24', '2026-12-01', '34.3610', '-114.1630', 'Lake Havasu City', 'AZ', '1950 Cattail Cove Rd, Lake Havasu City, AZ 86406', $checking, 17500, 17500, '2026-11-24', null, null);
-        $this->stay($userId, $now, 'Cottonwood', 'Site 4', '2026-12-01', '2026-12-05', '33.7410', '-115.8100', 'Joshua Tree', 'CA', 'Cottonwood Campground, Joshua Tree, CA 92277', $cash, 10000, 7500, '2026-12-01', 7, 'Warm days, clear nights.');
-        $this->stay($userId, $now, 'Midland', 'South edge', '2026-12-05', '2026-12-12', '33.7480', '-114.8030', 'Blythe', 'CA', 'Midland LTVA, Blythe, CA 92225', $checking, 4000, 4000, '2026-12-05', null, null);
-        $this->stay($userId, $now, 'La Posa South', 'South row', '2026-12-12', '2027-01-08', '33.6300', '-114.2150', 'Quartzsite', 'AZ', 'La Posa South LTVA, Quartzsite, AZ 85346', $checking, 18000, 18000, '2026-12-20', null, null);
+        // Home through one night at Las Vegas RV Resort. Every day in that span is on a site.
+        // The house address is a city pin. The conference note and street are left off.
+        $this->stay($userId, $now, 'Home base', null, '2026-01-01', '2026-06-15', '33.8753', '-117.5664', 'Corona', 'CA', 'Corona, CA', $checking, 0, 0, '2026-01-01', null, null);
+        $this->stay($userId, $now, 'Oak Creek RV Park', null, '2026-06-14', '2026-06-15', '36.83658', '-118.22897', 'Independence', 'CA', '131 N US-395, Independence, CA 93526', $checking, 0, 0, '2026-06-14', null, null);
+        $this->stay($userId, $now, 'Lake Tahoe KOA', null, '2026-06-15', '2026-06-16', '38.84678', '-120.02868', 'South Lake Tahoe', 'CA', '760 North Highway 50, South Lake Tahoe, CA 96150', $checking, 0, 0, '2026-06-15', 8, 'Lake and pines.');
+        $this->stay($userId, $now, 'Oroville / Feather Falls Casino KOA Journey', null, '2026-06-16', '2026-06-18', '39.46530', '-121.51817', 'Oroville', 'CA', '3 Alverda Dr., Oroville, CA 95966', $checking, 0, 0, '2026-06-16', null, null);
+        $this->stay($userId, $now, 'Klamath Falls KOA Journey', null, '2026-06-18', '2026-06-20', '42.21399', '-121.74666', 'Klamath Falls', 'OR', '3435 Shasta Way, Klamath Falls, OR 97603', $checking, 0, 0, '2026-06-18', null, null);
+        $this->stay($userId, $now, 'Imperial River Company', null, '2026-06-20', '2026-06-22', '45.17201', '-121.07518', 'Maupin', 'OR', 'Bakeoven Rd, Maupin, OR 97037', $checking, 0, 0, '2026-06-20', null, null);
+        $this->stay($userId, $now, 'Ellensburg KOA Journey', null, '2026-06-22', '2026-06-25', '47.00603', '-120.59493', 'Ellensburg', 'WA', '32 S. Thorp Hwy., Ellensburg, WA 98926', $checking, 0, 0, '2026-06-22', null, null);
+        $this->stay($userId, $now, 'Gorge Amphiteater Event Camping', null, '2026-06-25', '2026-06-29', '47.10123', '-119.99560', 'Quincy', 'WA', '22936 Rd 1 NW, Quincy, WA 98848', $checking, 0, 0, '2026-06-25', null, null);
+        $this->stay($userId, $now, 'Ellensburg KOA Journey', null, '2026-06-29', '2026-07-01', '47.00603', '-120.59493', 'Ellensburg', 'WA', '32 S. Thorp Hwy., Ellensburg, WA 98926', $checking, 0, 0, '2026-06-29', null, null);
+        $this->stay($userId, $now, 'Lake Easton State Park', null, '2026-07-01', '2026-07-02', '47.24464', '-121.18541', 'Easton', 'WA', '150 Lake Easton State Park Road, Easton, WA 98925', $checking, 0, 0, '2026-07-01', null, null);
+        $this->stay($userId, $now, 'Sun Outdoors Gig Harbor', null, '2026-07-02', '2026-07-05', '47.34449', '-122.59909', 'Gig Harbor', 'WA', '9515 Burnham Dr, Gig Harbor, WA 98332', $checking, 0, 0, '2026-07-02', null, null);
+        $this->stay($userId, $now, 'Dosewallips State Park', null, '2026-07-05', '2026-07-09', '47.68558', '-122.90034', 'Brinnon', 'WA', '306996 Highway 101, Brinnon, WA 98320', $checking, 0, 0, '2026-07-05', null, null);
+        $this->stay($userId, $now, 'Bayshore RV Park', null, '2026-07-09', '2026-07-12', '46.70800', '-123.98620', 'Tokeland', 'WA', '2941 Kindred Ave, Tokeland, WA 98590', $checking, 0, 0, '2026-07-09', null, null);
+        $this->stay($userId, $now, 'Blue Heron French Cheese', null, '2026-07-12', '2026-07-13', '45.46694', '-123.84247', 'Tillamook', 'OR', 'Blue Heron Rd, Tillamook, OR 97141', $checking, 0, 0, '2026-07-12', null, null);
+        $this->stay($userId, $now, 'Lincoln City KOA Holiday', null, '2026-07-13', '2026-07-16', '44.99319', '-123.97893', 'Otis', 'OR', '5298 Northeast Park Lane, Otis, OR 97368', $checking, 0, 0, '2026-07-13', null, null);
+        $this->stay($userId, $now, 'Spirit Mountain Casino RV Park', null, '2026-07-16', '2026-07-18', '45.05912', '-123.57953', 'Grand Ronde', 'OR', '27100 SW Salmon River Hwy, Grand Ronde, OR 97347', $checking, 0, 0, '2026-07-16', null, null);
+        $this->stay($userId, $now, 'John Neal Memorial Park', null, '2026-07-18', '2026-07-21', '44.78298', '-122.60836', 'Lyons', 'OR', '820 Neal Park Rd., Lyons, OR 97358', $checking, 0, 0, '2026-07-18', null, null);
+        $this->stay($userId, $now, 'Reeder Beach Resort', null, '2026-07-21', '2026-07-26', '45.71249', '-122.77311', 'Portland', 'OR', '26048 NW Reeder Rd, Portland, OR 97231', $checking, 0, 0, '2026-07-21', null, null);
+        $this->stay($userId, $now, 'OCEAN User Group', null, '2026-07-23', '2026-07-25', '33.8029445', '-117.9161528', 'Anaheim', 'CA', 'Anaheim, CA', $checking, 0, 0, '2026-07-23', null, null, 'fly');
+        $this->stay($userId, $now, 'Albany / Corvallis KOA Journey', null, '2026-07-26', '2026-07-27', '44.56360', '-123.15345', 'Albany', 'OR', '33775 Oakville Road South, Albany, OR 97321', $checking, 0, 0, '2026-07-26', null, null);
+        $this->stay($userId, $now, 'Bish\'s Service Center', null, '2026-07-27', '2026-07-30', '44.21445', '-123.20590', 'Junction City', 'OR', 'W 1st Ave, Junction City, OR 97448', $checking, 0, 0, '2026-07-27', null, null);
+        $this->stay($userId, $now, 'Umpqua\'s Last Resort', null, '2026-07-30', '2026-08-02', '43.29582', '-122.60678', 'Idleyld Park', 'OR', '115 Elk Ridge Ln, Idleyld Park, OR 97447', $checking, 0, 0, '2026-07-30', null, null);
+        $this->stay($userId, $now, 'Mystic Forest RV Park', null, '2026-08-02', '2026-08-06', '41.57660', '-124.07391', 'Klamath', 'CA', '15875 US Highway 101 N, Klamath, CA 95548', $checking, 0, 0, '2026-08-02', null, null);
+        $this->stay($userId, $now, 'Redwoods River Resort', null, '2026-08-06', '2026-08-09', '39.91939', '-123.76602', 'Leggett', 'CA', '75000 US-101, Leggett, CA 95585', $checking, 0, 0, '2026-08-06', null, null);
+        $this->stay($userId, $now, 'San Francisco North / Petaluma KOA', 'SPOT J145', '2026-08-09', '2026-08-13', '38.27180', '-122.67744', 'Petaluma', 'CA', '20 Rainsville Road, Petaluma, CA 94952', $checking, 0, 0, '2026-08-09', null, null);
+        $this->stay($userId, $now, 'Yanks RV Resort', null, '2026-08-13', '2026-08-14', '36.34239', '-121.25402', 'Greenfield', 'CA', '1005 Yanks Way, Greenfield, CA 93927', $checking, 0, 0, '2026-08-13', null, null);
+        $this->stay($userId, $now, 'Avila Pismo RV Resort & Campground', 'SPOT 21', '2026-08-14', '2026-08-16', '35.18289', '-120.70363', 'San Luis Obispo', 'CA', '7075 Ontario Road, San Luis Obispo, CA 93405', $checking, 0, 0, '2026-08-14', null, null);
+        $this->stay($userId, $now, 'Prado Regional Park', 'SPOT 75', '2026-08-16', '2026-08-20', '33.94618', '-117.65165', 'Chino', 'CA', '16700 Euclid Ave, Chino, CA 91708', $checking, 0, 0, '2026-08-16', null, null);
+        $this->stay($userId, $now, 'Canyon RV Park', 'SITE 54', '2026-08-20', '2026-08-30', '33.86801', '-117.71243', 'Anaheim', 'CA', '24001 Santa Ana Canyon Rd, Anaheim, CA 92887', $checking, 0, 0, '2026-08-20', null, null);
+        $this->stay($userId, $now, 'Pechanga RV Resort & Casino', 'SITE C1', '2026-08-30', '2026-09-04', '33.45186', '-117.10111', 'Temecula', 'CA', '45000 Pechanga Pkwy, Temecula, CA 92592', $checking, 0, 0, '2026-08-30', null, null);
+        $this->stay($userId, $now, 'Temecula / Vail Lake KOA', 'Site 201', '2026-09-04', '2026-09-07', '33.46833', '-116.99788', 'Temecula', 'CA', '38000 Hwy 79 South, Temecula, CA 92592', $checking, 0, 0, '2026-09-04', null, null);
+        $this->stay($userId, $now, 'Launch Pointe Recreation Destination & RV Park', 'ST 133', '2026-09-07', '2026-09-14', '33.67565', '-117.37396', 'Lake Elsinore', 'CA', '32040 Riverside Dr, Lake Elsinore, CA 92530', $checking, 0, 0, '2026-09-07', null, null);
+        $this->stay($userId, $now, 'Prado Regional Park', 'Site 70', '2026-09-14', '2026-09-24', '33.94618', '-117.65165', 'Chino', 'CA', '16700 Euclid Ave, Chino, CA 91708', $checking, 0, 0, '2026-09-14', null, null);
+        $this->stay($userId, $now, 'Bonelli Bluffs RV Resort & Campground', 'Preferred D PD022', '2026-09-24', '2026-10-01', '34.07997', '-117.78979', 'San Dimas', 'CA', '1440 Camper View Rd, San Dimas, CA 91773', $checking, 0, 0, '2026-09-27', null, null);
+        $this->stay($userId, $now, 'Tinnemaha Creek Campground', 'SITE 007', '2026-10-01', '2026-10-04', '37.05222', '-118.26962', 'Big Pine', 'CA', 'Tinnemaha Rd., Big Pine, CA 93513', $checking, 0, 0, '2026-10-01', null, null);
+        $this->stay($userId, $now, 'Longstreet Hotel Casino & RV Resort', null, '2026-10-04', '2026-10-05', '36.41090', '-116.42255', 'Amargosa Valley', 'NV', 'Amargosa Valley, NV', $checking, 0, 0, '2026-10-04', null, null);
+        $this->stay($userId, $now, 'Oasis Las Vegas RV Resort', null, '2026-10-05', '2026-10-09', '36.04268', '-115.17677', 'Las Vegas', 'NV', 'Las Vegas, NV', $checking, 0, 0, '2026-10-05', null, null);
+        $this->stay($userId, $now, 'Lake Mead RV Village at Echo Bay', 'SPOT 7', '2026-10-09', '2026-10-13', '36.31020', '-114.43205', 'Overton', 'NV', 'Valley of Fire Hwy, Overton, NV 89040', $checking, 0, 0, '2026-10-09', null, null);
+        $this->stay($userId, $now, 'Ely KOA Journey', 'STE 23', '2026-10-13', '2026-10-15', '39.21545', '-114.85431', 'Ely', 'NV', '1596 S Hwy 93, Ely, NV 89301', $checking, 0, 0, '2026-10-13', null, null);
+        $this->stay($userId, $now, 'Twin Falls / Jerome KOA Holiday', 'STE 15', '2026-10-15', '2026-10-21', '42.66002', '-114.44472', 'Jerome', 'ID', '441 S Liberty Lane, Jerome, ID 83338', $checking, 0, 0, '2026-10-15', null, null);
+        $this->stay($userId, $now, 'Ely KOA Journey', null, '2026-10-21', '2026-10-23', '39.21545', '-114.85431', 'Ely', 'NV', '1596 S Hwy 93, Ely, NV 89301', $checking, 0, 0, '2026-10-21', null, null);
+        $this->stay($userId, $now, 'Las Vegas RV Resort', 'Site 314', '2026-10-23', '2026-10-24', '36.1202672', '-115.0620385', 'Las Vegas', 'NV', '3890 South Nellis Boulevard, Las Vegas, NV 89121', $card, 86124, 0, '2026-10-23', null, null);
         $vehicle = $this->vehicle($userId, $now);
-        $this->fuelBill($cash, $fuel, $vehicle, '2026-09-15', 1000, 9980, 400, $now);
-        $this->fuelBill($cash, $fuel, $vehicle, '2026-10-01', 600, 10000, 400, $now);
-        $this->fuelBill($cash, $fuel, $vehicle, '2026-10-01', 400, 10000, 400, $now);
-        $this->fuelBill($cash, $fuel, null, '2026-10-15', 500, null, null, $now);
-        $this->fuelBill($cash, $fuel, $vehicle, '2026-11-01', 2000, 10100, 400, $now);
-        $this->fuelBill($cash, $fuel, $vehicle, '2026-11-08', 1000, 10300, 400, $now);
-        $this->fuelBill($cash, $fuel, $vehicle, '2026-11-18', 1000, 10500, 400, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-09-15', 22000, 64400, 550, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-10-01', 6000, 64800, 550, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-10-01', 4000, 64800, 550, $now);
+        $this->fuelBill($cash, $fuel, null, '2026-10-15', 5000, null, null, $now);
+        $this->fuelBill($cash, $fuel, $vehicle, '2026-11-07', 12200, 64900, 550, $now);
     }
 
     private function stay(
@@ -467,7 +527,7 @@ final class DemoLibrary
         $needs->execute([$userId, 'Road cushion']);
         $categoryId = (int) $needs->fetchColumn();
         $cycle = $this->pdo->prepare('SELECT id FROM pay_cycles WHERE user_id = ? AND payor = ?');
-        $cycle->execute([$userId, 'Remote salary']);
+        $cycle->execute([$userId, 'Day job']);
         $cycleId = (int) $cycle->fetchColumn();
         $this->period($userId, $cycleId, '2026-10-01', '2026-10-31', $categoryId, 20000, $now);
         $this->period($userId, $cycleId, '2026-11-01', '2026-11-30', $categoryId, 50000, $now);
@@ -510,16 +570,20 @@ final class DemoLibrary
         )->execute([$userId, $start, $categoryId, $amount]);
     }
 
-    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool,autopay?:string,gasFavorite?:bool,shoppingFavorite?:bool,assetFavorite?:bool,bankAutopay?:bool,billRecurrence?:string,billEvery?:int,holder?:string} $row */
+    /** @param array{name:string,type:string,side:string,currency:string,balance:int,interest?:int,minimum?:int,dueDay?:int,limit?:int,archived?:bool,autopay?:string,gasFavorite?:bool,shoppingFavorite?:bool,assetFavorite?:bool,bankAutopay?:bool,billRecurrence?:string,billEvery?:int,holder?:string,institution?:string,inBudget?:bool,liabilityBillType?:string} $row */
     private function account(int $userId, array $row, string $now): int
     {
         $this->currencies->assert($row['currency']);
+        $inBudget = array_key_exists('inBudget', $row)
+            ? (!empty($row['inBudget']) ? 1 : 0)
+            : ($row['side'] === 'asset' && $row['type'] !== 'savings' ? 1 : 0);
         $this->pdo->prepare(
             'INSERT INTO accounts (
                 user_id, name, type, side, currency, balance_minor, interest_bps, minimum_due_minor,
                 due_day, credit_limit_minor, autopay_choice, bank_autopay, bill_recurrence, bill_every,
-                archived_at, gas_favorite, shopping_favorite, asset_favorite, in_budget, holder, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                archived_at, gas_favorite, shopping_favorite, asset_favorite, in_budget, holder,
+                institution, liability_bill_type, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $userId,
             $row['name'],
@@ -539,8 +603,10 @@ final class DemoLibrary
             !empty($row['gasFavorite']) ? 1 : 0,
             !empty($row['shoppingFavorite']) ? 1 : 0,
             !empty($row['assetFavorite']) ? 1 : 0,
-            $row['side'] === 'asset' && $row['type'] !== 'savings' ? 1 : 0,
+            $inBudget,
             $row['holder'] ?? null,
+            $row['institution'] ?? null,
+            $row['liabilityBillType'] ?? 'debt',
             $now,
             $now,
         ]);
@@ -591,8 +657,8 @@ final class DemoLibrary
             'INSERT INTO vehicles (
                 user_id, name, kind, mpg_min_tenths, mpg_max_tenths, starred,
                 current_odometer_miles, origin_odometer_miles, fuel_price_minor, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 1, 10500, 9800, 400, ?, ?)'
-        )->execute([$userId, 'Bunkhouse', 'rv', 60, 120, $now, $now]);
+             ) VALUES (?, ?, ?, ?, ?, 1, 64900, 64000, 550, ?, ?)'
+        )->execute([$userId, 'Pickup', 'truck', 60, 120, $now, $now]);
         $id = (int) $this->pdo->lastInsertId();
 
         $extra = $this->pdo->prepare(
@@ -674,11 +740,11 @@ final class DemoLibrary
         return (int) $this->pdo->lastInsertId();
     }
 
-    private function payroll(int $cycleId, string $payday, int $amount): void
+    private function payroll(int $cycleId, string $payday, int $amount, bool $posted = false): void
     {
         $this->pdo->prepare(
-            'INSERT INTO payroll_entries (pay_cycle_id, payday, amount_minor) VALUES (?, ?, ?)'
-        )->execute([$cycleId, $payday, $amount]);
+            'INSERT INTO payroll_entries (pay_cycle_id, payday, amount_minor, posted) VALUES (?, ?, ?, ?)'
+        )->execute([$cycleId, $payday, $amount, $posted ? 1 : 0]);
     }
 
 }

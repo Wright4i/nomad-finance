@@ -119,7 +119,7 @@ final class TransferRulesTest extends TestCase
             'billIds' => [$bill['id']],
         ]);
         self::assertSame('paid', $this->bills->get((int) $bill['id'])['status']);
-        self::assertSame($before - 2000, $this->assignment((int) $bill['categoryId']));
+        self::assertSame(5600, $this->assignment((int) $bill['categoryId']));
         self::assertSame(15000, $paid['source']['balanceMinor']);
         self::assertSame(0, $paid['card']['balanceMinor']);
         self::assertSame(15000, $this->balance((int) $source['id']));
@@ -170,7 +170,7 @@ final class TransferRulesTest extends TestCase
             'bankAutopay' => true,
             'dueDay' => 12,
         ]);
-        $checking = $this->namedAccount('Everyday checking');
+        $checking = $this->namedAccount('Checking');
         $dinner = $this->bills->create([
             'name' => 'Dinner',
             'type' => 'restaurants',
@@ -802,6 +802,15 @@ final class TransferRulesTest extends TestCase
     public function testLeavingThePoolTakesUnassignedThenBucketsAndWillNotPassALockedFloor(): void
     {
         $this->quietBooks();
+        $userId = (int) $_SESSION['user_id'];
+        $this->pdo->prepare('DELETE FROM acct_period_assignments WHERE user_id = ?')->execute([$userId]);
+        $this->pdo->prepare('UPDATE categories SET envelope_minor = 0, amount_minor = 0 WHERE user_id = ?')
+            ->execute([$userId]);
+        $this->pdo->prepare(
+            "UPDATE bills SET category_id = (
+                SELECT id FROM categories WHERE user_id = ? AND name = 'Rent'
+             ) WHERE name = 'Site week' AND account_id IN (SELECT id FROM accounts WHERE user_id = ?)"
+        )->execute([$userId, $userId]);
         $sheet = $this->envelopes->show('2026-11-06');
         $locked = null;
         foreach ($sheet['categories'] as $category) {

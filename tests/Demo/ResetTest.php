@@ -72,15 +72,15 @@ final class ResetTest extends TestCase
         $demo = $auth->enterDemo();
         self::assertSame('demo', $demo['role']);
         $seeded = $accounts->list(false);
-        self::assertCount(11, $seeded);
-        $checking = $this->named($seeded, 'Everyday checking');
+        self::assertCount(9, $seeded);
+        $checking = $this->named($seeded, 'Checking');
         self::assertSame('checking', $checking['type']);
-        self::assertSame(318000, $checking['balanceMinor']);
-        self::assertFalse($checking['assetFavorite']);
+        self::assertSame(266000, $checking['balanceMinor']);
+        self::assertTrue($checking['assetFavorite']);
         self::assertFalse($checking['gasFavorite']);
         self::assertTrue($this->named($seeded, 'Fuel card')['gasFavorite']);
         self::assertTrue($this->named($seeded, 'Travel card')['shoppingFavorite']);
-        self::assertTrue($this->named($seeded, 'Emergency fund')['assetFavorite']);
+        self::assertFalse($this->named($seeded, 'Savings')['assetFavorite']);
         $draw = $this->pdo->query(
             "SELECT draw.name FROM bills b
              JOIN accounts draw ON draw.id = b.account_id
@@ -88,7 +88,7 @@ final class ResetTest extends TestCase
              JOIN user u ON u.id = source.user_id
              WHERE u.role = 'demo' AND source.name = 'Travel card'"
         )->fetchColumn();
-        self::assertSame('Emergency fund', $draw);
+        self::assertSame('Checking', $draw);
 
         $accounts->create([
             'name' => 'Scratch',
@@ -96,7 +96,7 @@ final class ResetTest extends TestCase
             'currency' => 'USD',
             'balanceMinor' => 100,
         ]);
-        self::assertCount(12, $accounts->list(false));
+        self::assertCount(10, $accounts->list(false));
 
         try {
             $accounts->get($harbor['id']);
@@ -107,10 +107,10 @@ final class ResetTest extends TestCase
 
         (new DemoLibrary($this->pdo, $catalog))->resetDemo();
         $restored = $accounts->list(false);
-        self::assertCount(11, $restored);
+        self::assertCount(9, $restored);
         $names = array_column($restored, 'name');
         self::assertNotContains('Scratch', $names);
-        self::assertContains('Everyday checking', $names);
+        self::assertContains('Checking', $names);
         self::assertNotContains('Harbor', $names);
 
         $_SESSION['user_id'] = $ownerId;
@@ -154,7 +154,7 @@ final class ResetTest extends TestCase
         );
         $card->execute([$demoId]);
         self::assertSame(
-            ['interest_bps' => 1999, 'minimum_due_minor' => 3500, 'due_day' => 15, 'credit_limit_minor' => 600000],
+            ['interest_bps' => 1800, 'minimum_due_minor' => 3500, 'due_day' => 8, 'credit_limit_minor' => 500000],
             array_map(intval(...), $card->fetch() ?: []),
         );
 
@@ -164,13 +164,13 @@ final class ResetTest extends TestCase
         );
         self::assertSame(['USD'], $currencies);
         $cash = $this->pdo->prepare(
-            'SELECT name, balance_minor FROM accounts WHERE user_id = ? AND name IN (\'Rig fund\', \'Camp jar\', \'Glovebox\') ORDER BY name'
+            'SELECT name, balance_minor FROM accounts WHERE user_id = ? AND name IN (\'Savings\', \'Center console\', \'Park deposit\') ORDER BY name'
         );
         $cash->execute([$demoId]);
         self::assertSame([
-            ['name' => 'Camp jar', 'balance_minor' => 14000],
-            ['name' => 'Glovebox', 'balance_minor' => 4500],
-            ['name' => 'Rig fund', 'balance_minor' => 145000],
+            ['name' => 'Center console', 'balance_minor' => 11500],
+            ['name' => 'Park deposit', 'balance_minor' => 50000],
+            ['name' => 'Savings', 'balance_minor' => 5000000],
         ], $cash->fetchAll());
         self::assertSame(0, (int) $this->pdo->query(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('exchange_rates', 'postings', 'posting_lines')"
@@ -213,68 +213,59 @@ final class ResetTest extends TestCase
             [$demoId],
         );
         self::assertSame([
-            'America the Beautiful',
+            'Annual pass',
+            'Auto insurance',
+            'Bookkeeping',
             'Broker sweep',
-            'Camp club',
+            'Camp data',
+            'Camp rent',
             'Camp soap',
             'Camp store',
             'Cash buffer',
-            'Catalina',
-            'Cattail Cove',
-            'Clinic visit',
-            'Cottonwood',
-            'Cottonwood',
+            'Code host',
             'County night',
-            'DEF fluid',
-            'Devils Garden',
             'Diner',
-            'Dog food',
             'Emergency move',
-            'Estimated tax',
-            'Family lot',
             'Fill-up',
             'Fill-up',
             'Fill-up',
             'Fill-up',
             'Fill-up',
-            'Fill-up',
-            'Fill-up',
-            'Fresh water',
             'Fuel card',
             'Fuel stop',
+            'GPS plan',
             'Groceries',
-            'Health share',
-            'La Posa South',
+            'Health plan',
+            'Hotspot',
+            'Las Vegas RV Resort',
             'Laundry',
-            'Lost Dutchman',
+            'Lot fee',
             'Mailbox',
-            'Map app',
-            'McDowell Mountain',
             'Metered electric',
-            'Midland',
-            'October site',
             'Old meal kit',
             'Park pass',
             'Pedestal',
+            'Pet insurance',
             'Phone',
+            'Prescription',
             'Propane',
             'RV insurance',
             'Registration',
             'Repair parts',
+            'Rescue plan',
             'Rig service',
             'Roadside',
             'Shore power',
             'Shower tokens',
             'Site week',
-            'Solar loan',
+            'Software tools',
             'Starlink',
-            'Storage unit',
-            'Streaming',
+            'Storage',
+            'Trailer plan',
             'Travel card',
+            'Truck loan',
             'Urgent care',
-            'Usery Mountain',
-            'Wahweap',
-            'Watchman',
+            'Water',
         ], $names);
     }
 
@@ -313,7 +304,7 @@ final class ResetTest extends TestCase
         self::assertSame('needed', $byName['Tires']['target']['kind']);
         self::assertSame(120000, $byName['Tires']['target']['amountMinor']);
         self::assertSame('2027-02-01', $byName['Tires']['target']['targetDate']);
-        self::assertSame('Remote salary', $byName['Tires']['target']['payor']);
+        self::assertSame('Day job', $byName['Tires']['target']['payor']);
         self::assertSame(4, $byName['Tires']['target']['periodsLeft']);
         self::assertSame(30000, $byName['Tires']['target']['neededMinor']);
         self::assertSame(50000, $byName['Repair reserve']['target']['neededMinor']);
@@ -365,51 +356,58 @@ final class ResetTest extends TestCase
             $byName[(string) $row['payor']] = $row;
         }
         self::assertSame(
-            ['Camp host', 'Client average', 'Contract days', 'Design retainer', 'Editing days', 'Market booth', 'Photo gigs', 'Remote salary', 'Warehouse job'],
+            ['Day job', 'Market day', 'Month average', 'Odd jobs', 'Old retainer', 'Shop days', 'Side job', 'Warehouse shift', 'Weekday contract', 'Weekend shift'],
             array_column($rows, 'payor'),
         );
         self::assertNotContains('Scratch Payor', array_column($rows, 'payor'));
         self::assertSame(
-            ['Camp host', 'Photo gigs', 'Remote salary'],
+            ['Day job', 'Side job'],
             array_column($cycles->list('2026-11-03', false), 'payor'),
         );
-        self::assertSame('salary', $byName['Remote salary']['payKind']);
-        self::assertSame(560000, $byName['Remote salary']['paycheckMinor']);
-        self::assertSame('monthly', $byName['Remote salary']['length']);
-        self::assertSame('2026-11-01', $byName['Remote salary']['payday']);
-        self::assertSame('2026-11-01', $byName['Remote salary']['periodStart']);
-        self::assertSame('2026-11-30', $byName['Remote salary']['periodEnd']);
-        self::assertSame('2026-12-01', $byName['Remote salary']['rollsOn']);
-        self::assertSame('monthly', $byName['Contract days']['length']);
-        self::assertSame('weekdays', $byName['Contract days']['hoursMode']);
-        self::assertSame('3.00', $byName['Contract days']['hours']);
-        self::assertSame(2000, $byName['Contract days']['rateMinor']);
-        self::assertSame(132000, $byName['Contract days']['paycheckMinor']);
-        self::assertSame(22, $byName['Contract days']['monthlyWeekday']['weekdays']);
-        self::assertSame(15, $byName['Design retainer']['secondDay']);
-        self::assertSame('weekdays', $byName['Editing days']['hoursMode']);
-        self::assertFalse($byName['Editing days']['averageOn']);
-        self::assertSame(105600, $byName['Editing days']['paycheckMinor']);
-        self::assertSame('typed', $byName['Camp host']['hoursMode']);
-        self::assertFalse($byName['Camp host']['averageOn']);
-        self::assertTrue($byName['Client average']['averageOn']);
-        self::assertSame(95000, $byName['Client average']['paycheckMinor']);
-        self::assertSame('2026-12-15', $byName['Photo gigs']['nextPayday']);
+        self::assertSame('salary', $byName['Day job']['payKind']);
+        self::assertSame(833333, $byName['Day job']['paycheckMinor']);
+        self::assertSame('monthly', $byName['Day job']['length']);
+        self::assertSame('2026-11-01', $byName['Day job']['payday']);
+        self::assertSame('2026-11-01', $byName['Day job']['periodStart']);
+        self::assertSame('2026-11-30', $byName['Day job']['periodEnd']);
+        self::assertSame('2026-12-01', $byName['Day job']['rollsOn']);
+        self::assertSame('hourly', $byName['Side job']['payKind']);
+        self::assertSame('semimonthly', $byName['Side job']['length']);
+        self::assertSame(16, $byName['Side job']['secondDay']);
+        self::assertSame('20.00', $byName['Side job']['hours']);
+        self::assertSame(2200, $byName['Side job']['rateMinor']);
+        self::assertSame(44000, $byName['Side job']['paycheckMinor']);
+        self::assertTrue($byName['Side job']['averageOn']);
+        self::assertSame('monthly', $byName['Shop days']['length']);
+        self::assertSame('weekdays', $byName['Shop days']['hoursMode']);
+        self::assertSame('3.00', $byName['Shop days']['hours']);
+        self::assertSame(2000, $byName['Shop days']['rateMinor']);
+        self::assertSame(132000, $byName['Shop days']['paycheckMinor']);
+        self::assertSame(22, $byName['Shop days']['monthlyWeekday']['weekdays']);
+        self::assertSame(15, $byName['Old retainer']['secondDay']);
+        self::assertSame('weekdays', $byName['Weekday contract']['hoursMode']);
+        self::assertFalse($byName['Weekday contract']['averageOn']);
+        self::assertSame(105600, $byName['Weekday contract']['paycheckMinor']);
+        self::assertSame('typed', $byName['Weekend shift']['hoursMode']);
+        self::assertFalse($byName['Weekend shift']['averageOn']);
+        self::assertTrue($byName['Month average']['averageOn']);
+        self::assertSame(95000, $byName['Month average']['paycheckMinor']);
+        self::assertSame('2026-12-15', $byName['Odd jobs']['nextPayday']);
         $user = $this->pdo->query("SELECT acct_period_start, acct_period_length FROM user WHERE role = 'demo'")->fetch();
         self::assertIsArray($user);
         self::assertSame('1 month', $user['acct_period_length']);
         self::assertSame(gmdate('Y-m-01'), $user['acct_period_start']);
-        self::assertSame(400, (int) $this->pdo->query(
-            "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.name = 'Bunkhouse'"
+        self::assertSame(550, (int) $this->pdo->query(
+            "SELECT v.fuel_price_minor FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.name = 'Pickup'"
         )->fetchColumn());
-        self::assertSame('fly', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'Devils Garden'")->fetchColumn());
-        self::assertSame('drive', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());
-        self::assertSame('2026-11-22', $this->pdo->query("SELECT balance_due_on FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());
-        self::assertSame('2026-12-01', $this->pdo->query("SELECT balance_due_on FROM trips WHERE place_name = 'Cottonwood'")->fetchColumn());
-        self::assertNull($this->pdo->query("SELECT rating_half_stars FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());
-        self::assertNull($this->pdo->query("SELECT rating_comment FROM trips WHERE place_name = 'Lost Dutchman'")->fetchColumn());
-        self::assertSame(7, (int) $this->pdo->query("SELECT rating_half_stars FROM trips WHERE place_name = 'Cottonwood'")->fetchColumn());
-        self::assertSame('Warm days, clear nights.', $this->pdo->query("SELECT rating_comment FROM trips WHERE place_name = 'Cottonwood'")->fetchColumn());
+        self::assertSame('fly', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'OCEAN User Group'")->fetchColumn());
+        self::assertSame('drive', $this->pdo->query("SELECT travel FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
+        self::assertSame('2026-10-24', $this->pdo->query("SELECT depart_on FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
+        self::assertSame(0, (int) $this->pdo->query("SELECT amount_due_minor FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
+        self::assertSame(86124, (int) $this->pdo->query("SELECT total_minor FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
+        self::assertNull($this->pdo->query("SELECT rating_half_stars FROM trips WHERE place_name = 'Las Vegas RV Resort'")->fetchColumn());
+        self::assertSame(8, (int) $this->pdo->query("SELECT rating_half_stars FROM trips WHERE place_name = 'Lake Tahoe KOA'")->fetchColumn());
+        self::assertSame('Lake and pines.', $this->pdo->query("SELECT rating_comment FROM trips WHERE place_name = 'Lake Tahoe KOA'")->fetchColumn());
         $span = $this->pdo->query(
             "SELECT arrive_on, depart_on FROM trips t JOIN user u ON u.id = t.user_id WHERE u.role = 'demo' ORDER BY arrive_on"
         )->fetchAll();
@@ -430,8 +428,8 @@ final class ResetTest extends TestCase
                 $day = $day->modify('+1 day');
             }
         }
-        self::assertSame('2026-09-06', $first);
-        self::assertSame('2027-01-08', $last);
+        self::assertSame('2026-01-01', $first);
+        self::assertSame('2026-10-24', $last);
         $missing = [];
         for ($day = new \DateTimeImmutable((string) $first); $day <= new \DateTimeImmutable((string) $last); $day = $day->modify('+1 day')) {
             $key = $day->format('Y-m-d');
@@ -440,7 +438,7 @@ final class ResetTest extends TestCase
             }
         }
         self::assertSame([], $missing);
-        self::assertArrayHasKey('2026-11-05', $covered);
+        self::assertArrayHasKey('2026-10-23', $covered);
         $fuel = $this->pdo->query(
             "SELECT b.anchor_date, b.amount_minor, b.status, b.odometer_miles, b.price_per_gallon_minor, b.vehicle_id IS NOT NULL AS has_vehicle
              FROM bills b
@@ -450,17 +448,15 @@ final class ResetTest extends TestCase
              ORDER BY b.anchor_date, b.id"
         )->fetchAll();
         self::assertSame([
-            ['anchor_date' => '2026-09-15', 'amount_minor' => 1000, 'status' => 'paid', 'odometer_miles' => 9980, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
-            ['anchor_date' => '2026-10-01', 'amount_minor' => 600, 'status' => 'paid', 'odometer_miles' => 10000, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
-            ['anchor_date' => '2026-10-01', 'amount_minor' => 400, 'status' => 'paid', 'odometer_miles' => 10000, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
-            ['anchor_date' => '2026-10-15', 'amount_minor' => 500, 'status' => 'paid', 'odometer_miles' => null, 'price_per_gallon_minor' => null, 'has_vehicle' => 0],
-            ['anchor_date' => '2026-11-01', 'amount_minor' => 2000, 'status' => 'paid', 'odometer_miles' => 10100, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
-            ['anchor_date' => '2026-11-08', 'amount_minor' => 1000, 'status' => 'paid', 'odometer_miles' => 10300, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
-            ['anchor_date' => '2026-11-18', 'amount_minor' => 1000, 'status' => 'paid', 'odometer_miles' => 10500, 'price_per_gallon_minor' => 400, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-09-15', 'amount_minor' => 22000, 'status' => 'paid', 'odometer_miles' => 64400, 'price_per_gallon_minor' => 550, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-10-01', 'amount_minor' => 6000, 'status' => 'paid', 'odometer_miles' => 64800, 'price_per_gallon_minor' => 550, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-10-01', 'amount_minor' => 4000, 'status' => 'paid', 'odometer_miles' => 64800, 'price_per_gallon_minor' => 550, 'has_vehicle' => 1],
+            ['anchor_date' => '2026-10-15', 'amount_minor' => 5000, 'status' => 'paid', 'odometer_miles' => null, 'price_per_gallon_minor' => null, 'has_vehicle' => 0],
+            ['anchor_date' => '2026-11-07', 'amount_minor' => 12200, 'status' => 'paid', 'odometer_miles' => 64900, 'price_per_gallon_minor' => 550, 'has_vehicle' => 1],
         ], $fuel);
-        $vehicle = $this->pdo->query("SELECT name, kind, starred, mpg_min_tenths, mpg_max_tenths FROM vehicles WHERE name = 'Bunkhouse'")->fetch();
+        $vehicle = $this->pdo->query("SELECT name, kind, starred, mpg_min_tenths, mpg_max_tenths FROM vehicles WHERE name = 'Pickup'")->fetch();
         self::assertIsArray($vehicle);
-        self::assertSame('rv', $vehicle['kind']);
+        self::assertSame('truck', $vehicle['kind']);
         self::assertSame(1, (int) $vehicle['starred']);
         self::assertSame(60, (int) $vehicle['mpg_min_tenths']);
         self::assertSame(120, (int) $vehicle['mpg_max_tenths']);
@@ -470,7 +466,10 @@ final class ResetTest extends TestCase
         self::assertSame('dirt bike', $this->pdo->query("SELECT kind FROM vehicles WHERE name = 'Dirt bike'")->fetchColumn());
         self::assertSame(0, (int) $this->pdo->query("SELECT starred FROM vehicles WHERE name = 'Side-by-side'")->fetchColumn());
         self::assertSame(0, (int) $this->pdo->query("SELECT starred FROM vehicles WHERE name = 'Dirt bike'")->fetchColumn());
-        self::assertNotNull($byName['Warehouse job']['archivedAt']);
+        self::assertNotNull($byName['Warehouse shift']['archivedAt']);
+        self::assertNotNull($byName['Odd jobs']['archivedAt']);
+        self::assertNull($byName['Day job']['archivedAt']);
+        self::assertNull($byName['Side job']['archivedAt']);
 
         $_SESSION['user_id'] = $ownerId;
         self::assertSame([], $cycles->list('2026-11-03', true));

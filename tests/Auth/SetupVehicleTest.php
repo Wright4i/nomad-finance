@@ -61,7 +61,7 @@ final class SetupVehicleTest extends TestCase
         self::assertSame(160, (int) $vehicle['mpg_max_tenths']);
         self::assertSame(12000, (int) $vehicle['current_odometer_miles']);
         self::assertSame(1, (int) $this->pdo->query("SELECT COUNT(*) FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'owner'")->fetchColumn());
-        self::assertSame('Bunkhouse', $this->pdo->query("SELECT v.name FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.starred = 1")->fetchColumn());
+        self::assertSame('Pickup', $this->pdo->query("SELECT v.name FROM vehicles v JOIN user u ON u.id = v.user_id WHERE u.role = 'demo' AND v.starred = 1")->fetchColumn());
     }
 
     public function testAnEmptyFuelPriceStoresMilesOnly(): void

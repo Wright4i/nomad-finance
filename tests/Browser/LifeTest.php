@@ -173,7 +173,7 @@ final class LifeTest extends TestCase
 
             return $ready === true;
         });
-        self::choose('accountId', 'Everyday checking');
+        self::choose('accountId', 'Checking');
         self::type('total', '20');
         self::type('amountDue', '10');
         self::click('Save stay');
@@ -202,22 +202,22 @@ final class LifeTest extends TestCase
             $ready = self::driver()->executeScript(<<<'JS'
                 const select = document.querySelector('select[name="vehicleId"]');
                 const label = select && select.selectedOptions[0] ? select.selectedOptions[0].textContent : '';
-                return label.includes('Bunkhouse');
+                return label.includes('Pickup');
             JS);
 
             return $ready === true;
         });
         self::type('amount', '4');
-        self::replace('odometer', '10400');
+        self::replace('odometer', '64800');
         self::click('Save log');
         self::waitForText('That reading is below the current odometer.');
-        self::replace('odometer', '10600');
+        self::replace('odometer', '65000');
         self::waitForText('100 mi.');
         self::click('Save log');
         self::waitForText('New log');
         self::assertSame('', self::driver()->findElement(WebDriverBy::name('amount'))->getAttribute('value'));
         self::clickLink('Accounts');
-        self::waitForText('$2,450.00');
+        self::waitForText('$50,000.00');
         self::clickLink('New log');
         self::driver()->executeScript(<<<'JS'
             const input = document.querySelector('input[name="date"]');
@@ -225,7 +225,7 @@ final class LifeTest extends TestCase
             input.dispatchEvent(new Event('input', { bubbles: true }));
         JS);
         self::type('amount', '1');
-        self::replace('odometer', '10600');
+        self::replace('odometer', '65000');
         self::click('Save log');
         self::waitForText('The date cannot be after today.');
     }
@@ -332,7 +332,7 @@ final class LifeTest extends TestCase
         self::waitForText('Sun');
         self::clickLink('Accounts');
         self::clickLink('Vehicles');
-        $vehicle = WebDriverBy::xpath('//a[contains(., "Bunkhouse")]');
+        $vehicle = WebDriverBy::xpath('//a[contains(., "Pickup")]');
         self::wait()->until(WebDriverExpectedCondition::elementToBeClickable($vehicle))->click();
         self::waitForText('Stretch mpg');
         self::waitForText('8.0');

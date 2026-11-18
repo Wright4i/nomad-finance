@@ -14,6 +14,6 @@ A bucket a person creates is a goal. It has a name, a group, and a target. The l
 | Group | Needs, Wants, or Savings. Fixed on a system bucket |
 | Target | On the budget tile, bill assignments plus the envelope. On a goal form: none, or a balance to hold. See [targets](08-targets.md) |
 
-The envelope is one amount for every period. Bill assignments are the bills in the period on screen. An assignment is zero or more. Demo seed: one locked bucket per bill type, plus one goal in each group, named Road cushion, Fun money, and Next rig. Manual tiles come first. Locked tiles follow, with a lock, a Bill assignments chip, an envelope you type, and a locked target. The name on a locked tile opens Bills with that bill type already chosen.
+The envelope is one amount for every period. Bill assignments are the bills in the period on screen. An assignment is zero or more. Demo seed: one locked bucket per bill type, plus goals named Road cushion, Fun money, Next rig, and New trailer. Manual tiles come first. Locked tiles follow, with a lock, a Bill assignments chip, an envelope you type, and a locked target. The name on a locked tile opens Bills with that bill type already chosen.
 
 Budget, targets, and postings all use this list. Build this module before those.
